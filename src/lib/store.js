@@ -159,27 +159,13 @@ export async function getAllImages(entryId) {
   return data || [];
 }
 
-export async function uploadImage(file, entryId, section = 'general', caption = '') {
-  const ext = file.name.split('.').pop();
-  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-  const filePath = `uploads/${fileName}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('images')
-    .upload(filePath, file);
-
-  if (uploadError) throw uploadError;
-
-  const { data: urlData } = supabase.storage
-    .from('images')
-    .getPublicUrl(filePath);
-
+export async function addImageByUrl(url, entryId, section = 'general', caption = '') {
   const { data, error } = await supabase
     .from('images')
     .insert({
       entry_id: entryId,
       section,
-      url: urlData.publicUrl,
+      url: url,
       caption,
     })
     .select()

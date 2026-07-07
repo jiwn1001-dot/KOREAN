@@ -7,10 +7,9 @@ import { isAdmin } from '@/lib/auth';
 import {
   getCountries, createCountry, updateCountry, deleteCountry,
   getDataEntry, upsertDataEntry,
-  uploadImage, getAllImages, deleteImage,
+  getAllImages, deleteImage, addImageByUrl,
   getMapData, saveMapData,
 } from '@/lib/store';
-import ImageUploader from '@/components/ImageUploader';
 import LoginModal from '@/components/LoginModal';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
@@ -257,20 +256,25 @@ export default function AdminPage() {
     }
   };
 
-  const handleImageUpload = async (file, entryId, section = 'general') => {
+  const handleAddImage = async (url, caption, entryId, section = 'general', onSuccess) => {
     if (!entryId) {
-      showToast('먼저 데이터를 저장한 후 이미지를 업로드하세요', 'error');
+      showToast('먼저 데이터를 저장한 후 이미지를 추가하세요', 'error');
+      return;
+    }
+    if (!url) {
+      showToast('이미지 URL을 입력하세요', 'error');
       return;
     }
     try {
-      await uploadImage(file, entryId, section);
-      showToast('이미지가 업로드되었습니다');
+      await addImageByUrl(url, entryId, section, caption);
+      showToast('이미지가 추가되었습니다');
+      if (onSuccess) onSuccess();
       // Refresh current section
       if (activeSection === 'history') loadHistory();
       else if (activeSection === 'geography') loadGeography();
       else if (activeSection === 'country-info') loadCountryData(selectedCountryId);
     } catch (err) {
-      showToast('이미지 업로드 실패', 'error');
+      showToast('이미지 추가 실패', 'error');
     }
   };
 
@@ -319,26 +323,61 @@ export default function AdminPage() {
     }));
   };
 
-  // ==================== IMAGE GALLERY ====================
-  const renderImageSection = (imgs, entryId) => (
-    <div style={{ marginTop: '20px' }}>
-      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '12px' }}>📷 이미지 (URL 복사 후 마크다운으로 삽입 가능: `![설명](URL)`)</h4>
-      {imgs.length > 0 && (
-        <div className="image-gallery" style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          {imgs.map((img) => (
-            <div key={img.id} className="image-gallery-item" style={{ position: 'relative', width: '200px' }}>
-              <img src={img.url} alt={img.caption || ''} style={{ width: '100%', borderRadius: '8px' }} />
-              <div style={{ padding: '8px', background: 'var(--bg-glass)', borderRadius: '0 0 8px 8px', fontSize: '0.75rem', wordBreak: 'break-all' }}>
-                <button className="btn btn-sm btn-secondary" onClick={() => { navigator.clipboard.writeText(`![이미지](${img.url})`); showToast('마크다운 코드가 복사되었습니다'); }} style={{ width: '100%', marginBottom: '4px' }}>📋 마크다운 복사</button>
+  // ==================== IMAGE GALLERY COMPONENT ====================
+  const ImageSection = ({ imgs, entryId }) => {
+    const [tempUrl, setTempUrl] = useState('');
+    const [tempCaption, setTempCaption] = useState('');
+
+    return (
+      <div style={{ marginTop: '20px' }}>
+        <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '12px' }}>📷 이미지 (URL 복사 후 마크다운으로 삽입 가능: `![설명](URL)`)</h4>
+        {imgs && imgs.length > 0 && (
+          <div className="image-gallery" style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            {imgs.map((img) => (
+              <div key={img.id} className="image-gallery-item" style={{ position: 'relative', width: '200px' }}>
+                <img src={img.url} alt={img.caption || ''} style={{ width: '100%', borderRadius: '8px' }} />
+                <div style={{ padding: '8px', background: 'var(--bg-glass)', borderRadius: '0 0 8px 8px', fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                  <button className="btn btn-sm btn-secondary" onClick={() => { navigator.clipboard.writeText(`![이미지](${img.url})`); showToast('마크다운 코드가 복사되었습니다'); }} style={{ width: '100%', marginBottom: '4px' }}>📋 마크다운 복사</button>
+                </div>
+                <button className="image-remove-btn" onClick={() => handleDeleteImage(img.id)} style={{ position: 'absolute', top: '4px', right: '4px' }}>✕</button>
               </div>
-              <button className="image-remove-btn" onClick={() => handleDeleteImage(img.id)} style={{ position: 'absolute', top: '4px', right: '4px' }}>✕</button>
+            ))}
+          </div>
+        )}
+        
+        <div className="card" style={{ padding: '16px', marginTop: '12px' }}>
+          <div className="form-row" style={{ alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+              <label className="form-label">이미지 링크 URL 추가</label>
+              <input
+                className="form-input"
+                value={tempUrl}
+                onChange={(e) => setTempUrl(e.target.value)}
+                placeholder="https://..."
+              />
             </div>
-          ))}
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label className="form-label">사진 설명</label>
+              <input
+                className="form-input"
+                value={tempCaption}
+                onChange={(e) => setTempCaption(e.target.value)}
+                placeholder="설명 (선택)"
+              />
+            </div>
+            <button className="btn btn-sm btn-primary" onClick={() => { 
+              handleAddImage(tempUrl, tempCaption, entryId, 'general', () => {
+                setTempUrl('');
+                setTempCaption('');
+              }); 
+            }}>
+              추가
+            </button>
+          </div>
         </div>
-      )}
-      <ImageUploader onUpload={(file) => handleImageUpload(file, entryId)} />
-    </div>
-  );
+      </div>
+    );
+  };
 
   // ==================== RENDER SECTIONS ====================
 
@@ -436,7 +475,7 @@ export default function AdminPage() {
         💾 역사 저장
       </button>
 
-      {historyEntry && renderImageSection(historyImages, historyEntry.id)}
+      {historyEntry && <ImageSection imgs={historyImages} entryId={historyEntry.id} />}
     </div>
   );
 
@@ -513,7 +552,7 @@ export default function AdminPage() {
           💾 지리 저장
         </button>
 
-        {geoEntry && renderImageSection(geoImages, geoEntry.id)}
+        {geoEntry && <ImageSection imgs={geoImages} entryId={geoEntry.id} />}
       </div>
     );
   };
@@ -775,7 +814,7 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {politicsEntry && renderImageSection(politicsImages, politicsEntry.id)}
+      {politicsEntry && <ImageSection imgs={politicsImages} entryId={politicsEntry.id} />}
     </div>
   );
 
@@ -826,7 +865,7 @@ export default function AdminPage() {
           💾 경제 정보 저장
         </button>
 
-        {economyEntry && renderImageSection(economyImages, economyEntry.id)}
+        {economyEntry && <ImageSection imgs={economyImages} entryId={economyEntry.id} />}
       </div>
     );
   };
@@ -852,7 +891,7 @@ export default function AdminPage() {
         💾 저장
       </button>
 
-      {entry && renderImageSection(imgs, entry.id)}
+      {entry && <ImageSection imgs={imgs} entryId={entry.id} />}
     </div>
   );
 
