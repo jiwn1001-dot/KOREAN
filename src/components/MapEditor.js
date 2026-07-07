@@ -63,6 +63,13 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
     }
   }, [savedImageData]);
 
+  // Watch for savedImageData changes after initial load
+  useEffect(() => {
+    if (originalImageRef.current && canvasRef.current) {
+      initCanvas(originalImageRef.current);
+    }
+  }, [savedImageData, initCanvas]);
+
   // Recreate boundary mask when threshold changes
   useEffect(() => {
     if (!originalImageRef.current || !canvasRef.current) return;
