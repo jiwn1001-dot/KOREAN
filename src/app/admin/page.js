@@ -1,0 +1,1026 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { isAdmin } from '@/lib/auth';
+import {
+  getCountries, createCountry, updateCountry, deleteCountry,
+  getDataEntry, upsertDataEntry,
+  uploadImage, getAllImages, deleteImage,
+  getMapData, saveMapData,
+} from '@/lib/store';
+import ImageUploader from '@/components/ImageUploader';
+import LoginModal from '@/components/LoginModal';
+
+const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
+
+export default function AdminPage() {
+  const router = useRouter();
+  const [admin, setAdmin] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [activeSection, setActiveSection] = useState('countries');
+  const [toast, setToast] = useState(null);
+
+  // Data
+  const [countries, setCountries] = useState([]);
+  const [selectedCountryId, setSelectedCountryId] = useState('');
+
+  // Forms
+  const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
+  const [historyEntry, setHistoryEntry] = useState(null);
+  const [historyContent, setHistoryContent] = useState('');
+  const [historyImages, setHistoryImages] = useState([]);
+  const [geoEntry, setGeoEntry] = useState(null);
+  const [geoData, setGeoData] = useState({ mountains: [], rivers: [], plains: [] });
+  const [geoImages, setGeoImages] = useState([]);
+
+  // Country data
+  const [politicsEntry, setPoliticsEntry] = useState(null);
+  const [politicsData, setPoliticsData] = useState({
+    governmentType: '', headOfState: '', parties: [], keyFigures: [], customFields: [],
+  });
+  const [politicsImages, setPoliticsImages] = useState([]);
+  const [economyEntry, setEconomyEntry] = useState(null);
+  const [economyData, setEconomyData] = useState({
+    heavyIndustry: { value: '', unit: '' },
+    lightIndustry: { value: '', unit: '' },
+    agriculture: { value: '', unit: '' },
+    resources: { value: '', unit: '' },
+    commerce: { value: '', unit: '' },
+    customFields: [],
+  });
+  const [economyImages, setEconomyImages] = useState([]);
+  const [socialEntry, setSocialEntry] = useState(null);
+  const [socialData, setSocialData] = useState({ content: '', customFields: [] });
+  const [socialImages, setSocialImages] = useState([]);
+  const [diplomacyEntry, setDiplomacyEntry] = useState(null);
+  const [diplomacyData, setDiplomacyData] = useState({ content: '', customFields: [] });
+  const [diplomacyImages, setDiplomacyImages] = useState([]);
+
+  const [mapData, setMapData] = useState(null);
+  const [countryTab, setCountryTab] = useState('politics');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const isAdm = isAdmin();
+    setAdmin(isAdm);
+    if (!isAdm) setShowLogin(true);
+    else loadCountries();
+  }, []);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const loadCountries = async () => {
+    try {
+      const data = await getCountries();
+      setCountries(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const entry = await getDataEntry('history');
+      setHistoryEntry(entry);
+      setHistoryContent(entry?.data?.content || '');
+      if (entry) {
+        const imgs = await getAllImages(entry.id);
+        setHistoryImages(imgs);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadGeography = async () => {
+    try {
+      const entry = await getDataEntry('geography');
+      setGeoEntry(entry);
+      setGeoData(entry?.data || { mountains: [], rivers: [], plains: [] });
+      if (entry) {
+        const imgs = await getAllImages(entry.id);
+        setGeoImages(imgs);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadCountryData = useCallback(async (cId) => {
+    if (!cId) return;
+    setLoading(true);
+    try {
+      // Politics
+      const pol = await getDataEntry('politics', cId);
+      setPoliticsEntry(pol);
+      setPoliticsData(pol?.data || {
+        governmentType: '', headOfState: '', parties: [], keyFigures: [], customFields: [],
+      });
+      if (pol) setPoliticsImages(await getAllImages(pol.id));
+      else setPoliticsImages([]);
+
+      // Economy
+      const eco = await getDataEntry('economy', cId);
+      setEconomyEntry(eco);
+      setEconomyData(eco?.data || {
+        heavyIndustry: { value: '', unit: '' },
+        lightIndustry: { value: '', unit: '' },
+        agriculture: { value: '', unit: '' },
+        resources: { value: '', unit: '' },
+        commerce: { value: '', unit: '' },
+        customFields: [],
+      });
+      if (eco) setEconomyImages(await getAllImages(eco.id));
+      else setEconomyImages([]);
+
+      // Social
+      const soc = await getDataEntry('social', cId);
+      setSocialEntry(soc);
+      setSocialData(soc?.data || { content: '', customFields: [] });
+      if (soc) setSocialImages(await getAllImages(soc.id));
+      else setSocialImages([]);
+
+      // Diplomacy
+      const dip = await getDataEntry('diplomacy', cId);
+      setDiplomacyEntry(dip);
+      setDiplomacyData(dip?.data || { content: '', customFields: [] });
+      if (dip) setDiplomacyImages(await getAllImages(dip.id));
+      else setDiplomacyImages([]);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  }, []);
+
+  const loadMapData = async () => {
+    try {
+      const data = await getMapData();
+      setMapData(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (!admin) return;
+    if (activeSection === 'history') loadHistory();
+    else if (activeSection === 'geography') loadGeography();
+    else if (activeSection === 'country-info') {
+      loadCountries();
+      if (selectedCountryId) loadCountryData(selectedCountryId);
+    }
+    else if (activeSection === 'map') {
+      loadMapData();
+      loadCountries();
+    }
+    else if (activeSection === 'countries') loadCountries();
+  }, [activeSection, admin, selectedCountryId, loadCountryData]);
+
+  // ==================== HANDLERS ====================
+
+  const handleAddCountry = async (e) => {
+    e.preventDefault();
+    if (!newCountry.name || !newCountry.password) {
+      showToast('국가명과 비밀번호를 입력하세요', 'error');
+      return;
+    }
+    try {
+      await createCountry(newCountry);
+      setNewCountry({ name: '', password: '', color: '#7c6bf0' });
+      await loadCountries();
+      showToast('국가가 추가되었습니다');
+    } catch (err) {
+      showToast('국가 추가 실패', 'error');
+    }
+  };
+
+  const handleDeleteCountry = async (id, name) => {
+    if (!confirm(`"${name}" 국가를 삭제하시겠습니까? 모든 관련 데이터가 삭제됩니다.`)) return;
+    try {
+      await deleteCountry(id);
+      await loadCountries();
+      if (selectedCountryId === id) setSelectedCountryId('');
+      showToast('국가가 삭제되었습니다');
+    } catch (err) {
+      showToast('국가 삭제 실패', 'error');
+    }
+  };
+
+  const handleUpdateCountry = async (id, updates) => {
+    try {
+      await updateCountry(id, updates);
+      await loadCountries();
+      showToast('국가 정보가 수정되었습니다');
+    } catch (err) {
+      showToast('수정 실패', 'error');
+    }
+  };
+
+  const handleSaveHistory = async () => {
+    try {
+      const entry = await upsertDataEntry('history', null, { content: historyContent, title: '역사' });
+      setHistoryEntry(entry);
+      showToast('역사 정보가 저장되었습니다');
+    } catch (err) {
+      showToast('저장 실패', 'error');
+    }
+  };
+
+  const handleSaveGeography = async () => {
+    try {
+      const entry = await upsertDataEntry('geography', null, { ...geoData, title: '지리' });
+      setGeoEntry(entry);
+      showToast('지리 정보가 저장되었습니다');
+    } catch (err) {
+      showToast('저장 실패', 'error');
+    }
+  };
+
+  const handleSaveCountryData = async (category, entryData) => {
+    if (!selectedCountryId) return;
+    try {
+      const entry = await upsertDataEntry(category, selectedCountryId, entryData);
+      showToast('저장되었습니다');
+
+      // Refresh the entry reference
+      if (category === 'politics') setPoliticsEntry(entry);
+      else if (category === 'economy') setEconomyEntry(entry);
+      else if (category === 'social') setSocialEntry(entry);
+      else if (category === 'diplomacy') setDiplomacyEntry(entry);
+    } catch (err) {
+      showToast('저장 실패', 'error');
+    }
+  };
+
+  const handleImageUpload = async (file, entryId, section = 'general') => {
+    if (!entryId) {
+      showToast('먼저 데이터를 저장한 후 이미지를 업로드하세요', 'error');
+      return;
+    }
+    try {
+      await uploadImage(file, entryId, section);
+      showToast('이미지가 업로드되었습니다');
+      // Refresh current section
+      if (activeSection === 'history') loadHistory();
+      else if (activeSection === 'geography') loadGeography();
+      else if (activeSection === 'country-info') loadCountryData(selectedCountryId);
+    } catch (err) {
+      showToast('이미지 업로드 실패', 'error');
+    }
+  };
+
+  const handleDeleteImage = async (imgId) => {
+    try {
+      await deleteImage(imgId);
+      showToast('이미지가 삭제되었습니다');
+      if (activeSection === 'history') loadHistory();
+      else if (activeSection === 'geography') loadGeography();
+      else if (activeSection === 'country-info') loadCountryData(selectedCountryId);
+    } catch (err) {
+      showToast('이미지 삭제 실패', 'error');
+    }
+  };
+
+  const handleSaveMap = async (imageDataUrl) => {
+    try {
+      const legend = countries.map((c) => ({ name: c.name, color: c.color }));
+      await saveMapData(imageDataUrl, legend);
+      showToast('지도가 저장되었습니다');
+    } catch (err) {
+      showToast('지도 저장 실패', 'error');
+    }
+  };
+
+  // ==================== HELPER: Geo Item CRUD ====================
+  const addGeoItem = (type) => {
+    setGeoData((prev) => ({
+      ...prev,
+      [type]: [...(prev[type] || []), { name: '', description: '' }],
+    }));
+  };
+
+  const updateGeoItem = (type, idx, field, value) => {
+    setGeoData((prev) => {
+      const items = [...(prev[type] || [])];
+      items[idx] = { ...items[idx], [field]: value };
+      return { ...prev, [type]: items };
+    });
+  };
+
+  const removeGeoItem = (type, idx) => {
+    setGeoData((prev) => ({
+      ...prev,
+      [type]: prev[type].filter((_, i) => i !== idx),
+    }));
+  };
+
+  // ==================== IMAGE GALLERY ====================
+  const renderImageSection = (imgs, entryId) => (
+    <div style={{ marginTop: '20px' }}>
+      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '12px' }}>📷 이미지</h4>
+      {imgs.length > 0 && (
+        <div className="image-gallery" style={{ marginBottom: '12px' }}>
+          {imgs.map((img) => (
+            <div key={img.id} className="image-gallery-item">
+              <img src={img.url} alt={img.caption || ''} />
+              <button className="image-remove-btn" onClick={() => handleDeleteImage(img.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <ImageUploader onUpload={(file) => handleImageUpload(file, entryId)} />
+    </div>
+  );
+
+  // ==================== RENDER SECTIONS ====================
+
+  const renderCountries = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>🏴 국가 관리</h2>
+
+      {/* Add Country Form */}
+      <div className="admin-form-section">
+        <h3 className="admin-form-title">➕ 국가 추가</h3>
+        <form onSubmit={handleAddCountry}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">국가명</label>
+              <input
+                className="form-input"
+                value={newCountry.name}
+                onChange={(e) => setNewCountry((p) => ({ ...p, name: e.target.value }))}
+                placeholder="국가 이름"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">비밀번호</label>
+              <input
+                className="form-input"
+                value={newCountry.password}
+                onChange={(e) => setNewCountry((p) => ({ ...p, password: e.target.value }))}
+                placeholder="열람 비밀번호"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">지도 색상</label>
+              <div className="form-inline">
+                <input
+                  type="color"
+                  value={newCountry.color}
+                  onChange={(e) => setNewCountry((p) => ({ ...p, color: e.target.value }))}
+                  style={{ width: '40px', height: '36px', border: 'none', cursor: 'pointer' }}
+                />
+                <input
+                  className="form-input"
+                  value={newCountry.color}
+                  onChange={(e) => setNewCountry((p) => ({ ...p, color: e.target.value }))}
+                  style={{ flex: 1 }}
+                />
+              </div>
+            </div>
+          </div>
+          <button type="submit" className="btn btn-primary">
+            ➕ 국가 추가
+          </button>
+        </form>
+      </div>
+
+      {/* Country List */}
+      <div className="admin-form-section">
+        <h3 className="admin-form-title">📋 등록된 국가 ({countries.length})</h3>
+        {countries.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>등록된 국가가 없습니다</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {countries.map((c) => (
+              <CountryRow
+                key={c.id}
+                country={c}
+                onUpdate={handleUpdateCountry}
+                onDelete={handleDeleteCountry}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderHistory = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>📜 역사 편집</h2>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '0.9rem' }}>
+        모든 국가가 공유하는 역사 기록입니다. 비밀번호 없이 누구나 열람할 수 있습니다.
+      </p>
+
+      <div className="form-group">
+        <label className="form-label">역사 내용</label>
+        <textarea
+          className="form-textarea"
+          value={historyContent}
+          onChange={(e) => setHistoryContent(e.target.value)}
+          placeholder="역사 내용을 입력하세요..."
+          style={{ minHeight: '300px' }}
+        />
+      </div>
+
+      <button className="btn btn-primary" onClick={handleSaveHistory}>
+        💾 역사 저장
+      </button>
+
+      {historyEntry && renderImageSection(historyImages, historyEntry.id)}
+    </div>
+  );
+
+  const renderGeography = () => {
+    const geoTypes = [
+      { key: 'mountains', title: '⛰️ 산', icon: '⛰️' },
+      { key: 'rivers', title: '🏞️ 강', icon: '🏞️' },
+      { key: 'plains', title: '🌾 평야', icon: '🌾' },
+    ];
+
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>🗻 지리 편집</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '0.9rem' }}>
+          한반도에 위치한 산, 강, 평야 정보입니다. 누구나 열람할 수 있습니다.
+        </p>
+
+        {geoTypes.map(({ key, title }) => (
+          <div key={key} className="admin-form-section">
+            <h3 className="admin-form-title">
+              {title}
+              <span className="badge badge-accent" style={{ marginLeft: '8px' }}>
+                {(geoData[key] || []).length}개
+              </span>
+            </h3>
+
+            {(geoData[key] || []).map((item, idx) => (
+              <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <input
+                    className="form-input"
+                    value={item.name}
+                    onChange={(e) => updateGeoItem(key, idx, 'name', e.target.value)}
+                    placeholder="이름"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <input
+                    className="form-input"
+                    value={item.description}
+                    onChange={(e) => updateGeoItem(key, idx, 'description', e.target.value)}
+                    placeholder="설명"
+                  />
+                </div>
+                <button className="btn btn-sm btn-danger" onClick={() => removeGeoItem(key, idx)}>
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            <button className="btn btn-sm btn-ghost" onClick={() => addGeoItem(key)} style={{ marginTop: '8px' }}>
+              ➕ {title.split(' ')[1]} 추가
+            </button>
+          </div>
+        ))}
+
+        <button className="btn btn-primary" onClick={handleSaveGeography}>
+          💾 지리 저장
+        </button>
+
+        {geoEntry && renderImageSection(geoImages, geoEntry.id)}
+      </div>
+    );
+  };
+
+  const renderCountryInfo = () => {
+    const countryTabs = [
+      { id: 'politics', label: '🏛️ 정치' },
+      { id: 'economy', label: '💰 경제' },
+      { id: 'social', label: '📢 사회문제' },
+      { id: 'diplomacy', label: '🤝 외교관계' },
+    ];
+
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>🏴 국가별 정보 편집</h2>
+
+        <div className="form-group">
+          <label className="form-label">국가 선택</label>
+          <select
+            className="form-select"
+            value={selectedCountryId}
+            onChange={(e) => setSelectedCountryId(e.target.value)}
+          >
+            <option value="">-- 국가를 선택하세요 --</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedCountryId && (
+          <>
+            <div className="tabs" style={{ marginTop: '20px' }}>
+              {countryTabs.map((t) => (
+                <button
+                  key={t.id}
+                  className={`tab ${countryTab === t.id ? 'active' : ''}`}
+                  onClick={() => setCountryTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="loading"><div className="spinner" /></div>
+            ) : (
+              <>
+                {countryTab === 'politics' && renderPoliticsEditor()}
+                {countryTab === 'economy' && renderEconomyEditor()}
+                {countryTab === 'social' && renderTextEditor('social', socialData, setSocialData, socialEntry, socialImages)}
+                {countryTab === 'diplomacy' && renderTextEditor('diplomacy', diplomacyData, setDiplomacyData, diplomacyEntry, diplomacyImages)}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderPoliticsEditor = () => (
+    <div className="slide-up">
+      <div className="admin-form-section">
+        <h3 className="admin-form-title">🏛️ 정부 정보</h3>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">정부체제</label>
+            <input
+              className="form-input"
+              value={politicsData.governmentType || ''}
+              onChange={(e) => setPoliticsData((p) => ({ ...p, governmentType: e.target.value }))}
+              placeholder="예: 입헌군주제, 대통령제..."
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">정부수반</label>
+            <input
+              className="form-input"
+              value={politicsData.headOfState || ''}
+              onChange={(e) => setPoliticsData((p) => ({ ...p, headOfState: e.target.value }))}
+              placeholder="수반 이름"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Parties */}
+      <div className="admin-form-section">
+        <h3 className="admin-form-title">
+          🗳️ 정당
+          <span className="badge badge-accent" style={{ marginLeft: '8px' }}>
+            {(politicsData.parties || []).length}개
+          </span>
+        </h3>
+        {(politicsData.parties || []).map((party, idx) => (
+          <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              {idx === 0 && <label className="form-label">정당명</label>}
+              <input
+                className="form-input"
+                value={party.name}
+                onChange={(e) => {
+                  const parties = [...politicsData.parties];
+                  parties[idx] = { ...parties[idx], name: e.target.value };
+                  setPoliticsData((p) => ({ ...p, parties }));
+                }}
+                placeholder="정당 이름"
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              {idx === 0 && <label className="form-label">의석수</label>}
+              <input
+                className="form-input"
+                type="number"
+                value={party.seats}
+                onChange={(e) => {
+                  const parties = [...politicsData.parties];
+                  parties[idx] = { ...parties[idx], seats: e.target.value };
+                  setPoliticsData((p) => ({ ...p, parties }));
+                }}
+                placeholder="0"
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              {idx === 0 && <label className="form-label">지지율(%)</label>}
+              <input
+                className="form-input"
+                type="number"
+                step="0.1"
+                value={party.supportRate}
+                onChange={(e) => {
+                  const parties = [...politicsData.parties];
+                  parties[idx] = { ...parties[idx], supportRate: e.target.value };
+                  setPoliticsData((p) => ({ ...p, parties }));
+                }}
+                placeholder="0.0"
+              />
+            </div>
+            <button className="btn btn-sm btn-danger" onClick={() => {
+              setPoliticsData((p) => ({
+                ...p,
+                parties: p.parties.filter((_, i) => i !== idx),
+              }));
+            }}>✕</button>
+          </div>
+        ))}
+        <button className="btn btn-sm btn-ghost" onClick={() => {
+          setPoliticsData((p) => ({
+            ...p,
+            parties: [...(p.parties || []), { name: '', seats: 0, supportRate: 0 }],
+          }));
+        }}>➕ 정당 추가</button>
+      </div>
+
+      {/* Key Figures */}
+      <div className="admin-form-section">
+        <h3 className="admin-form-title">
+          👤 주요인물
+          <span className="badge badge-accent" style={{ marginLeft: '8px' }}>
+            {(politicsData.keyFigures || []).length}명
+          </span>
+        </h3>
+        {(politicsData.keyFigures || []).map((fig, idx) => (
+          <div key={idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">이름</label>
+                <input
+                  className="form-input"
+                  value={fig.name}
+                  onChange={(e) => {
+                    const figs = [...politicsData.keyFigures];
+                    figs[idx] = { ...figs[idx], name: e.target.value };
+                    setPoliticsData((p) => ({ ...p, keyFigures: figs }));
+                  }}
+                  placeholder="인물 이름"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">직책/역할</label>
+                <input
+                  className="form-input"
+                  value={fig.role || ''}
+                  onChange={(e) => {
+                    const figs = [...politicsData.keyFigures];
+                    figs[idx] = { ...figs[idx], role: e.target.value };
+                    setPoliticsData((p) => ({ ...p, keyFigures: figs }));
+                  }}
+                  placeholder="예: 국무총리, 외교부장관..."
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">설명</label>
+              <textarea
+                className="form-textarea"
+                value={fig.description || ''}
+                onChange={(e) => {
+                  const figs = [...politicsData.keyFigures];
+                  figs[idx] = { ...figs[idx], description: e.target.value };
+                  setPoliticsData((p) => ({ ...p, keyFigures: figs }));
+                }}
+                placeholder="인물에 대한 설명..."
+                style={{ minHeight: '80px' }}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">프로필 이미지 URL (선택)</label>
+              <input
+                className="form-input"
+                value={fig.image || ''}
+                onChange={(e) => {
+                  const figs = [...politicsData.keyFigures];
+                  figs[idx] = { ...figs[idx], image: e.target.value };
+                  setPoliticsData((p) => ({ ...p, keyFigures: figs }));
+                }}
+                placeholder="https://..."
+              />
+            </div>
+            <button className="btn btn-sm btn-danger" onClick={() => {
+              setPoliticsData((p) => ({
+                ...p,
+                keyFigures: p.keyFigures.filter((_, i) => i !== idx),
+              }));
+            }}>🗑️ 인물 삭제</button>
+          </div>
+        ))}
+        <button className="btn btn-sm btn-ghost" onClick={() => {
+          setPoliticsData((p) => ({
+            ...p,
+            keyFigures: [...(p.keyFigures || []), { name: '', role: '', description: '', image: '' }],
+          }));
+        }}>➕ 인물 추가</button>
+      </div>
+
+      {/* Custom Fields */}
+      {renderCustomFields(politicsData, setPoliticsData)}
+
+      <div className="btn-group" style={{ marginTop: '20px' }}>
+        <button className="btn btn-primary" onClick={() => handleSaveCountryData('politics', politicsData)}>
+          💾 정치 정보 저장
+        </button>
+      </div>
+
+      {politicsEntry && renderImageSection(politicsImages, politicsEntry.id)}
+    </div>
+  );
+
+  const renderEconomyEditor = () => {
+    const fields = [
+      { key: 'heavyIndustry', label: '🏭 중공업' },
+      { key: 'lightIndustry', label: '🧵 경공업' },
+      { key: 'agriculture', label: '🌾 농업' },
+      { key: 'resources', label: '⛏️ 자원' },
+      { key: 'commerce', label: '🏪 상업' },
+    ];
+
+    return (
+      <div className="slide-up">
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">💰 경제 지표</h3>
+          {fields.map(({ key, label }) => (
+            <div key={key} className="form-row" style={{ marginBottom: '12px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">{label}</label>
+                <input
+                  className="form-input"
+                  value={economyData[key]?.value || ''}
+                  onChange={(e) => setEconomyData((p) => ({
+                    ...p, [key]: { ...p[key], value: e.target.value },
+                  }))}
+                  placeholder="수치 또는 설명"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">단위</label>
+                <input
+                  className="form-input"
+                  value={economyData[key]?.unit || ''}
+                  onChange={(e) => setEconomyData((p) => ({
+                    ...p, [key]: { ...p[key], unit: e.target.value },
+                  }))}
+                  placeholder="단위 (예: 억원, 톤...)"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {renderCustomFields(economyData, setEconomyData)}
+
+        <button className="btn btn-primary" onClick={() => handleSaveCountryData('economy', economyData)}>
+          💾 경제 정보 저장
+        </button>
+
+        {economyEntry && renderImageSection(economyImages, economyEntry.id)}
+      </div>
+    );
+  };
+
+  const renderTextEditor = (category, data, setData, entry, imgs) => (
+    <div className="slide-up">
+      <div className="form-group">
+        <label className="form-label">
+          {category === 'social' ? '📢 사회문제' : '🤝 외교관계'} 내용
+        </label>
+        <textarea
+          className="form-textarea"
+          value={data.content || ''}
+          onChange={(e) => setData((p) => ({ ...p, content: e.target.value }))}
+          placeholder="내용을 입력하세요..."
+          style={{ minHeight: '250px' }}
+        />
+      </div>
+
+      {renderCustomFields(data, setData)}
+
+      <button className="btn btn-primary" onClick={() => handleSaveCountryData(category, data)}>
+        💾 저장
+      </button>
+
+      {entry && renderImageSection(imgs, entry.id)}
+    </div>
+  );
+
+  const renderCustomFields = (data, setData) => (
+    <div className="admin-form-section">
+      <h3 className="admin-form-title">
+        📋 커스텀 필드
+        <span className="badge badge-accent" style={{ marginLeft: '8px' }}>
+          {(data.customFields || []).length}개
+        </span>
+      </h3>
+      {(data.customFields || []).map((field, idx) => (
+        <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            {idx === 0 && <label className="form-label">항목명</label>}
+            <input
+              className="form-input"
+              value={field.label}
+              onChange={(e) => {
+                const fields = [...(data.customFields || [])];
+                fields[idx] = { ...fields[idx], label: e.target.value };
+                setData((p) => ({ ...p, customFields: fields }));
+              }}
+              placeholder="항목 이름"
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            {idx === 0 && <label className="form-label">값</label>}
+            <input
+              className="form-input"
+              value={field.value}
+              onChange={(e) => {
+                const fields = [...(data.customFields || [])];
+                fields[idx] = { ...fields[idx], value: e.target.value };
+                setData((p) => ({ ...p, customFields: fields }));
+              }}
+              placeholder="값"
+            />
+          </div>
+          <button className="btn btn-sm btn-danger" onClick={() => {
+            setData((p) => ({
+              ...p,
+              customFields: (p.customFields || []).filter((_, i) => i !== idx),
+            }));
+          }}>✕</button>
+        </div>
+      ))}
+      <button className="btn btn-sm btn-ghost" onClick={() => {
+        setData((p) => ({
+          ...p,
+          customFields: [...(p.customFields || []), { label: '', value: '' }],
+        }));
+      }}>➕ 필드 추가</button>
+    </div>
+  );
+
+  const renderMapEditor = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>🗺️ 지도 색칠</h2>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '0.9rem' }}>
+        지도의 각 지역을 클릭하여 색칠하세요. 모든 경계선(진한선·연한선)이 인식됩니다.
+        경계 감도 슬라이더로 인식 민감도를 조절할 수 있습니다.
+      </p>
+      <MapEditor
+        editable={true}
+        savedImageData={mapData?.image_data}
+        onSave={handleSaveMap}
+        legend={countries.map((c) => ({ name: c.name, color: c.color }))}
+      />
+    </div>
+  );
+
+  // ==================== AUTH GATE ====================
+  if (!admin) {
+    return (
+      <>
+        <div className="page-content">
+          <div className="password-gate">
+            <div className="card card-glass password-gate-card" style={{ padding: '48px 32px' }}>
+              <div className="password-gate-icon">🛡️</div>
+              <h2 className="password-gate-title">관리자 전용</h2>
+              <p className="password-gate-desc">관리자 비밀번호를 입력하세요.</p>
+              <button className="btn btn-primary btn-lg" onClick={() => setShowLogin(true)} style={{ width: '100%' }}>
+                🔑 로그인
+              </button>
+            </div>
+          </div>
+        </div>
+        {showLogin && (
+          <LoginModal
+            type="admin"
+            onClose={() => setShowLogin(false)}
+            onSuccess={() => {
+              setShowLogin(false);
+              setAdmin(true);
+              loadCountries();
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  const sidebarItems = [
+    { id: 'countries', label: '🏴 국가 관리', },
+    { id: 'history', label: '📜 역사', },
+    { id: 'geography', label: '🗻 지리', },
+    { id: 'country-info', label: '📊 국가별 정보', },
+    { id: 'map', label: '🗺️ 지도 색칠', },
+  ];
+
+  return (
+    <div className="fade-in">
+      <div className="admin-panel">
+        <div className="admin-sidebar">
+          <div className="admin-sidebar-title">관리 메뉴</div>
+          {sidebarItems.map((item) => (
+            <button
+              key={item.id}
+              className={`admin-sidebar-item ${activeSection === item.id ? 'active' : ''}`}
+              onClick={() => setActiveSection(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="admin-content">
+          {activeSection === 'countries' && renderCountries()}
+          {activeSection === 'history' && renderHistory()}
+          {activeSection === 'geography' && renderGeography()}
+          {activeSection === 'country-info' && renderCountryInfo()}
+          {activeSection === 'map' && renderMapEditor()}
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast toast-${toast.type}`}>
+            {toast.type === 'success' ? '✅' : '❌'} {toast.msg}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== Country Row Component ====================
+function CountryRow({ country, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(country.name);
+  const [password, setPassword] = useState(country.password);
+  const [color, setColor] = useState(country.color || '#cccccc');
+
+  const handleSave = () => {
+    onUpdate(country.id, { name, password, color });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="card" style={{ padding: '16px' }}>
+        <div className="form-row" style={{ alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">국가명</label>
+            <input className="form-input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">비밀번호</label>
+            <input className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">색상</label>
+            <div className="form-inline">
+              <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                style={{ width: '36px', height: '36px', border: 'none', cursor: 'pointer' }} />
+            </div>
+          </div>
+          <div className="btn-group">
+            <button className="btn btn-sm btn-primary" onClick={handleSave}>저장</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)}>취소</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{
+      padding: '14px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span className="country-color-dot" style={{ backgroundColor: color, width: '16px', height: '16px' }} />
+        <span style={{ fontWeight: 600 }}>{country.name}</span>
+      </div>
+      <div className="btn-group">
+        <button className="btn btn-sm btn-ghost" onClick={() => setEditing(true)}>✏️ 편집</button>
+        <button className="btn btn-sm btn-danger" onClick={() => onDelete(country.id, country.name)}>🗑️</button>
+      </div>
+    </div>
+  );
+}
