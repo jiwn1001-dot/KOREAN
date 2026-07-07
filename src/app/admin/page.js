@@ -322,13 +322,16 @@ export default function AdminPage() {
   // ==================== IMAGE GALLERY ====================
   const renderImageSection = (imgs, entryId) => (
     <div style={{ marginTop: '20px' }}>
-      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '12px' }}>📷 이미지</h4>
+      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '12px' }}>📷 이미지 (URL 복사 후 마크다운으로 삽입 가능: `![설명](URL)`)</h4>
       {imgs.length > 0 && (
-        <div className="image-gallery" style={{ marginBottom: '12px' }}>
+        <div className="image-gallery" style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
           {imgs.map((img) => (
-            <div key={img.id} className="image-gallery-item">
-              <img src={img.url} alt={img.caption || ''} />
-              <button className="image-remove-btn" onClick={() => handleDeleteImage(img.id)}>✕</button>
+            <div key={img.id} className="image-gallery-item" style={{ position: 'relative', width: '200px' }}>
+              <img src={img.url} alt={img.caption || ''} style={{ width: '100%', borderRadius: '8px' }} />
+              <div style={{ padding: '8px', background: 'var(--bg-glass)', borderRadius: '0 0 8px 8px', fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                <button className="btn btn-sm btn-secondary" onClick={() => { navigator.clipboard.writeText(`![이미지](${img.url})`); showToast('마크다운 코드가 복사되었습니다'); }} style={{ width: '100%', marginBottom: '4px' }}>📋 마크다운 복사</button>
+              </div>
+              <button className="image-remove-btn" onClick={() => handleDeleteImage(img.id)} style={{ position: 'absolute', top: '4px', right: '4px' }}>✕</button>
             </div>
           ))}
         </div>
@@ -461,26 +464,42 @@ export default function AdminPage() {
             </h3>
 
             {(geoData[key] || []).map((item, idx) => (
-              <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input
-                    className="form-input"
-                    value={item.name}
-                    onChange={(e) => updateGeoItem(key, idx, 'name', e.target.value)}
-                    placeholder="이름"
-                  />
+              <div key={idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
+                <div className="form-row" style={{ alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div className="form-group">
+                      <label className="form-label">이름</label>
+                      <input
+                        className="form-input"
+                        value={item.name || ''}
+                        onChange={(e) => updateGeoItem(key, idx, 'name', e.target.value)}
+                        placeholder="이름"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">설명</label>
+                      <textarea
+                        className="form-textarea"
+                        value={item.description || ''}
+                        onChange={(e) => updateGeoItem(key, idx, 'description', e.target.value)}
+                        placeholder="설명 (마크다운 이미지 삽입 가능)"
+                        style={{ minHeight: '60px' }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">이미지 URL (선택)</label>
+                      <input
+                        className="form-input"
+                        value={item.image || ''}
+                        onChange={(e) => updateGeoItem(key, idx, 'image', e.target.value)}
+                        placeholder="이미지 URL"
+                      />
+                    </div>
+                  </div>
+                  <button className="btn btn-sm btn-danger" onClick={() => removeGeoItem(key, idx)}>
+                    ✕ 삭제
+                  </button>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input
-                    className="form-input"
-                    value={item.description}
-                    onChange={(e) => updateGeoItem(key, idx, 'description', e.target.value)}
-                    placeholder="설명"
-                  />
-                </div>
-                <button className="btn btn-sm btn-danger" onClick={() => removeGeoItem(key, idx)}>
-                  ✕
-                </button>
               </div>
             ))}
 
@@ -590,55 +609,72 @@ export default function AdminPage() {
           </span>
         </h3>
         {(politicsData.parties || []).map((party, idx) => (
-          <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              {idx === 0 && <label className="form-label">정당명</label>}
-              <input
-                className="form-input"
-                value={party.name}
-                onChange={(e) => {
-                  const parties = [...politicsData.parties];
-                  parties[idx] = { ...parties[idx], name: e.target.value };
-                  setPoliticsData((p) => ({ ...p, parties }));
-                }}
-                placeholder="정당 이름"
-              />
+          <div key={idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">정당명</label>
+                <input
+                  className="form-input"
+                  value={party.name || ''}
+                  onChange={(e) => {
+                    const parties = [...politicsData.parties];
+                    parties[idx] = { ...parties[idx], name: e.target.value };
+                    setPoliticsData((p) => ({ ...p, parties }));
+                  }}
+                  placeholder="정당 이름"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">의석수</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={party.seats || 0}
+                  onChange={(e) => {
+                    const parties = [...politicsData.parties];
+                    parties[idx] = { ...parties[idx], seats: e.target.value };
+                    setPoliticsData((p) => ({ ...p, parties }));
+                  }}
+                  placeholder="0"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">지지율(%)</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  step="0.1"
+                  value={party.supportRate || 0}
+                  onChange={(e) => {
+                    const parties = [...politicsData.parties];
+                    parties[idx] = { ...parties[idx], supportRate: e.target.value };
+                    setPoliticsData((p) => ({ ...p, parties }));
+                  }}
+                  placeholder="0.0"
+                />
+              </div>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              {idx === 0 && <label className="form-label">의석수</label>}
-              <input
-                className="form-input"
-                type="number"
-                value={party.seats}
-                onChange={(e) => {
-                  const parties = [...politicsData.parties];
-                  parties[idx] = { ...parties[idx], seats: e.target.value };
-                  setPoliticsData((p) => ({ ...p, parties }));
-                }}
-                placeholder="0"
-              />
+            <div className="form-row" style={{ alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="form-label">정당 로고/이미지 URL (선택)</label>
+                <input
+                  className="form-input"
+                  value={party.image || ''}
+                  onChange={(e) => {
+                    const parties = [...politicsData.parties];
+                    parties[idx] = { ...parties[idx], image: e.target.value };
+                    setPoliticsData((p) => ({ ...p, parties }));
+                  }}
+                  placeholder="이미지 URL"
+                />
+              </div>
+              <button className="btn btn-sm btn-danger" onClick={() => {
+                setPoliticsData((p) => ({
+                  ...p,
+                  parties: p.parties.filter((_, i) => i !== idx),
+                }));
+              }}>✕ 삭제</button>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              {idx === 0 && <label className="form-label">지지율(%)</label>}
-              <input
-                className="form-input"
-                type="number"
-                step="0.1"
-                value={party.supportRate}
-                onChange={(e) => {
-                  const parties = [...politicsData.parties];
-                  parties[idx] = { ...parties[idx], supportRate: e.target.value };
-                  setPoliticsData((p) => ({ ...p, parties }));
-                }}
-                placeholder="0.0"
-              />
-            </div>
-            <button className="btn btn-sm btn-danger" onClick={() => {
-              setPoliticsData((p) => ({
-                ...p,
-                parties: p.parties.filter((_, i) => i !== idx),
-              }));
-            }}>✕</button>
           </div>
         ))}
         <button className="btn btn-sm btn-ghost" onClick={() => {
@@ -829,39 +865,57 @@ export default function AdminPage() {
         </span>
       </h3>
       {(data.customFields || []).map((field, idx) => (
-        <div key={idx} className="form-row" style={{ marginBottom: '8px', alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            {idx === 0 && <label className="form-label">항목명</label>}
-            <input
-              className="form-input"
-              value={field.label}
-              onChange={(e) => {
-                const fields = [...(data.customFields || [])];
-                fields[idx] = { ...fields[idx], label: e.target.value };
-                setData((p) => ({ ...p, customFields: fields }));
-              }}
-              placeholder="항목 이름"
-            />
+        <div key={idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">항목명</label>
+              <input
+                className="form-input"
+                value={field.label || ''}
+                onChange={(e) => {
+                  const fields = [...(data.customFields || [])];
+                  fields[idx] = { ...fields[idx], label: e.target.value };
+                  setData((p) => ({ ...p, customFields: fields }));
+                }}
+                placeholder="항목 이름"
+              />
+            </div>
+            <div className="form-group" style={{ flex: 2 }}>
+              <label className="form-label">설명/내용</label>
+              <textarea
+                className="form-textarea"
+                value={field.value || ''}
+                onChange={(e) => {
+                  const fields = [...(data.customFields || [])];
+                  fields[idx] = { ...fields[idx], value: e.target.value };
+                  setData((p) => ({ ...p, customFields: fields }));
+                }}
+                placeholder="마크다운 호환"
+                style={{ minHeight: '60px' }}
+              />
+            </div>
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            {idx === 0 && <label className="form-label">값</label>}
-            <input
-              className="form-input"
-              value={field.value}
-              onChange={(e) => {
-                const fields = [...(data.customFields || [])];
-                fields[idx] = { ...fields[idx], value: e.target.value };
-                setData((p) => ({ ...p, customFields: fields }));
-              }}
-              placeholder="값"
-            />
+          <div className="form-row" style={{ alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label className="form-label">이미지 URL (선택)</label>
+              <input
+                className="form-input"
+                value={field.image || ''}
+                onChange={(e) => {
+                  const fields = [...(data.customFields || [])];
+                  fields[idx] = { ...fields[idx], image: e.target.value };
+                  setData((p) => ({ ...p, customFields: fields }));
+                }}
+                placeholder="이미지 URL"
+              />
+            </div>
+            <button className="btn btn-sm btn-danger" onClick={() => {
+              setData((p) => ({
+                ...p,
+                customFields: (p.customFields || []).filter((_, i) => i !== idx),
+              }));
+            }}>✕ 삭제</button>
           </div>
-          <button className="btn btn-sm btn-danger" onClick={() => {
-            setData((p) => ({
-              ...p,
-              customFields: (p.customFields || []).filter((_, i) => i !== idx),
-            }));
-          }}>✕</button>
         </div>
       ))}
       <button className="btn btn-sm btn-ghost" onClick={() => {

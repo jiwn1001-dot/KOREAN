@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { getDataEntry, getAllImages } from '@/lib/store';
 import { isAdmin } from '@/lib/auth';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function HistoryPage() {
   const [entry, setEntry] = useState(null);
@@ -78,7 +80,11 @@ export default function HistoryPage() {
       <div className="card card-glass">
         <div className="card-body">
           {content ? (
-            <div className="content-text">{content}</div>
+            <div className="content-text markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {content}
+              </ReactMarkdown>
+            </div>
           ) : (
             <div className="empty-state" style={{ padding: '40px' }}>
               <div className="empty-state-icon">📝</div>

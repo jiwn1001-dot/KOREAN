@@ -12,7 +12,7 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
   const [zoom, setZoom] = useState(1);
   const [saving, setSaving] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
-  const [tool, setTool] = useState('fill'); // 'fill' or 'erase'
+  const [tool, setTool] = useState('fill'); // 'fill', 'erase', or 'eyedropper'
 
   // Load the base map image and create boundary mask
   useEffect(() => {
@@ -217,6 +217,15 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
 
     if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) return;
 
+    if (tool === 'eyedropper') {
+      const ctx = canvas.getContext('2d');
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      const hex = '#' + ((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1);
+      setColor(hex);
+      setTool('fill');
+      return;
+    }
+
     if (tool === 'erase') {
       // Erase = fill with white
       floodFill(x, y, { r: 255, g: 255, b: 255 });
@@ -260,6 +269,13 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
               title="지우개"
             >
               🧹 지우기
+            </button>
+            <button
+              className={`btn btn-sm ${tool === 'eyedropper' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setTool('eyedropper')}
+              title="스포이드 (색 추출)"
+            >
+              💉 색 추출
             </button>
           </div>
 
@@ -365,7 +381,7 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
             display: loading ? 'none' : 'block',
             transform: `scale(${zoom})`,
             transformOrigin: 'top left',
-            cursor: editable ? (tool === 'fill' ? 'crosshair' : 'cell') : 'default',
+            cursor: editable ? (tool === 'eyedropper' ? 'copy' : (tool === 'fill' ? 'crosshair' : 'cell')) : 'default',
             imageRendering: zoom > 1.5 ? 'pixelated' : 'auto',
           }}
         />

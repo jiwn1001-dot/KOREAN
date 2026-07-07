@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { getCountry, getDataEntry, getAllImages } from '@/lib/store';
 import { canAccessCountry, isAdmin, getAuth } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function CountryPage() {
   const params = useParams();
@@ -194,15 +196,20 @@ export default function CountryPage() {
               </div>
               <div className="party-list">
                 {politicsData.parties.map((party, i) => (
-                  <div key={i} className="party-item">
+                  <div key={i} className="party-item" style={{ alignItems: 'flex-start' }}>
                     <span
                       className="party-color-dot"
-                      style={{ backgroundColor: partyColors[i % partyColors.length] }}
+                      style={{ backgroundColor: partyColors[i % partyColors.length], marginTop: '6px' }}
                     />
-                    <span className="party-name">{party.name}</span>
-                    <div className="party-stats">
-                      <div className="party-seats">{party.seats}석</div>
-                      <div>{party.supportRate}%</div>
+                    <div style={{ flex: 1 }}>
+                      <span className="party-name">{party.name}</span>
+                      <div className="party-stats">
+                        <div className="party-seats">{party.seats}석</div>
+                        <div>{party.supportRate}%</div>
+                      </div>
+                      {party.image && (
+                        <img src={party.image} alt={party.name} style={{ marginTop: '8px', maxHeight: '40px', borderRadius: '4px' }} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -247,16 +254,17 @@ export default function CountryPage() {
       {politicsData.customFields?.length > 0 && (
         <div className="content-section" style={{ marginTop: '20px' }}>
           <h3 className="content-section-title">📋 추가 정보</h3>
-          <table className="data-table">
-            <tbody>
-              {politicsData.customFields.map((field, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 600, width: '150px' }}>{field.label}</td>
-                  <td>{field.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {politicsData.customFields.map((field, i) => (
+              <div key={i} className="card stat-card" style={{ textAlign: 'left', padding: '16px' }}>
+                <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>{field.label}</div>
+                <div className="markdown-body" style={{ fontSize: '0.95rem' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{field.value}</ReactMarkdown>
+                </div>
+                {field.image && <img src={field.image} alt={field.label} style={{ marginTop: '12px', maxWidth: '100%', borderRadius: '8px' }} />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -299,16 +307,17 @@ export default function CountryPage() {
       {economyData.customFields?.length > 0 && (
         <div className="content-section">
           <h3 className="content-section-title">📋 추가 경제 지표</h3>
-          <table className="data-table">
-            <tbody>
-              {economyData.customFields.map((field, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 600, width: '150px' }}>{field.label}</td>
-                  <td>{field.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {economyData.customFields.map((field, i) => (
+              <div key={i} className="card stat-card" style={{ textAlign: 'left', padding: '16px' }}>
+                <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>{field.label}</div>
+                <div className="markdown-body" style={{ fontSize: '0.95rem' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{field.value}</ReactMarkdown>
+                </div>
+                {field.image && <img src={field.image} alt={field.label} style={{ marginTop: '12px', maxWidth: '100%', borderRadius: '8px' }} />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -329,7 +338,11 @@ export default function CountryPage() {
       <div className="card card-glass">
         <div className="card-body">
           {catData.content ? (
-            <div className="content-text">{catData.content}</div>
+            <div className="content-text markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {catData.content}
+              </ReactMarkdown>
+            </div>
           ) : (
             <div className="empty-state" style={{ padding: '40px' }}>
               <div className="empty-state-icon">📝</div>
@@ -342,16 +355,17 @@ export default function CountryPage() {
       {catData.customFields?.length > 0 && (
         <div className="content-section" style={{ marginTop: '20px' }}>
           <h3 className="content-section-title">📋 추가 정보</h3>
-          <table className="data-table">
-            <tbody>
-              {catData.customFields.map((field, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 600, width: '150px' }}>{field.label}</td>
-                  <td>{field.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {catData.customFields.map((field, i) => (
+              <div key={i} className="card stat-card" style={{ textAlign: 'left', padding: '16px' }}>
+                <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>{field.label}</div>
+                <div className="markdown-body" style={{ fontSize: '0.95rem' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{field.value}</ReactMarkdown>
+                </div>
+                {field.image && <img src={field.image} alt={field.label} style={{ marginTop: '12px', maxWidth: '100%', borderRadius: '8px' }} />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

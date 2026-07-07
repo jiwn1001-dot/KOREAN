@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { getDataEntry, getAllImages } from '@/lib/store';
 import { isAdmin } from '@/lib/auth';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function GeographyPage() {
   const [entry, setEntry] = useState(null);
@@ -103,12 +105,19 @@ export default function GeographyPage() {
           ) : (
             <div className="geo-list">
               {cat.items.map((item, idx) => (
-                <div key={idx} className="geo-item">
-                  <span className="geo-item-icon">{cat.icon}</span>
-                  <div>
+                <div key={idx} className="geo-item" style={{ alignItems: 'flex-start' }}>
+                  <div className="geo-item-icon" style={{ marginTop: '4px' }}>{cat.icon}</div>
+                  <div style={{ flex: 1 }}>
                     <div className="geo-item-name">{item.name}</div>
                     {item.description && (
-                      <div className="geo-item-desc">{item.description}</div>
+                      <div className="geo-item-desc markdown-body">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {item.description}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                    {item.image && (
+                      <img src={item.image} alt={item.name} style={{ marginTop: '12px', maxWidth: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
                     )}
                   </div>
                 </div>
