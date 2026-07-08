@@ -197,45 +197,58 @@ export default function CountryPage() {
           )}
         </div>
 
-        {/* Parties */}
-        <div className="content-section">
-          <h3 className="content-section-title">🗳️ 정당 현황</h3>
-          {politicsData.parties?.length > 0 ? (
-            <>
-              <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
-                <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>의석 분포</h4>
-                <ParliamentArch parties={politicsData.parties} />
+        {/* Parliaments */}
+        {(() => {
+          const parliaments = politicsData.parliaments || (politicsData.parties ? [{ name: '의회', parties: politicsData.parties }] : []);
+          if (parliaments.length === 0) {
+            return (
+              <div className="content-section">
+                <h3 className="content-section-title">🏛️ 의회 현황</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>등록된 의회/정당 정보 없음</p>
               </div>
-              <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
-                <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>지지율</h4>
-                <SupportPieChart parties={politicsData.parties} />
-              </div>
-
-              <div className="party-list">
-                {politicsData.parties.map((party, i) => (
-                  <div key={i} className="party-item" style={{ alignItems: 'flex-start' }}>
-                    <span
-                      className="party-color-dot"
-                      style={{ backgroundColor: party.color || 'var(--accent)', marginTop: '6px' }}
-                    />
-                    <div style={{ flex: 1 }}>
-                      <span className="party-name">{party.name}</span>
-                      <div className="party-stats">
-                        <div className="party-seats">{party.seats}석</div>
-                        <div>{party.supportRate}%</div>
-                      </div>
-                      {party.image && (
-                        <img src={party.image} alt={party.name} style={{ marginTop: '8px', maxHeight: '40px', borderRadius: '4px' }} />
-                      )}
-                    </div>
+            );
+          }
+          return parliaments.map((parl, pIdx) => (
+            <div key={pIdx} className="content-section" style={{ marginBottom: '32px' }}>
+              <h3 className="content-section-title">🏛️ {parl.name || '의회'} 현황</h3>
+              {parl.parties?.length > 0 ? (
+                <>
+                  <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+                    <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>의석 분포</h4>
+                    <ParliamentArch parties={parl.parties} />
                   </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>등록된 정당 정보 없음</p>
-          )}
-        </div>
+                  <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+                    <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>지지율</h4>
+                    <SupportPieChart parties={parl.parties} />
+                  </div>
+    
+                  <div className="party-list">
+                    {parl.parties.map((party, i) => (
+                      <div key={i} className="party-item" style={{ alignItems: 'flex-start' }}>
+                        <span
+                          className="party-color-dot"
+                          style={{ backgroundColor: party.color || 'var(--accent)', marginTop: '6px' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <span className="party-name">{party.name}</span>
+                          <div className="party-stats">
+                            <div className="party-seats">{party.seats}석</div>
+                            <div>{party.supportRate}%</div>
+                          </div>
+                          {party.image && (
+                            <img src={party.image} alt={party.name} style={{ marginTop: '8px', maxHeight: '40px', borderRadius: '4px' }} />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>등록된 정당 없음</p>
+              )}
+            </div>
+          ));
+        })()}
       </div>
 
       {/* Key Figures */}

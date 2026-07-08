@@ -749,104 +749,143 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Parties */}
+      {/* Parliaments */}
       <div className="admin-form-section">
         <h3 className="admin-form-title">
-          🗳️ 정당
-          <span className="badge badge-accent" style={{ marginLeft: '8px' }}>
-            {(politicsData.parties || []).length}개
-          </span>
+          🏛️ 의회 및 정당
         </h3>
-        {(politicsData.parties || []).map((party, idx) => (
-          <div key={idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">정당명</label>
-                <input
-                  className="form-input"
-                  value={party.name || ''}
-                  onChange={(e) => {
-                    const parties = [...politicsData.parties];
-                    parties[idx] = { ...parties[idx], name: e.target.value };
-                    setPoliticsData((p) => ({ ...p, parties }));
-                  }}
-                  placeholder="정당 이름"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">의석수</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  value={party.seats || 0}
-                  onChange={(e) => {
-                    const parties = [...politicsData.parties];
-                    parties[idx] = { ...parties[idx], seats: e.target.value };
-                    setPoliticsData((p) => ({ ...p, parties }));
-                  }}
-                  placeholder="0"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">지지율(%)</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  step="0.1"
-                  value={party.supportRate || 0}
-                  onChange={(e) => {
-                    const parties = [...politicsData.parties];
-                    parties[idx] = { ...parties[idx], supportRate: e.target.value };
-                    setPoliticsData((p) => ({ ...p, parties }));
-                  }}
-                  placeholder="0.0"
-                />
-              </div>
-              <div className="form-group" style={{ width: '80px' }}>
-                <label className="form-label">색상</label>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <input
-                    type="color"
-                    value={party.color || '#cccccc'}
-                    onChange={(e) => {
-                      const parties = [...politicsData.parties];
-                      parties[idx] = { ...parties[idx], color: e.target.value };
-                      setPoliticsData((p) => ({ ...p, parties }));
-                    }}
-                    style={{ width: '100%', height: '36px', padding: '0', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
-                  />
+        {(() => {
+          // Backward compatibility: If no parliaments exist, create one from existing parties or empty
+          const parliaments = politicsData.parliaments || (politicsData.parties ? [{ name: '의회', parties: politicsData.parties }] : []);
+          
+          return (
+            <div>
+              {parliaments.map((parl, pIdx) => (
+                <div key={pIdx} className="card" style={{ padding: '16px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, color: 'var(--accent)' }}>의회 이름:</h4>
+                    <input 
+                      className="form-input" 
+                      style={{ flex: 1 }} 
+                      value={parl.name || ''} 
+                      onChange={(e) => {
+                        const newParliaments = [...parliaments];
+                        newParliaments[pIdx] = { ...newParliaments[pIdx], name: e.target.value };
+                        setPoliticsData(p => ({ ...p, parliaments: newParliaments }));
+                      }} 
+                    />
+                    <button className="btn btn-sm btn-danger" onClick={() => {
+                      if (!confirm('이 의회를 삭제하시겠습니까?')) return;
+                      setPoliticsData(p => ({ ...p, parliaments: parliaments.filter((_, i) => i !== pIdx) }));
+                    }}>의회 삭제</button>
+                  </div>
+                  
+                  {/* Parties of this parliament */}
+                  {(parl.parties || []).map((party, idx) => (
+                    <div key={idx} className="card" style={{ padding: '12px', marginBottom: '12px', background: 'var(--bg-elevated)' }}>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label className="form-label">정당명</label>
+                          <input
+                            className="form-input"
+                            value={party.name || ''}
+                            onChange={(e) => {
+                              const newParliaments = [...parliaments];
+                              const newParties = [...newParliaments[pIdx].parties];
+                              newParties[idx] = { ...newParties[idx], name: e.target.value };
+                              newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParties };
+                              setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                            }}
+                            placeholder="정당 이름"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">의석수</label>
+                          <input
+                            className="form-input"
+                            type="number"
+                            value={party.seats || 0}
+                            onChange={(e) => {
+                              const newParliaments = [...parliaments];
+                              const newParties = [...newParliaments[pIdx].parties];
+                              newParties[idx] = { ...newParties[idx], seats: e.target.value };
+                              newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParties };
+                              setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                            }}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">지지율(%)</label>
+                          <input
+                            className="form-input"
+                            type="number"
+                            step="0.1"
+                            value={party.supportRate || 0}
+                            onChange={(e) => {
+                              const newParliaments = [...parliaments];
+                              const newParties = [...newParliaments[pIdx].parties];
+                              newParties[idx] = { ...newParties[idx], supportRate: e.target.value };
+                              newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParties };
+                              setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                            }}
+                          />
+                        </div>
+                        <div className="form-group" style={{ width: '80px' }}>
+                          <label className="form-label">색상</label>
+                          <input
+                            type="color"
+                            value={party.color || '#cccccc'}
+                            onChange={(e) => {
+                              const newParliaments = [...parliaments];
+                              const newParties = [...newParliaments[pIdx].parties];
+                              newParties[idx] = { ...newParties[idx], color: e.target.value };
+                              newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParties };
+                              setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                            }}
+                            style={{ width: '100%', height: '36px', padding: '0', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                          />
+                        </div>
+                      </div>
+                      <div className="form-row" style={{ alignItems: 'flex-end' }}>
+                        <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                          <label className="form-label">정당 로고 URL (선택)</label>
+                          <input
+                            className="form-input"
+                            value={party.image || ''}
+                            onChange={(e) => {
+                              const newParliaments = [...parliaments];
+                              const newParties = [...newParliaments[pIdx].parties];
+                              newParties[idx] = { ...newParties[idx], image: e.target.value };
+                              newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParties };
+                              setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                            }}
+                            placeholder="이미지 URL"
+                          />
+                        </div>
+                        <button className="btn btn-sm btn-danger" onClick={() => {
+                          const newParliaments = [...parliaments];
+                          newParliaments[pIdx] = { ...newParliaments[pIdx], parties: newParliaments[pIdx].parties.filter((_, i) => i !== idx) };
+                          setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                        }}>✕ 삭제</button>
+                      </div>
+                    </div>
+                  ))}
+                  <button className="btn btn-sm btn-ghost" onClick={() => {
+                    const newParliaments = [...parliaments];
+                    newParliaments[pIdx] = { ...newParliaments[pIdx], parties: [...(newParliaments[pIdx].parties || []), { name: '', seats: 0, supportRate: 0, color: '#cccccc' }] };
+                    setPoliticsData((p) => ({ ...p, parliaments: newParliaments }));
+                  }}>➕ 이 의회에 정당 추가</button>
                 </div>
-              </div>
-            </div>
-            <div className="form-row" style={{ alignItems: 'flex-end' }}>
-              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                <label className="form-label">정당 로고/이미지 URL (선택)</label>
-                <input
-                  className="form-input"
-                  value={party.image || ''}
-                  onChange={(e) => {
-                    const parties = [...politicsData.parties];
-                    parties[idx] = { ...parties[idx], image: e.target.value };
-                    setPoliticsData((p) => ({ ...p, parties }));
-                  }}
-                  placeholder="이미지 URL"
-                />
-              </div>
-              <button className="btn btn-sm btn-danger" onClick={() => {
-                setPoliticsData((p) => ({
+              ))}
+              <button className="btn btn-sm btn-ghost" onClick={() => {
+                setPoliticsData(p => ({
                   ...p,
-                  parties: p.parties.filter((_, i) => i !== idx),
+                  parliaments: [...parliaments, { name: `제${parliaments.length + 1}의회`, parties: [] }]
                 }));
-              }}>✕ 삭제</button>
+              }}>🏛️ 새 의회 추가</button>
             </div>
-          </div>
-        ))}
-        <button className="btn btn-sm btn-ghost" onClick={() => {
-          setPoliticsData((p) => ({
-            ...p,
-            parties: [...(p.parties || []), { name: '', seats: 0, supportRate: 0, color: '#cccccc' }],
-          }));
-        }}>➕ 정당 추가</button>
+          );
+        })()}
       </div>
 
       {/* Key Figures */}
