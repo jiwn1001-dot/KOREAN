@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch } from '@/lib/store';
+import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource } from '@/lib/store';
 import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
@@ -22,6 +22,8 @@ export default function CountryPage() {
   const [images, setImages] = useState({});
   const [researches, setResearches] = useState([]);
   const [resources, setResources] = useState([]);
+  const [weaponBlueprints, setWeaponBlueprints] = useState([]);
+  const [militaryQueue, setMilitaryQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [admin, setAdmin] = useState(false);
@@ -77,10 +79,18 @@ export default function CountryPage() {
       setResearches(res || []);
       const rsc = await getResources(countryId);
       setResources(rsc || []);
+      const settings = await getDataEntry('game_settings', null);
+      if (settings && settings.data) {
+        setWeaponBlueprints(settings.data.weaponBlueprints || []);
+      }
+      const qEntry = await getDataEntry('military_queue', countryId);
+      if (qEntry && qEntry.data) {
+        setMilitaryQueue(qEntry.data.queue || []);
+      }
       const clist = await getCountries();
       setCountries(clist || []);
     } catch (err) {
-      console.error('Failed to load researches or resources', err);
+      console.error('Failed to load related data:', err);
     }
     
     try {
@@ -664,10 +674,65 @@ export default function CountryPage() {
         </div>
 
         <div className="content-section" style={{ marginTop: '30px' }}>
-          <h3 className="content-section-title">🏭 무기 생산 예약</h3>
+          <h3 className="content-section-title">🏭 무기 생산 대기열 (Queue)</h3>
           <div className="card" style={{ padding: '20px' }}>
-            <p style={{ color: 'var(--text-muted)' }}>연구가 완료된 무기 청사진을 기반으로, 매 턴 할당된 공업력을 소모하여 무기를 자동 생산합니다.</p>
-            <button className="btn btn-secondary" onClick={() => alert('생산 예약 UI 구현 중...')}>➕ 새로운 생산 라인 추가</button>
+            <p style={{ color: 'var(--text-muted)' }}>연구가 완료된 무기를 대기열에 등록하면 매 턴 배정된 공업력과 자원을 소모해 자동 생산됩니다.</p>
+            
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', marginTop: '12px' }}>
+              <select id="newQueueBp" className="form-select" style={{ flex: 1 }}>
+                <option value="">-- 생산할 무기 선택 --</option>
+                {weaponBlueprints.filter(bp => researches.some(r => r.status === 'completed' && r.name === bp.techCategory)).map(bp => (
+                  <option key={bp.id} value={bp.id}>{bp.name} (요구: {bp.facility === 'heavy' ? '중공업단지' : '조선소'} {bp.industryCost})</option>
+                ))}
+              </select>
+              <input type="number" id="newQueueTarget" className="form-input" placeholder="목표량" style={{ width: '100px' }} />
+              <button className="btn btn-secondary" onClick={async () => {
+                const bpId = document.getElementById('newQueueBp').value;
+                const target = parseInt(document.getElementById('newQueueTarget').value);
+                if (!bpId || !target || target <= 0) return alert('올바른 값을 입력하세요.');
+                
+                const newQueue = [...militaryQueue, { bpId, target, progress: 0 }];
+                await upsertDataEntry('military_queue', countryId, { queue: newQueue });
+                setMilitaryQueue(newQueue);
+                document.getElementById('newQueueTarget').value = '';
+                alert('대기열에 추가되었습니다.');
+              }}>➕ 대기열 추가</button>
+            </div>
+
+            {militaryQueue.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>대기열이 비어 있습니다.</p>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>순위</th>
+                    <th>무기명</th>
+                    <th>진행도 / 목표량</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {militaryQueue.map((q, idx) => {
+                    const bp = weaponBlueprints.find(b => b.id === q.bpId) || {};
+                    return (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td>{bp.name || '알 수 없는 무기'}</td>
+                        <td>{q.progress || 0} / {q.target}</td>
+                        <td>
+                          <button className="btn btn-sm btn-danger" onClick={async () => {
+                            if (!confirm('대기열에서 삭제하시겠습니까?')) return;
+                            const newQ = militaryQueue.filter((_, i) => i !== idx);
+                            await upsertDataEntry('military_queue', countryId, { queue: newQ });
+                            setMilitaryQueue(newQ);
+                          }}>삭제</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
@@ -675,8 +740,28 @@ export default function CountryPage() {
           <div className="content-section" style={{ marginTop: '30px' }}>
             <h3 className="content-section-title">⚗️ 특수 화학 기술 (석탄 → 석유)</h3>
             <div className="card" style={{ padding: '20px', border: '1px solid var(--accent)' }}>
-              <p>석탄 4개를 소모하여 석유 1개를 생산할 수 있습니다.</p>
-              <button className="btn btn-primary" onClick={() => alert('변환 로직 구현 중...')}>변환하기</button>
+              <p>석탄 4개를 소모하여 석유 1개를 즉시 생산할 수 있습니다.</p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
+                <input type="number" id="coalToOilAmount" className="form-input" placeholder="생산할 석유 수량" style={{ width: '150px' }} />
+                <button className="btn btn-primary" onClick={async () => {
+                  const amt = parseInt(document.getElementById('coalToOilAmount').value) || 0;
+                  if (amt <= 0) return alert('올바른 수량을 입력하세요.');
+                  
+                  const coalRes = resources.find(r => r.resource_type === 'coal');
+                  const coalAmount = coalRes ? Number(coalRes.amount) : 0;
+                  if (coalAmount < amt * 4) return alert(`석탄이 부족합니다. (필요: ${amt * 4}, 현재: ${coalAmount})`);
+                  
+                  if (!confirm(`석탄 ${amt * 4}개를 소모하여 석유 ${amt}개를 생산하시겠습니까?`)) return;
+                  
+                  await upsertResource(countryId, 'coal', coalAmount - (amt * 4));
+                  const oilRes = resources.find(r => r.resource_type === 'oil');
+                  const oilAmount = oilRes ? Number(oilRes.amount) : 0;
+                  await upsertResource(countryId, 'oil', oilAmount + amt);
+                  
+                  alert('변환되었습니다.');
+                  loadAllData();
+                }}>변환하기</button>
+              </div>
             </div>
           </div>
         )}

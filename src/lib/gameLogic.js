@@ -172,8 +172,88 @@ export async function processTurnEnd(newTurn) {
         data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 50000);
         data.lightIndustryCoins = Math.floor((nonBudget * (alloc.lightIndustry / 100)) / 50000);
         
+        // 무기 생산 로직 (큐 처리)
+        if (entry.country_id) {
+          let availHeavy = data.heavyIndustryComplexes || 0;
+          let availShipyard = data.shipyards || 0;
+          const weaponBlueprints = settingEntry?.data?.weaponBlueprints || [];
+          
+          const { data: qEntry } = await supabase.from('data_entries').select('id, data').eq('category', 'military_queue').eq('country_id', entry.country_id).single();
+          if (qEntry && qEntry.data && qEntry.data.queue && qEntry.data.queue.length > 0) {
+            let queue = qEntry.data.queue;
+            let updated = false;
+            
+            const { data: cRes } = await supabase.from('resources').select('*').eq('country_id', entry.country_id);
+            const rMap = {};
+            if (cRes) {
+              cRes.forEach(r => {
+                if (r.resource_type === 'weapon') rMap[`weapon_${r.name}`] = r;
+                else rMap[r.resource_type] = r;
+              });
+            }
+            
+            for (let i = 0; i < queue.length; i++) {
+              let qItem = queue[i];
+              if (qItem.progress >= qItem.target) continue;
+              
+              const bp = weaponBlueprints.find(b => b.id === qItem.bpId);
+              if (!bp) continue;
+              
+              const reqFacility = bp.facility === 'heavy' ? availHeavy : availShipyard;
+              const reqAmount = bp.industryCost || 1;
+              
+              let maxProd = Math.floor(reqFacility / reqAmount);
+              if (maxProd <= 0) continue;
+              
+              if (bp.resources) {
+                for (const [resType, resReq] of Object.entries(bp.resources)) {
+                  const currAmt = rMap[resType] ? Number(rMap[resType].amount) : 0;
+                  const maxByRes = Math.floor(currAmt / resReq);
+                  if (maxByRes < maxProd) maxProd = maxByRes;
+                }
+              }
+              
+              const needed = qItem.target - qItem.progress;
+              if (maxProd > needed) maxProd = needed;
+              
+              if (maxProd > 0) {
+                qItem.progress += maxProd;
+                if (bp.facility === 'heavy') availHeavy -= maxProd * reqAmount;
+                else availShipyard -= maxProd * reqAmount;
+                
+                if (bp.resources) {
+                  for (const [resType, resReq] of Object.entries(bp.resources)) {
+                    rMap[resType].amount = Number(rMap[resType].amount) - (maxProd * resReq);
+                    await supabase.from('resources').update({ amount: rMap[resType].amount }).eq('id', rMap[resType].id);
+                  }
+                }
+                
+                const wpKey = `weapon_${bp.name}`;
+                if (rMap[wpKey]) {
+                  rMap[wpKey].amount = Number(rMap[wpKey].amount) + maxProd;
+                  await supabase.from('resources').update({ amount: rMap[wpKey].amount }).eq('id', rMap[wpKey].id);
+                } else {
+                  const { data: newW } = await supabase.from('resources').insert({
+                    country_id: entry.country_id,
+                    resource_type: 'weapon',
+                    name: bp.name,
+                    amount: maxProd,
+                    production_per_turn: 0
+                  }).select().single();
+                  if (newW) rMap[wpKey] = newW;
+                }
+                updated = true;
+              }
+            }
+            
+            if (updated) {
+              queue = queue.filter(q => q.progress < q.target);
+              await supabase.from('data_entries').update({ data: { queue } }).eq('id', qEntry.id);
+            }
+          }
+        }
+        
         // 3-4. 이전 턴에 지어둔 단지/조선소 초기화 (매년 새로 배정해야 하므로)
-        // 무기 생산 로직은 이 초기화 직전에 실행되어야 함. (무기 생산 기능은 추후 추가될 예정이나, 지금은 일단 0으로 초기화)
         data.heavyIndustryComplexes = 0;
         data.shipyards = 0;
 
