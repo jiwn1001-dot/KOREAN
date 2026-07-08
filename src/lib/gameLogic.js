@@ -67,11 +67,19 @@ export async function processTurnEnd(newTurn) {
 
     // 국가별 완료된 기술 목록
     const { data: completedResearches } = await supabase.from('researches').select('country_id, name, level').eq('status', 'completed');
-    const safeCountries = new Set();
+    const safeEras = {};
+    
     if (completedResearches) {
       completedResearches.forEach(r => {
         if (effectMap.prevent_fail.has(`${r.name}_${r.level}`)) {
-          safeCountries.add(r.country_id);
+          const tree = techTrees.find(t => t.name === r.name);
+          if (tree) {
+            const lvl = tree.levels.find(l => l.level === r.level);
+            if (lvl && lvl.era) {
+              if (!safeEras[r.country_id]) safeEras[r.country_id] = new Set();
+              safeEras[r.country_id].add(lvl.era);
+            }
+          }
         }
       });
     }
@@ -79,7 +87,7 @@ export async function processTurnEnd(newTurn) {
     // 1. 진행 중인 연구 remaining_turns 감소 및 완료/실패 판정
     const { data: activeResearches, error: resError } = await supabase
       .from('researches')
-      .select('id, country_id, remaining_turns')
+      .select('id, country_id, remaining_turns, name, level')
       .eq('status', 'in_progress');
 
     if (!resError && activeResearches) {
@@ -89,7 +97,14 @@ export async function processTurnEnd(newTurn) {
         
         if (newRemaining === 0) {
           // 실패 확률 계산 (50%)
-          const isSafe = safeCountries.has(r.country_id);
+          let currentEra = null;
+          const tree = techTrees.find(t => t.name === r.name);
+          if (tree) {
+            const lvl = tree.levels.find(l => l.level === r.level);
+            if (lvl) currentEra = lvl.era;
+          }
+          
+          const isSafe = currentEra && safeEras[r.country_id]?.has(currentEra);
           if (!isSafe && Math.random() < 0.5) {
             status = 'failed';
           } else {

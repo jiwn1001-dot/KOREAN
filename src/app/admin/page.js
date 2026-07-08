@@ -1209,7 +1209,8 @@ export default function AdminPage() {
   );
 
   const renderResearch = () => {
-    const defaultCategories = ['육군', '해군', '공군', '산업', '정치', '우주'];
+    const defaultCategories = ['보병', '기갑/차량', '야포', '해군', '공군', '공학', '산업', '전자기술', '화학기술'];
+    const eras = ['선사시대', '고대시대', '중세시대', '근세시대', '대혁명기', '빅토리안시대', '1차대전기', '2차대전기', '냉전기', '현대', '근미래'];
     
     return (
       <div className="slide-up">
@@ -1237,7 +1238,7 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {tree.levels.map((lvl, lIdx) => (
                     <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
-                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
+                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>} {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
                     </span>
                   ))}
                 </div>
@@ -1245,6 +1246,9 @@ export default function AdminPage() {
                 <div className="form-inline">
                   <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
                   <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
+                  <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
+                    {eras.map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
                   <select id={`levelEffect_${tree.id}`} className="form-select" style={{ width: '150px' }}>
                     <option value="none">특수효과 없음</option>
                     <option value="prevent_fail">연구실패 방지</option>
@@ -1260,14 +1264,16 @@ export default function AdminPage() {
                     const name = document.getElementById(`levelName_${tree.id}`).value;
                     const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
                     const effect = document.getElementById(`levelEffect_${tree.id}`).value;
+                    const era = document.getElementById(`levelEra_${tree.id}`).value;
                     if (turns > 0 && name) {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect });
+                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
                       saveTechTrees(newTrees);
                       document.getElementById(`levelName_${tree.id}`).value = '';
                       document.getElementById(`levelTurn_${tree.id}`).value = '';
                       document.getElementById(`levelEffect_${tree.id}`).value = 'none';
+                      document.getElementById(`levelEra_${tree.id}`).value = eras[0];
                     } else {
                       showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
