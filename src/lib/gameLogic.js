@@ -303,7 +303,8 @@ export async function processTurnEnd(newTurn) {
           if (cRes2) {
             const foodRsc = cRes2.find(r => r.resource_type === 'food');
             const prevFood = foodRsc ? Number(foodRsc.amount) : 0;
-            const newFoodAmount = prevFood + foodAmount - population;
+            const foodMult = data.food_consumption_mult !== undefined ? data.food_consumption_mult : 1.0;
+            const newFoodAmount = prevFood + foodAmount - Math.floor(population * foodMult);
             if (foodRsc) {
               await supabase.from('resources').update({ amount: newFoodAmount }).eq('id', foodRsc.id);
             } else {
@@ -312,7 +313,8 @@ export async function processTurnEnd(newTurn) {
 
             const cgRsc = cRes2.find(r => r.resource_type === 'consumer_goods');
             const prevCg = cgRsc ? Number(cgRsc.amount) : 0;
-            const newCgAmount = prevCg + cgAmount - population;
+            const cgMult = data.cg_consumption_mult !== undefined ? data.cg_consumption_mult : 1.0;
+            const newCgAmount = prevCg + cgAmount - Math.floor(population * cgMult);
             if (cgRsc) {
               await supabase.from('resources').update({ amount: newCgAmount }).eq('id', cgRsc.id);
             } else {
@@ -450,4 +452,109 @@ export async function transferTech(targetCountryId, techName, techLevel, isAdmin
     console.error(err);
     return { success: false, error: err.message };
   }
+}
+
+
+export async function transferItem(senderId, receiverId, category, itemKey, amount) {
+  if (!senderId || !receiverId || !category || !itemKey || amount <= 0) return { success: false, error: '유효하지 않은 요청입니다.' };
+  if (senderId === receiverId) return { success: false, error: '자기 자신에게 보낼 수 없습니다.' };
+
+  try {
+    if (category === 'coin') {
+      const { data: sData } = await supabase.from('data_entries').select('data').eq('category', `economy_${senderId}`).eq('country_id', senderId).single();
+      const { data: rData } = await supabase.from('data_entries').select('data').eq('category', `economy_${receiverId}`).eq('country_id', receiverId).single();
+      
+      const senderEcon = sData?.data || {};
+      const receiverEcon = rData?.data || {};
+      
+      if ((senderEcon[itemKey] || 0) < amount) return { success: false, error: '코인이 부족합니다.' };
+      
+      senderEcon[itemKey] = (senderEcon[itemKey] || 0) - amount;
+      receiverEcon[itemKey] = (receiverEcon[itemKey] || 0) + amount;
+      
+      await supabase.from('data_entries').upsert({ category: `economy_${senderId}`, country_id: senderId, data: senderEcon }, { onConflict: 'country_id,category' });
+      await supabase.from('data_entries').upsert({ category: `economy_${receiverId}`, country_id: receiverId, data: receiverEcon }, { onConflict: 'country_id,category' });
+      
+      return { success: true };
+    } else if (category === 'resource' || category === 'weapon') {
+      let queryType = category === 'weapon' ? 'weapon' : itemKey;
+      let q = supabase.from('resources').select('*').eq('country_id', senderId).eq('resource_type', queryType);
+      if (category === 'weapon') q = q.eq('name', itemKey);
+      
+      const { data: sRes } = await q.single();
+      if (!sRes || Number(sRes.amount) < amount) return { success: false, error: '보유량이 부족합니다.' };
+      
+      let rq = supabase.from('resources').select('*').eq('country_id', receiverId).eq('resource_type', queryType);
+      if (category === 'weapon') rq = rq.eq('name', itemKey);
+      
+      const { data: rRes } = await rq.single();
+      
+      const newSenderAmt = Number(sRes.amount) - amount;
+      await supabase.from('resources').update({ amount: newSenderAmt }).eq('id', sRes.id);
+      
+      if (rRes) {
+        await supabase.from('resources').update({ amount: Number(rRes.amount) + amount }).eq('id', rRes.id);
+      } else {
+        const ins = { country_id: receiverId, resource_type: queryType, amount };
+        if (category === 'weapon') ins.name = itemKey;
+        await supabase.from('resources').insert(ins);
+      }
+      return { success: true };
+    }
+    return { success: false, error: '잘못된 카테고리입니다.' };
+  } catch (err) {
+    console.error(err);
+    return { success: false, error: '오류가 발생했습니다.' };
+  }
+}
+
+
+export async function transferItems(fromCountryId, toCountryId, itemType, itemKey, amount) {
+  if (amount <= 0) return { success: false, message: '수량은 1 이상이어야 합니다.' };
+  
+  if (itemType === 'resource' || itemType === 'weapon') {
+    let query = supabase.from('resources').select('*').eq('country_id', fromCountryId);
+    if (itemType === 'weapon') query = query.eq('resource_type', 'weapon').eq('name', itemKey);
+    else query = query.eq('resource_type', itemKey);
+    const { data: senderRes } = await query.single();
+    
+    if (!senderRes || senderRes.amount < amount) {
+      return { success: false, message: '보낼 물자가 부족합니다.' };
+    }
+    
+    await supabase.from('resources').update({ amount: senderRes.amount - amount }).eq('id', senderRes.id);
+    
+    let rQuery = supabase.from('resources').select('*').eq('country_id', toCountryId);
+    if (itemType === 'weapon') rQuery = rQuery.eq('resource_type', 'weapon').eq('name', itemKey);
+    else rQuery = rQuery.eq('resource_type', itemKey);
+    const { data: receiverRes } = await rQuery.single();
+    
+    if (receiverRes) {
+      await supabase.from('resources').update({ amount: receiverRes.amount + amount }).eq('id', receiverRes.id);
+    } else {
+      await supabase.from('resources').insert({
+        country_id: toCountryId,
+        resource_type: itemType === 'weapon' ? 'weapon' : itemKey,
+        amount: amount,
+        production_per_turn: 0,
+        name: itemType === 'weapon' ? itemKey : null
+      });
+    }
+  } else if (itemType === 'coin') {
+    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', fromCountryId).single();
+    if (!senderData || !senderData.data[itemKey] || senderData.data[itemKey] < amount) {
+      return { success: false, message: '보낼 코인이 부족합니다.' };
+    }
+    
+    const { data: receiverData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', toCountryId).single();
+    if (!receiverData) return { success: false, message: '수신국 데이터를 찾을 수 없습니다.' };
+    
+    senderData.data[itemKey] -= amount;
+    receiverData.data[itemKey] = (receiverData.data[itemKey] || 0) + amount;
+    
+    await supabase.from('data_entries').update({ data: senderData.data }).eq('id', senderData.id);
+    await supabase.from('data_entries').update({ data: receiverData.data }).eq('id', receiverData.id);
+  }
+  
+  return { success: true, message: '성공적으로 전송되었습니다.' };
 }
