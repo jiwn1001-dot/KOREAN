@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch } from '@/lib/store';
+import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch } from '@/lib/store';
 import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
@@ -462,6 +462,14 @@ export default function CountryPage() {
                     {r.status === 'failed' && <span className="badge" style={{ background: 'rgba(248,113,113,0.1)', color: 'var(--error)' }}>실패함</span>}
                     {r.status === 'in_progress' && <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>진행중 ({r.remaining_turns}턴 남음)</span>}
                     {r.status === 'queued' && <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>대기중 ({r.required_turns}턴 필요)</span>}
+                    {(r.status === 'in_progress' || r.status === 'queued') && (
+                      <button className="btn btn-sm btn-danger" style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.8rem' }} onClick={async () => {
+                        if (!confirm(`'${r.name}' 연구를 취소하시겠습니까?`)) return;
+                        await deleteResearch(r.id);
+                        alert('연구가 취소되었습니다.');
+                        loadAllData();
+                      }}>취소</button>
+                    )}
                   </div>
                 </div>
                 
@@ -581,6 +589,7 @@ export default function CountryPage() {
       rubber: { label: '고무', icon: '🛞' },
       sulfur: { label: '유황', icon: '🔥' },
       food: { label: '식료품', icon: '🍞' },
+      consumer_goods: { label: '소비재', icon: '👕' },
     };
 
     return (

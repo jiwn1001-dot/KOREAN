@@ -1296,7 +1296,7 @@ export default function AdminPage() {
       </div>
 
       <div className="card-grid card-grid-3">
-        {weaponBlueprints.map((bp, idx) => (
+        {(weaponBlueprints || []).map((bp, idx) => (
           <div key={bp.id} className="card" style={{ padding: '16px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: 'var(--accent)' }}>{bp.name}</h4>
             <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
@@ -1305,17 +1305,17 @@ export default function AdminPage() {
               <div>
                 <strong>필요 자원:</strong> 
                 {Object.keys(bp.resources || {}).length > 0 
-                  ? Object.entries(bp.resources).map(([k, v]) => ` ${k}(${v})`).join(',')
+                  ? Object.entries(bp.resources || {}).map(([k, v]) => ` ${k}(${v})`).join(',')
                   : ' 없음'}
               </div>
             </div>
             <button className="btn btn-sm btn-danger" onClick={() => {
               if(!confirm('정말 삭제하시겠습니까?')) return;
-              saveGameSettings({ weaponBlueprints: weaponBlueprints.filter((_, i) => i !== idx) });
+              saveGameSettings({ weaponBlueprints: (weaponBlueprints || []).filter((_, i) => i !== idx) });
             }}>삭제</button>
           </div>
         ))}
-        {weaponBlueprints.length === 0 && <p>등록된 청사진이 없습니다.</p>}
+        {!(weaponBlueprints && weaponBlueprints.length > 0) && <p>등록된 청사진이 없습니다.</p>}
       </div>
     </div>
   );
