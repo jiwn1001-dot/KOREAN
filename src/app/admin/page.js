@@ -1311,10 +1311,10 @@ export default function AdminPage() {
             <label>무기명 (기술명과 동일해야 함)</label>
             <input type="text" id="newBpName" className="form-input" list="bpNameOptions" placeholder="직접 입력하거나 목록에서 검색/선택" />
             <datalist id="bpNameOptions">
-              {(Array.isArray(techTrees) ? techTrees : []).map(tree => 
+              {(Array.isArray(techTrees) ? techTrees : []).flatMap(tree => 
                 (Array.isArray(tree.levels) ? tree.levels : []).map(lvl => {
                   const val = lvl.name || `${tree.name} ${lvl.level}단계`;
-                  return <option key={`${tree.name}_${lvl.level}`} value={val} />;
+                  return <option key={`${tree.name}_${lvl.level}`} value={val}>{val}</option>;
                 })
               )}
             </datalist>
