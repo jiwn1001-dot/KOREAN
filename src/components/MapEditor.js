@@ -255,6 +255,40 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
     setSaving(false);
   };
 
+  const handleBaseUploadChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target.result;
+      if (onBaseMapUpload) {
+        onBaseMapUpload(dataUrl);
+      } else {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          originalImageRef.current = img;
+          initCanvas(img);
+        };
+        img.src = dataUrl;
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // Reset input
+  };
+
+  const downloadMap = () => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'colored_map.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const zoomIn = () => setZoom((z) => Math.min(z + 0.2, 3));
   const zoomOut = () => setZoom((z) => Math.max(z - 0.2, 0.3));
   const zoomReset = () => setZoom(1);
