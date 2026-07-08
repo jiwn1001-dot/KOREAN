@@ -1204,7 +1204,7 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {tree.levels.map((lvl, lIdx) => (
                     <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
-                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns})
+                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
                     </span>
                   ))}
                 </div>
@@ -1212,16 +1212,28 @@ export default function AdminPage() {
                 <div className="form-inline">
                   <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
                   <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
+                  <select id={`levelEffect_${tree.id}`} className="form-select" style={{ width: '150px' }}>
+                    <option value="none">특수효과 없음</option>
+                    <option value="prevent_fail">연구실패 방지</option>
+                    <option value="research_speed">연구시간 50% 감소</option>
+                    <option value="unlock_special">특수유닛 해금</option>
+                    <option value="agri_boost">농수산 생산 10% 증가</option>
+                    <option value="heavy_boost">중공업 생산 10% 증가</option>
+                    <option value="light_boost">경공업 생산 10% 증가</option>
+                    <option value="mining_boost">자원 생산 10% 증가</option>
+                  </select>
                   <button className="btn btn-sm btn-secondary" onClick={() => {
                     const name = document.getElementById(`levelName_${tree.id}`).value;
                     const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
+                    const effect = document.getElementById(`levelEffect_${tree.id}`).value;
                     if (turns > 0 && name) {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, name, turns });
+                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect });
                       saveTechTrees(newTrees);
                       document.getElementById(`levelName_${tree.id}`).value = '';
                       document.getElementById(`levelTurn_${tree.id}`).value = '';
+                      document.getElementById(`levelEffect_${tree.id}`).value = 'none';
                     } else {
                       showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
@@ -1284,8 +1296,8 @@ export default function AdminPage() {
                   // 현재 국가가 이 기술에 대해 가진 연구 기록 필터링
                   const countryResearches = researches.filter(r => r.name === tree.name);
                   
-                  // 가장 높은 단계의 진행중/대기중 연구 확인
-                  const activeResearch = countryResearches.find(r => r.status === 'in_progress' || r.status === 'queued');
+                  // 가장 높은 단계의 진행중/대기중/실패한 연구 확인
+                  const activeResearch = countryResearches.find(r => r.status === 'in_progress' || r.status === 'queued' || r.status === 'failed');
                   
                   // 완료된 연구 중 가장 높은 단계 확인
                   const completedResearches = countryResearches.filter(r => r.status === 'completed');
@@ -1308,23 +1320,32 @@ export default function AdminPage() {
                       </div>
 
                       {activeResearch ? (
-                        <div style={{ padding: '12px', background: 'var(--bg-glass)', borderRadius: '8px' }}>
+                        <div style={{ padding: '12px', background: activeResearch.status === 'failed' ? 'rgba(248,113,113,0.1)' : 'var(--bg-glass)', border: activeResearch.status === 'failed' ? '1px solid var(--error)' : 'none', borderRadius: '8px' }}>
                           <div style={{ marginBottom: '8px' }}>
-                            <strong>[진행 중] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> (남은 턴: {activeResearch.remaining_turns})
+                            <strong>[{activeResearch.status === 'failed' ? '실패함' : '진행 중'}] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
+                            {activeResearch.status !== 'failed' && ` (남은 턴: ${activeResearch.remaining_turns})`}
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <select className="form-select" value={activeResearch.status} onChange={async (e) => {
-                              await updateResearch(activeResearch.id, { status: e.target.value });
-                              loadResearches(selectedCountryId);
-                            }} style={{ padding: '4px', height: 'auto', flex: 1 }}>
-                              <option value="queued">대기중</option>
-                              <option value="in_progress">진행중</option>
-                              <option value="completed">강제 완료</option>
-                            </select>
+                            {activeResearch.status === 'failed' ? (
+                              <button className="btn btn-primary" style={{ flex: 1 }} onClick={async () => {
+                                await updateResearch(activeResearch.id, { status: 'in_progress', remaining_turns: tree.levels[activeResearch.level - 1]?.turns || 5 });
+                                loadResearches(selectedCountryId);
+                                showToast('연구를 재시작합니다.');
+                              }}>🔄 재시작 (턴 초기화)</button>
+                            ) : (
+                              <select className="form-select" value={activeResearch.status} onChange={async (e) => {
+                                await updateResearch(activeResearch.id, { status: e.target.value });
+                                loadResearches(selectedCountryId);
+                              }} style={{ padding: '4px', height: 'auto', flex: 1 }}>
+                                <option value="queued">대기중</option>
+                                <option value="in_progress">진행중</option>
+                                <option value="completed">강제 완료</option>
+                              </select>
+                            )}
                             <button className="btn btn-sm btn-danger" onClick={async () => {
                               await deleteResearch(activeResearch.id);
                               loadResearches(selectedCountryId);
-                            }}>취소</button>
+                            }}>취소/삭제</button>
                           </div>
                         </div>
                       ) : (
@@ -1354,16 +1375,52 @@ export default function AdminPage() {
                       )}
                       
                       {/* 이전 기록 삭제 등 관리 기능 */}
-                      {highestCompletedLevel > 0 && !activeResearch && (
-                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
-                          <button className="btn btn-sm btn-ghost" onClick={async () => {
-                            if(!confirm('가장 최근에 완료된 연구 단계를 취소하시겠습니까?')) return;
-                            const target = completedResearches.find(r => r.level === highestCompletedLevel);
-                            if(target) {
-                              await deleteResearch(target.id);
-                              loadResearches(selectedCountryId);
-                            }
-                          }}>이전 단계 완료 취소</button>
+                      {highestCompletedLevel > 0 && (
+                        <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select id={`techSendTarget_${tree.id}`} className="form-select" style={{ flex: 1 }}>
+                              <option value="">-- 기술을 제공할 국가 선택 --</option>
+                              {countries.filter(c => c.id !== selectedCountryId).map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                            <button className="btn btn-sm btn-secondary" onClick={async () => {
+                              const targetCountryId = document.getElementById(`techSendTarget_${tree.id}`).value;
+                              if (!targetCountryId) return showToast('제공할 국가를 선택하세요.', 'error');
+                              
+                              if (!confirm(`정말 Lv.${highestCompletedLevel} 기술을 제공하시겠습니까?`)) return;
+                              
+                              // 대상 국가에 해당 기술이 이미 더 높은 레벨로 있는지 확인
+                              const { data: targetResearches } = await supabase.from('researches').select('level').eq('country_id', targetCountryId).eq('name', tree.name).eq('status', 'completed');
+                              const targetMaxLevel = targetResearches && targetResearches.length > 0 ? Math.max(...targetResearches.map(r => r.level)) : 0;
+                              
+                              if (targetMaxLevel >= highestCompletedLevel) {
+                                return showToast('상대 국가가 이미 같거나 더 높은 단계의 기술을 보유하고 있습니다.', 'error');
+                              }
+                              
+                              await createResearch({
+                                country_id: targetCountryId,
+                                category: tree.category,
+                                name: tree.name,
+                                level: highestCompletedLevel,
+                                required_turns: 0,
+                                remaining_turns: 0,
+                                status: 'completed',
+                              });
+                              showToast('기술 제공이 완료되었습니다.');
+                            }}>🎁 기술 제공하기</button>
+                            
+                            {!activeResearch && (
+                              <button className="btn btn-sm btn-ghost" onClick={async () => {
+                                if(!confirm('가장 최근에 완료된 연구 단계를 취소하시겠습니까?')) return;
+                                const target = completedResearches.find(r => r.level === highestCompletedLevel);
+                                if(target) {
+                                  await deleteResearch(target.id);
+                                  loadResearches(selectedCountryId);
+                                }
+                              }} style={{ marginLeft: 'auto' }}>이전 단계 완료 취소</button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

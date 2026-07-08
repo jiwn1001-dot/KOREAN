@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, getAllImages, getResearches, getResources } from '@/lib/store';
+import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch } from '@/lib/store';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
@@ -24,6 +24,7 @@ export default function CountryPage() {
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [admin, setAdmin] = useState(false);
+  const [countries, setCountries] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -74,6 +75,8 @@ export default function CountryPage() {
       setResearches(res || []);
       const rsc = await getResources(countryId);
       setResources(rsc || []);
+      const clist = await getCountries();
+      setCountries(clist || []);
     } catch (err) {
       console.error('Failed to load researches or resources', err);
     }
@@ -420,10 +423,49 @@ export default function CountryPage() {
                   </div>
                   <div>
                     {r.status === 'completed' && <span className="badge" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>완료됨</span>}
+                    {r.status === 'failed' && <span className="badge" style={{ background: 'rgba(248,113,113,0.1)', color: 'var(--error)' }}>실패함</span>}
                     {r.status === 'in_progress' && <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>진행중 ({r.remaining_turns}턴 남음)</span>}
                     {r.status === 'queued' && <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>대기중 ({r.required_turns}턴 필요)</span>}
                   </div>
                 </div>
+                
+                {/* 기술 제공 UI */}
+                {r.status === 'completed' && (
+                  <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px', display: 'flex', gap: '8px' }}>
+                    <select id={`send_tech_${r.id}`} className="form-select" style={{ flex: 1 }}>
+                      <option value="">-- 기술 제공 국가 선택 --</option>
+                      {countries.filter(c => c.id !== countryId).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <button className="btn btn-sm btn-secondary" onClick={async () => {
+                      const targetId = document.getElementById(`send_tech_${r.id}`).value;
+                      if (!targetId) return alert('제공할 국가를 선택하세요.');
+                      
+                      if (!confirm(`정말 ${r.name} (Lv.${r.level}) 기술을 제공하시겠습니까?`)) return;
+                      
+                      const targetResearches = await getResearches(targetId);
+                      const existing = targetResearches.filter(tr => tr.name === r.name && tr.status === 'completed');
+                      const maxLvl = existing.length > 0 ? Math.max(...existing.map(tr => tr.level)) : 0;
+                      
+                      if (maxLvl >= r.level) {
+                        return alert('상대 국가가 이미 같거나 더 높은 단계의 기술을 보유하고 있습니다.');
+                      }
+                      
+                      await createResearch({
+                        country_id: targetId,
+                        category: r.category,
+                        name: r.name,
+                        level: r.level,
+                        required_turns: 0,
+                        remaining_turns: 0,
+                        status: 'completed'
+                      });
+                      
+                      alert('기술이 성공적으로 제공되었습니다!');
+                    }}>🎁 전송</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

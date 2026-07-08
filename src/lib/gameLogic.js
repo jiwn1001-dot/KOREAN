@@ -41,16 +41,60 @@ export async function processTurnEnd(newTurn) {
     // 0. 스냅샷 생성 (롤백용)
     await createTurnSnapshot();
 
-    // 1. 진행 중인 연구 remaining_turns 감소 처리
-    const { data: researches, error: resError } = await supabase
+    // 설정에서 기술 트리 데이터 가져오기
+    const { data: settingEntry } = await supabase.from('data_entries').select('data').eq('category', 'game_settings').single();
+    const techTrees = settingEntry?.data?.techTrees || [];
+    
+    // 각 효과별 기술 식별자(name_level) 추출
+    const effectMap = {
+      prevent_fail: new Set(),
+      research_speed: new Set(),
+      unlock_special: new Set(),
+      agri_boost: new Set(),
+      heavy_boost: new Set(),
+      light_boost: new Set(),
+      mining_boost: new Set()
+    };
+    
+    techTrees.forEach(tree => {
+      tree.levels.forEach(lvl => {
+        if (lvl.effect && lvl.effect !== 'none') {
+          if (effectMap[lvl.effect]) effectMap[lvl.effect].add(`${tree.name}_${lvl.level}`);
+        }
+      });
+    });
+
+    // 국가별 완료된 기술 목록
+    const { data: completedResearches } = await supabase.from('researches').select('country_id, name, level').eq('status', 'completed');
+    const safeCountries = new Set();
+    if (completedResearches) {
+      completedResearches.forEach(r => {
+        if (effectMap.prevent_fail.has(`${r.name}_${r.level}`)) {
+          safeCountries.add(r.country_id);
+        }
+      });
+    }
+
+    // 1. 진행 중인 연구 remaining_turns 감소 및 완료/실패 판정
+    const { data: activeResearches, error: resError } = await supabase
       .from('researches')
-      .select('id, remaining_turns')
+      .select('id, country_id, remaining_turns')
       .eq('status', 'in_progress');
 
-    if (!resError && researches) {
-      for (const r of researches) {
+    if (!resError && activeResearches) {
+      for (const r of activeResearches) {
         const newRemaining = Math.max(0, r.remaining_turns - 1);
-        const status = newRemaining === 0 ? 'completed' : 'in_progress';
+        let status = 'in_progress';
+        
+        if (newRemaining === 0) {
+          // 실패 확률 계산 (50%)
+          const isSafe = safeCountries.has(r.country_id);
+          if (!isSafe && Math.random() < 0.5) {
+            status = 'failed';
+          } else {
+            status = 'completed';
+          }
+        }
         
         await supabase
           .from('researches')
