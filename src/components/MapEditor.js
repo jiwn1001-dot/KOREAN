@@ -2,10 +2,11 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 
-export default function MapEditor({ editable = false, savedImageData = null, onSave = null, legend = [] }) {
+export default function MapEditor({ editable = false, savedImageData = null, onSave = null, legend = [], onBaseMapUpload = null, baseMapDataUrl = null }) {
   const canvasRef = useRef(null);
   const boundaryMaskRef = useRef(null);
   const originalImageRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [color, setColor] = useState('#ff6b6b');
   const [threshold, setThreshold] = useState(195);
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,8 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
       console.error('Failed to load map image');
       setLoading(false);
     };
-    img.src = '/map.png';
-  }, []);
+    img.src = baseMapDataUrl || '/map.png';
+  }, [baseMapDataUrl]);
 
   const initCanvas = useCallback((img) => {
     const canvas = canvasRef.current;
@@ -258,6 +259,27 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
   const zoomOut = () => setZoom((z) => Math.max(z - 0.2, 0.3));
   const zoomReset = () => setZoom(1);
 
+  const handleBaseUploadChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      if (onBaseMapUpload) {
+        setLoading(true);
+        await onBaseMapUpload(evt.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const downloadMap = () => {
+    if (!canvasRef.current) return;
+    const link = document.createElement('a');
+    link.download = 'colored_map.png';
+    link.href = canvasRef.current.toDataURL('image/png');
+    link.click();
+  };
+
   return (
     <div className="map-container">
       {editable && (
@@ -359,6 +381,18 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
             </button>
             <button className="btn btn-sm btn-danger" onClick={resetMap} title="초기화">
               🔄 초기화
+            </button>
+          </div>
+
+          <div className="map-toolbar-divider" />
+          
+          <div className="map-toolbar-group">
+            <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleBaseUploadChange} />
+            <button className="btn btn-sm btn-secondary" onClick={() => fileInputRef.current?.click()} title="새로운 원본 지도를 업로드합니다.">
+              🖼️ 원본 지도 업로드
+            </button>
+            <button className="btn btn-sm btn-secondary" onClick={downloadMap} title="현재 색칠된 지도를 다운로드합니다.">
+              ⬇️ 다운로드
             </button>
           </div>
 

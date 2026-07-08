@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { getMapData, getCountries } from '@/lib/store';
+import { getMapData, getCountries, getDataEntry } from '@/lib/store';
 import { isAdmin } from '@/lib/auth';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
@@ -13,6 +13,8 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [admin, setAdmin] = useState(false);
 
+  const [baseMapDataUrl, setBaseMapDataUrl] = useState(null);
+
   useEffect(() => {
     setAdmin(isAdmin());
     loadData();
@@ -20,9 +22,16 @@ export default function MapPage() {
 
   const loadData = async () => {
     try {
-      const [map, ctrs] = await Promise.all([getMapData(), getCountries()]);
+      const [map, ctrs, baseImgEntry] = await Promise.all([
+        getMapData(), 
+        getCountries(),
+        getDataEntry('map_base_image')
+      ]);
       setMapData(map);
       setCountries(ctrs);
+      if (baseImgEntry?.data?.base64) {
+        setBaseMapDataUrl(baseImgEntry.data.base64);
+      }
     } catch (err) {
       console.error('Failed to load map data:', err);
     }
@@ -59,6 +68,7 @@ export default function MapPage() {
       <MapEditor
         editable={false}
         savedImageData={mapData?.image_data}
+        baseMapDataUrl={baseMapDataUrl}
         legend={legend}
       />
 

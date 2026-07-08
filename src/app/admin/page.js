@@ -68,6 +68,7 @@ export default function AdminPage() {
   const [diplomacyImages, setDiplomacyImages] = useState([]);
 
   const [mapData, setMapData] = useState(null);
+  const [baseMapDataUrl, setBaseMapDataUrl] = useState(null);
   const [countryTab, setCountryTab] = useState('politics');
   const [loading, setLoading] = useState(false);
 
@@ -184,12 +185,38 @@ export default function AdminPage() {
     setLoading(false);
   }, []);
 
-  const loadMapData = async () => {
+  const loadMap = async () => {
     try {
       const data = await getMapData();
       setMapData(data);
+      
+      const baseMapEntry = await getDataEntry('map_base_image');
+      if (baseMapEntry?.data?.base64) {
+        setBaseMapDataUrl(baseMapEntry.data.base64);
+      }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSaveMap = async (dataUrl) => {
+    try {
+      await saveMapData(dataUrl, countries.map((c) => ({ name: c.name, color: c.color })));
+      showToast('지도 저장 성공!');
+    } catch (err) {
+      console.error(err);
+      showToast('지도 저장 실패', 'error');
+    }
+  };
+
+  const handleBaseMapUpload = async (dataUrl) => {
+    try {
+      await upsertDataEntry('map_base_image', null, { base64: dataUrl });
+      setBaseMapDataUrl(dataUrl);
+      showToast('원본 지도가 업로드되었습니다!');
+    } catch (err) {
+      console.error(err);
+      showToast('원본 지도 업로드 실패', 'error');
     }
   };
 
@@ -1523,6 +1550,8 @@ export default function AdminPage() {
       <MapEditor
         editable={true}
         savedImageData={mapData?.image_data}
+        baseMapDataUrl={baseMapDataUrl}
+        onBaseMapUpload={handleBaseMapUpload}
         onSave={handleSaveMap}
         legend={countries.map((c) => ({ name: c.name, color: c.color }))}
       />
