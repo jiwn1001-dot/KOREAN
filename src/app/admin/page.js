@@ -36,6 +36,7 @@ export default function AdminPage() {
   const [gameSettings, setGameSettings] = useState({ techTrees: [], weaponTemplates: [] });
   const [techTrees, setTechTrees] = useState([]);
   const [weaponTemplates, setWeaponTemplates] = useState([]);
+  const [effectBuilder, setEffectBuilder] = useState({});
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -1407,47 +1408,100 @@ export default function AdminPage() {
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {tree.levels.map((lvl, lIdx) => (
-                    <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
-                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>} {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
+                    <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div>
+                        {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>}
+                      </div>
+                      {lvl.effect && lvl.effect !== 'none' && (
+                        <div style={{ color: 'var(--primary)', fontSize: '0.75rem' }}>
+                          ⚡ {typeof lvl.effect === 'string' ? lvl.effect : (lvl.effect.type === 'resource_conversion' ? `자원변환(${lvl.effect.inResource}->${lvl.effect.outResource})` : `효율증가(${lvl.effect.target} +${lvl.effect.value}%)`)}
+                        </div>
+                      )}
                     </span>
                   ))}
                 </div>
                 
-                <div className="form-inline">
-                  <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
-                  <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
-                  <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
-                    {eras.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                  <select id={`levelEffect_${tree.id}`} className="form-select" style={{ width: '150px' }}>
-                    <option value="none">특수효과 없음</option>
-                    <option value="prevent_fail">연구실패 방지</option>
-                    <option value="research_speed">연구시간 50% 감소</option>
-                    <option value="unlock_special">특수유닛 해금</option>
-                    <option value="agri_boost">농수산 생산 10% 증가</option>
-                    <option value="heavy_boost">중공업 생산 10% 증가</option>
-                    <option value="light_boost">경공업 생산 10% 증가</option>
-                    <option value="mining_boost">자원 생산 10% 증가</option>
-                    <option value="radar_tech">레이더 기술 (전투)</option>
-                  </select>
-                  <button className="btn btn-sm btn-secondary" onClick={() => {
-                    const name = document.getElementById(`levelName_${tree.id}`).value;
-                    const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
-                    const effect = document.getElementById(`levelEffect_${tree.id}`).value;
-                    const era = document.getElementById(`levelEra_${tree.id}`).value;
-                    if (turns > 0 && name) {
-                      const newTrees = [...techTrees];
-                      const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
-                      saveTechTrees(newTrees);
-                      document.getElementById(`levelName_${tree.id}`).value = '';
-                      document.getElementById(`levelTurn_${tree.id}`).value = '';
-                      document.getElementById(`levelEffect_${tree.id}`).value = 'none';
-                      document.getElementById(`levelEra_${tree.id}`).value = eras[0];
-                    } else {
-                      showToast('이름과 턴 수를 모두 입력하세요.', 'error');
-                    }
-                  }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
+                  {(() => {
+                    const bState = effectBuilder[tree.id] || { type: 'none' };
+                    const setBState = (val) => setEffectBuilder(p => ({ ...p, [tree.id]: val }));
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px' }}>
+                        <div className="form-inline">
+                          <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
+                          <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
+                          <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
+                            {eras.map(e => <option key={e} value={e}>{e}</option>)}
+                          </select>
+                          <select 
+                            className="form-select" 
+                            style={{ width: '150px' }}
+                            value={bState.type}
+                            onChange={(e) => setBState({ type: e.target.value })}
+                          >
+                            <option value="none">특수효과 없음</option>
+                            <option value="prevent_fail">연구실패 방지</option>
+                            <option value="research_speed">연구시간 50% 감소</option>
+                            <option value="resource_conversion">자원 변환 능력</option>
+                            <option value="efficiency_boost">생산 효율 증가</option>
+                          </select>
+                        </div>
+                        
+                        {bState.type === 'resource_conversion' && (
+                          <div className="form-inline" style={{ marginTop: '4px', background: 'var(--bg-elevated)', padding: '8px', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '0.8rem' }}>소모:</span>
+                            <select className="form-select" value={bState.inResource || 'coal'} onChange={(e) => setBState({...bState, inResource: e.target.value})}>
+                              {resourceTypes.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                            </select>
+                            <input type="number" className="form-input" placeholder="수량" value={bState.inAmount || 100} onChange={(e) => setBState({...bState, inAmount: Number(e.target.value)})} style={{ width: '80px' }}/>
+                            <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>생산:</span>
+                            <select className="form-select" value={bState.outResource || 'oil'} onChange={(e) => setBState({...bState, outResource: e.target.value})}>
+                              {resourceTypes.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                            </select>
+                            <input type="number" className="form-input" placeholder="수량" value={bState.outAmount || 50} onChange={(e) => setBState({...bState, outAmount: Number(e.target.value)})} style={{ width: '80px' }}/>
+                          </div>
+                        )}
+
+                        {bState.type === 'efficiency_boost' && (
+                          <div className="form-inline" style={{ marginTop: '4px', background: 'var(--bg-elevated)', padding: '8px', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '0.8rem' }}>적용 대상:</span>
+                            <select className="form-select" value={bState.target || 'heavy'} onChange={(e) => setBState({...bState, target: e.target.value})}>
+                              <option value="heavy">중공업단지 (무기)</option>
+                              <option value="naval">조선소 (함선)</option>
+                              <option value="agri">농수산업장 (식량)</option>
+                              <option value="light">경공업 (소비재)</option>
+                            </select>
+                            <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>증가율:</span>
+                            <input type="number" className="form-input" placeholder="%" value={bState.value || 10} onChange={(e) => setBState({...bState, value: Number(e.target.value)})} style={{ width: '80px' }}/>
+                            <span style={{ fontSize: '0.8rem' }}>%</span>
+                          </div>
+                        )}
+
+                        <button className="btn btn-sm btn-secondary" style={{ alignSelf: 'flex-start', marginTop: '4px' }} onClick={() => {
+                          const name = document.getElementById(`levelName_${tree.id}`).value;
+                          const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
+                          const era = document.getElementById(`levelEra_${tree.id}`).value;
+                          
+                          let effect = bState.type;
+                          if (bState.type === 'resource_conversion' || bState.type === 'efficiency_boost') {
+                            effect = { ...bState };
+                          }
+
+                          if (turns > 0 && name) {
+                            const newTrees = [...techTrees];
+                            const newLevel = newTrees[idx].levels.length + 1;
+                            newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
+                            saveTechTrees(newTrees);
+                            document.getElementById(`levelName_${tree.id}`).value = '';
+                            document.getElementById(`levelTurn_${tree.id}`).value = '';
+                            document.getElementById(`levelEra_${tree.id}`).value = eras[0];
+                            setBState({ type: 'none' });
+                          } else {
+                            showToast('이름과 턴 수를 모두 입력하세요.', 'error');
+                          }
+                        }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
+                      </div>
+                    );
+                  })()}
                   {tree.levels.length > 0 && (
                     <button className="btn btn-sm btn-ghost" onClick={() => {
                       const newTrees = [...techTrees];

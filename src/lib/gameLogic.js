@@ -178,14 +178,38 @@ export async function processTurnEnd(newTurn) {
         const nonBudgetGdp = gdp - budget;
         const ratios = data.nonBudgetRatio || { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 };
         
+        // --- Compute Efficiency Boosts ---
+        const { data: completedResearches } = await supabase
+          .from('researches')
+          .select('name')
+          .eq('country_id', entry.country_id)
+          .eq('status', 'completed');
+        const completedNames = completedResearches ? completedResearches.map(r => r.name) : [];
+
+        const efficiencyBoosts = { heavy: 0, naval: 0, agri: 0, light: 0 };
+        techTrees.forEach(tree => {
+          tree.levels.forEach(lvl => {
+            if (completedNames.includes(lvl.name) && lvl.effect && lvl.effect.type === 'efficiency_boost') {
+              const target = lvl.effect.target;
+              if (efficiencyBoosts[target] !== undefined) {
+                efficiencyBoosts[target] += Number(lvl.effect.value);
+              }
+            }
+          });
+        });
+
         const agriShare = nonBudgetGdp * (Number(ratios.agriculture || 0) / 100);
         const lightShare = nonBudgetGdp * (Number(ratios.lightIndustry || 0) / 100);
         
         const agriCoins = Math.floor(agriShare / 50000); // 농수산업장
         const lightCoins = Math.floor(lightShare / 50000); // 경공업코인
         
-        const foodProduced = agriCoins * 5;
-        const consumerGoodsProduced = lightCoins * 100;
+        let foodProduced = agriCoins * 5;
+        if (efficiencyBoosts.agri > 0) foodProduced = Math.floor(foodProduced * (1 + efficiencyBoosts.agri / 100));
+        
+        let consumerGoodsProduced = lightCoins * 100;
+        if (efficiencyBoosts.light > 0) consumerGoodsProduced = Math.floor(consumerGoodsProduced * (1 + efficiencyBoosts.light / 100));
+
         
         // --- 자원 갱신 ---
         const { data: countryResources } = await supabase.from('resources').select('*').eq('country_id', entry.country_id);
@@ -216,12 +240,8 @@ export async function processTurnEnd(newTurn) {
 
         // --- 무기 생산 (중공업단지 + 조선소) ---
         // 해당 국가의 완료된 연구 기술 목록 가져오기
-        const { data: completedResearches } = await supabase
-          .from('researches')
-          .select('name')
-          .eq('country_id', entry.country_id)
-          .eq('status', 'completed');
-        const completedNames = completedResearches ? completedResearches.map(r => r.name) : [];
+        // 해당 국가의 완료된 연구 기술 목록은 위에서(completedNames) 이미 가져왔습니다.
+
 
         const weapons = data.weapons || {};
         const allocations = data.weaponAllocations || {};
@@ -258,8 +278,12 @@ export async function processTurnEnd(newTurn) {
               if (r.existing) r.existing.amount = newAmt; // 업데이트 반영 (다른 무기 생산을 위해)
             }
             // 무기 생산
-            const produced = possibleRuns * (tmpl.powerCost || 1);
-            weapons[tmpl.name] = (weapons[tmpl.name] || 0) + produced;
+            const baseProduction = possibleRuns * (tmpl.powerCost || 1);
+            let finalProduction = baseProduction;
+            const targetEff = tmpl.facility === 'heavy' ? efficiencyBoosts.heavy : efficiencyBoosts.naval;
+            if (targetEff > 0) finalProduction = Math.floor(finalProduction * (1 + targetEff / 100));
+            
+            weapons[tmpl.name] = (weapons[tmpl.name] || 0) + finalProduction;
           }
         }
         data.weapons = weapons;

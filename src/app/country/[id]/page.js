@@ -429,7 +429,18 @@ export default function CountryPage() {
         {eco.warnings && eco.warnings.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
             {eco.warnings.map((w, i) => (
-              <div key={i} style={{ padding: '12px', background: w.includes('인플') ? 'rgba(248,113,113,0.1)' : 'rgba(59,130,246,0.1)', border: w.includes('인플') ? '1px solid var(--error)' : '1px solid var(--teal)', borderRadius: '8px', color: w.includes('인플') ? 'var(--error)' : 'var(--teal)' }}>
+              <div key={i} style={{ 
+                padding: '16px', 
+                background: w.includes('인플') ? 'rgba(248,113,113,0.15)' : 'rgba(59,130,246,0.15)', 
+                borderLeft: w.includes('인플') ? '4px solid var(--error)' : '4px solid var(--teal)', 
+                borderRadius: '4px', 
+                color: w.includes('인플') ? '#ff4d4f' : '#36cfc9',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                 {w}
               </div>
             ))}
@@ -500,6 +511,34 @@ export default function CountryPage() {
               <input id="transfer_coin_amount" type="number" className="form-input" style={{ width: '80px' }} placeholder="수량" min="1" max={coins} />
               <button className="btn btn-primary" onClick={handleTransferCoins} disabled={coins <= 0}>전송</button>
             </div>
+          </div>
+        </div>
+
+        {/* Non-Budget Coins */}
+        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
+          <div className="card stat-card" style={{ padding: '16px' }}>
+             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🌾</div>
+            <div className="stat-label">이번 턴 농수산업장 코인</div>
+            <div className="stat-value" style={{ color: 'var(--success)' }}>
+              {(() => {
+                const nonBudget = (eco.gdp || 0) - budget;
+                const ratio = eco.nonBudgetRatio?.agriculture || 0;
+                return Math.floor((nonBudget * (ratio / 100)) / 50000).toLocaleString();
+              })()}개
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>턴마다 코인 1개당 식량 5개 생산 (자동소멸)</div>
+          </div>
+          <div className="card stat-card" style={{ padding: '16px' }}>
+             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🧶</div>
+            <div className="stat-label">이번 턴 경공업 코인</div>
+            <div className="stat-value" style={{ color: 'var(--warning)' }}>
+              {(() => {
+                const nonBudget = (eco.gdp || 0) - budget;
+                const ratio = eco.nonBudgetRatio?.lightIndustry || 0;
+                return Math.floor((nonBudget * (ratio / 100)) / 50000).toLocaleString();
+              })()}개
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>턴마다 코인 1개당 소비재 100개 생산 (자동소멸)</div>
           </div>
         </div>
 
@@ -836,26 +875,41 @@ export default function CountryPage() {
     };
 
     const completedTechNames = researches.filter(r => r.status === 'completed').map(r => r.name);
+    
+    const conversionEffects = [];
+    techTrees.forEach(tree => {
+      tree.levels.forEach(lvl => {
+        if (completedTechNames.includes(lvl.name) && lvl.effect && lvl.effect.type === 'resource_conversion') {
+          conversionEffects.push({
+            techName: lvl.name,
+            inResource: lvl.effect.inResource,
+            inAmount: lvl.effect.inAmount,
+            outResource: lvl.effect.outResource,
+            outAmount: lvl.effect.outAmount
+          });
+        }
+      });
+    });
 
-    const handleConvertCoalToOil = async () => {
-      const coalRes = resources.find(r => r.resource_type === 'coal');
-      const coalAmount = coalRes ? Number(coalRes.amount) : 0;
-      if (coalAmount < 100) return alert('석탄이 100개 이상 필요합니다.');
+    const handleCustomConversion = async (effect) => {
+      const inRes = resources.find(r => r.resource_type === effect.inResource);
+      const inAmount = inRes ? Number(inRes.amount) : 0;
+      if (inAmount < effect.inAmount) return alert(`${resourceLabels[effect.inResource]?.label || effect.inResource} 자원이 ${effect.inAmount}개 이상 필요합니다.`);
       
-      if (!confirm('석탄 100개를 소모하여 석유 50개로 변환하시겠습니까?')) return;
+      if (!confirm(`${resourceLabels[effect.inResource]?.label || effect.inResource} ${effect.inAmount}개를 소모하여 ${resourceLabels[effect.outResource]?.label || effect.outResource} ${effect.outAmount}개로 변환하시겠습니까?`)) return;
 
-      const oilRes = resources.find(r => r.resource_type === 'oil');
-      const newCoal = coalAmount - 100;
-      const newOil = (oilRes ? Number(oilRes.amount) : 0) + 50;
+      const outRes = resources.find(r => r.resource_type === effect.outResource);
+      const newIn = inAmount - effect.inAmount;
+      const newOut = (outRes ? Number(outRes.amount) : 0) + effect.outAmount;
 
       try {
-        await supabase.from('resources').update({ amount: newCoal }).eq('id', coalRes.id);
-        if (oilRes) {
-          await supabase.from('resources').update({ amount: newOil }).eq('id', oilRes.id);
+        await supabase.from('resources').update({ amount: newIn }).eq('id', inRes.id);
+        if (outRes) {
+          await supabase.from('resources').update({ amount: newOut }).eq('id', outRes.id);
         } else {
-          await supabase.from('resources').insert({ country_id: countryId, resource_type: 'oil', amount: newOil, production_per_turn: 0 });
+          await supabase.from('resources').insert({ country_id: countryId, resource_type: effect.outResource, amount: newOut, production_per_turn: 0 });
         }
-        alert('석유 변환 성공!');
+        alert('자원 변환 성공!');
         loadAllData();
       } catch (err) {
         alert('오류 발생');
@@ -910,15 +964,21 @@ export default function CountryPage() {
         </div>
 
         {/* 특수 기술 효과 */}
-        {completedTechNames.some(name => name.includes('석탄 액화') || name.includes('합성 석유') || name.includes('석유 정제')) && (
+        {conversionEffects.length > 0 && (
           <div className="content-section" style={{ marginTop: '20px' }}>
             <h3 className="content-section-title">🧪 특수 기술 효과</h3>
-            <div className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 'bold' }}>석탄 액화 (석탄 -> 석유 변환)</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>석탄 100개를 소모하여 석유 50개를 생산합니다.</div>
-              </div>
-              <button className="btn btn-secondary" onClick={handleConvertCoalToOil}>변환하기</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {conversionEffects.map((eff, idx) => (
+                <div key={idx} className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 'bold', color: 'var(--primary)' }}>{eff.techName} (자원 변환)</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      {resourceLabels[eff.inResource]?.label || eff.inResource} {eff.inAmount}개를 소모하여 {resourceLabels[eff.outResource]?.label || eff.outResource} {eff.outAmount}개를 생산합니다.
+                    </div>
+                  </div>
+                  <button className="btn btn-secondary" onClick={() => handleCustomConversion(eff)}>변환하기</button>
+                </div>
+              ))}
             </div>
           </div>
         )}
