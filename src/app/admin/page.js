@@ -1,6 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div style={{padding:'20px', background:'red', color:'white'}}><h2>UI Error!</h2><pre>{this.state.error.toString()}</pre></div>;
+    }
+    return this.props.children;
+  }
+}
+
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { isAdmin } from '@/lib/auth';
@@ -1257,7 +1274,8 @@ export default function AdminPage() {
     </div>
   );
 
-  const renderBlueprints = () => (
+  const renderBlueprints = () => <ErrorBoundary><RenderBlueprintsInner /></ErrorBoundary>;
+  const RenderBlueprintsInner = () => (
     <div className="fade-in">
       <h2>🛠️ 무기 청사진(설계도) 관리</h2>
       <p style={{ color: 'var(--text-muted)' }}>유저가 무기를 생산할 수 있도록 필요 기술, 요구 공업력 등을 설정합니다.</p>
@@ -1477,7 +1495,8 @@ export default function AdminPage() {
     </div>
   );
 
-  const renderResearch = () => {
+  const renderResearch = () => { return <ErrorBoundary><RenderResearchInner /></ErrorBoundary>; };
+  const RenderResearchInner = () => {
     const defaultCategories = ['지상군', '해군', '항공', '공학', '산업'];
     const eras = ['선사시대', '고대시대', '중세시대', '근세시대', '대혁명기', '빅토리안시대', '1차대전기', '2차대전기', '냉전기', '현대', '근미래'];
     
