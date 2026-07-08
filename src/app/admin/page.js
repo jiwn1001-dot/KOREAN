@@ -14,7 +14,7 @@ import {
   getResearches, createResearch, updateResearch, deleteResearch,
   getResources, upsertResource
 } from '@/lib/store';
-import { processTurnEnd, rollbackTurn, resetToTurnOne } from '@/lib/gameLogic';
+import { processTurnEnd, rollbackTurn, resetToTurnOne, transferTech } from '@/lib/gameLogic';
 import LoginModal from '@/components/LoginModal';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });

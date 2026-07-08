@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch } from '@/lib/store';
+import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
@@ -444,25 +445,16 @@ export default function CountryPage() {
                       
                       if (!confirm(`정말 ${r.name} (Lv.${r.level}) 기술을 제공하시겠습니까?`)) return;
                       
-                      const targetResearches = await getResearches(targetId);
-                      const existing = targetResearches.filter(tr => tr.name === r.name && tr.status === 'completed');
-                      const maxLvl = existing.length > 0 ? Math.max(...existing.map(tr => tr.level)) : 0;
-                      
-                      if (maxLvl >= r.level) {
-                        return alert('상대 국가가 이미 같거나 더 높은 단계의 기술을 보유하고 있습니다.');
+                      const result = await transferTech(targetId, r.name, r.level);
+                      if (result.success) {
+                        let msg = '기술이 성공적으로 제공되었습니다!';
+                        if (result.bonusAdded > 0) {
+                          msg += ` (상대방 생산력 +${result.bonusAdded}% 스킵 보너스 획득)`;
+                        }
+                        alert(msg);
+                      } else {
+                        alert(result.error || '기술 제공에 실패했습니다.');
                       }
-                      
-                      await createResearch({
-                        country_id: targetId,
-                        category: r.category,
-                        name: r.name,
-                        level: r.level,
-                        required_turns: 0,
-                        remaining_turns: 0,
-                        status: 'completed'
-                      });
-                      
-                      alert('기술이 성공적으로 제공되었습니다!');
                     }}>🎁 전송</button>
                   </div>
                 )}
