@@ -145,14 +145,20 @@ export async function processTurnEnd(newTurn) {
       for (const entry of ecoEntries) {
         let data = entry.data || {};
         
-        // 3-1. 상업 코인에 의한 GDP 증가 (영구)
+        // 3-1. 상업 코인 및 경제 투자에 의한 GDP 증가
         let currentGdp = Number(data.gdp || 0);
         const commCoins = Number(data.commerceCoins || 0);
         if (commCoins !== 0) {
           currentGdp = currentGdp * (1 + (commCoins * 0.01));
-          data.gdp = currentGdp;
           data.commerceCoins = 0; // 소모됨
         }
+        
+        const ecoInvest = Number(data.economicInvestment || 0);
+        if (ecoInvest > 0) {
+          currentGdp += (ecoInvest * 10000);
+          data.economicInvestment = 0; // 초기화
+        }
+        data.gdp = currentGdp;
 
         // 3-2. 예산 및 비예산 분배
         const taxRate = Number(data.taxRate || 0);

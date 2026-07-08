@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch } from '@/lib/store';
+import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch } from '@/lib/store';
 import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
@@ -354,9 +354,25 @@ export default function CountryPage() {
             <div className="stat-value">${Number(budget).toLocaleString()}</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--accent)', marginTop: '4px' }}>이번 턴 중공업 코인: {economyData.heavyIndustryCoins || 0}개</div>
             {economyData.heavyIndustryCoins > 0 && (
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'center' }}>
-                <button className="btn btn-sm btn-primary" onClick={() => alert('구현 중: 중공업단지로 변환 (턴 종료 시 소멸)')}>중공업단지 짓기</button>
-                <button className="btn btn-sm btn-primary" onClick={() => alert('구현 중: 조선소로 변환 (턴 종료 시 소멸)')}>조선소 짓기</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                <button className="btn btn-sm btn-primary" onClick={async () => {
+                  if(!confirm('중공업단지에 배정하시겠습니까? (턴 종료 시 소멸)')) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, heavyIndustryComplexes: (economyData.heavyIndustryComplexes || 0) + 1 };
+                  await upsertDataEntry('economy', countryId, newData);
+                  setEconomyData(newData);
+                }}>🏭 중공업단지 짓기</button>
+                <button className="btn btn-sm btn-primary" onClick={async () => {
+                  if(!confirm('조선소에 배정하시겠습니까? (턴 종료 시 소멸)')) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, shipyards: (economyData.shipyards || 0) + 1 };
+                  await upsertDataEntry('economy', countryId, newData);
+                  setEconomyData(newData);
+                }}>🏗️ 조선소 짓기</button>
+                <button className="btn btn-sm btn-secondary" onClick={async () => {
+                  if(!confirm('경제 투자에 배정하시겠습니까? (다음 턴 GDP +10,000)')) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, economicInvestment: (economyData.economicInvestment || 0) + 1 };
+                  await upsertDataEntry('economy', countryId, newData);
+                  setEconomyData(newData);
+                }}>💰 경제 투자 (GDP +10,000)</button>
               </div>
             )}
           </div>
@@ -378,16 +394,21 @@ export default function CountryPage() {
           </div>
         </div>
 
-        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
+        <div className="card-grid card-grid-3" style={{ marginBottom: '20px' }}>
           <div className="card stat-card">
             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏭</div>
-            <div className="stat-label">영구 보유 중공업단지</div>
+            <div className="stat-label">배정된 중공업단지</div>
             <div className="stat-value">{economyData.heavyIndustryComplexes || 0}</div>
           </div>
           <div className="card stat-card">
             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏗️</div>
-            <div className="stat-label">영구 보유 조선소</div>
+            <div className="stat-label">배정된 조선소</div>
             <div className="stat-value">{economyData.shipyards || 0}</div>
+          </div>
+          <div className="card stat-card">
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>💰</div>
+            <div className="stat-label">경제 투자 (누적)</div>
+            <div className="stat-value">{economyData.economicInvestment || 0}</div>
           </div>
         </div>
       </div>
