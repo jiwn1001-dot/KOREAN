@@ -1,11 +1,46 @@
 import { supabase } from './supabase';
 
 /**
+ * 게임의 현재 상태(연구, 자원, 경제)를 스냅샷으로 저장
+ */
+export async function createTurnSnapshot() {
+  try {
+    const { data: researches } = await supabase.from('researches').select('*');
+    const { data: resources } = await supabase.from('resources').select('*');
+    const { data: ecoEntries } = await supabase.from('data_entries').select('*').eq('category', 'economy');
+    const { data: state } = await supabase.from('game_state').select('*').eq('id', 1).single();
+
+    const snapshotData = {
+      turn: state?.current_turn || 1,
+      researches: researches || [],
+      resources: resources || [],
+      ecoEntries: ecoEntries || []
+    };
+
+    // upsert into data_entries for snapshot
+    await supabase.from('data_entries').upsert({
+      category: 'turn_snapshot',
+      country_id: null,
+      data: snapshotData,
+      title: 'Turn Snapshot'
+    }, { onConflict: 'category,country_id' });
+
+    return { success: true };
+  } catch (err) {
+    console.error('Snapshot error:', err);
+    return { success: false };
+  }
+}
+
+/**
  * 턴을 넘길 때 호출되는 핵심 게임 로직 함수
  * @param {number} newTurn - 새 턴 번호
  */
 export async function processTurnEnd(newTurn) {
   try {
+    // 0. 스냅샷 생성 (롤백용)
+    await createTurnSnapshot();
+
     // 1. 진행 중인 연구 remaining_turns 감소 처리
     const { data: researches, error: resError } = await supabase
       .from('researches')
@@ -41,7 +76,6 @@ export async function processTurnEnd(newTurn) {
     }
 
     // 3. 경제 성장 처리 (GDP)
-    // economy data entry를 가져와서 gdp = gdp * (1 + growthRate) 적용
     const { data: ecoEntries, error: ecoError } = await supabase
       .from('data_entries')
       .select('id, data')
@@ -58,7 +92,6 @@ export async function processTurnEnd(newTurn) {
 
         if (gdp > 0 && growthRate !== 0) {
           const newGdp = gdp * (1 + (growthRate / 100));
-          // 단위 복원 (단순화: 억 달러 등은 포맷팅 로직 추가 필요할 수 있음)
           data.gdp = { ...data.gdp, value: newGdp.toFixed(1) };
           
           await supabase
@@ -77,12 +110,69 @@ export async function processTurnEnd(newTurn) {
 }
 
 /**
- * 자원 소모 체크 (유닛 생산, 건설 등에 사용)
- * @param {string} countryId 
- * @param {Array<{type: string, amount: number}>} requiredResources 
+ * 턴을 이전 상태로 롤백
  */
+export async function rollbackTurn() {
+  try {
+    const { data: snapshotEntry } = await supabase
+      .from('data_entries')
+      .select('data')
+      .eq('category', 'turn_snapshot')
+      .is('country_id', null)
+      .single();
+
+    if (!snapshotEntry || !snapshotEntry.data) {
+      return { success: false, error: '저장된 이전 턴 스냅샷이 없습니다.' };
+    }
+
+    const { turn, researches, resources, ecoEntries } = snapshotEntry.data;
+
+    // 1. 상태 복원
+    await supabase.from('game_state').update({ current_turn: turn, turn_name: `${turn}턴` }).eq('id', 1);
+
+    // 2. 연구 복원
+    if (researches && researches.length > 0) {
+      for (const r of researches) {
+        await supabase.from('researches').update({ remaining_turns: r.remaining_turns, status: r.status }).eq('id', r.id);
+      }
+    }
+
+    // 3. 자원 복원
+    if (resources && resources.length > 0) {
+      for (const res of resources) {
+        await supabase.from('resources').update({ amount: res.amount }).eq('id', res.id);
+      }
+    }
+
+    // 4. 경제(GDP) 복원
+    if (ecoEntries && ecoEntries.length > 0) {
+      for (const entry of ecoEntries) {
+        await supabase.from('data_entries').update({ data: entry.data }).eq('id', entry.id);
+      }
+    }
+
+    // 삭제 (한 번만 롤백 가능하도록 하거나 유지. 여기선 유지)
+    return { success: true };
+  } catch (err) {
+    console.error('Rollback error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 1턴으로 강제 초기화
+ */
+export async function resetToTurnOne() {
+  try {
+    await supabase.from('game_state').update({ current_turn: 1, turn_name: '1턴' }).eq('id', 1);
+    // 선택적으로 데이터(연구, 자원)를 비우거나 유지할 수 있습니다.
+    // 여기서는 단순히 턴만 1로 되돌립니다.
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function consumeResources(countryId, requiredResources) {
-  // 실제 자원 소모 로직 (추후 생산 시스템 개발 시 활용)
-  // return true (성공) or false (자원 부족)
   return true; 
 }
