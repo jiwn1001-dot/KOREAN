@@ -293,26 +293,7 @@ export default function MapEditor({ editable = false, savedImageData = null, onS
   const zoomOut = () => setZoom((z) => Math.max(z - 0.2, 0.3));
   const zoomReset = () => setZoom(1);
 
-  const handleBaseUploadChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      if (onBaseMapUpload) {
-        setLoading(true);
-        await onBaseMapUpload(evt.target.result);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
-  const downloadMap = () => {
-    if (!canvasRef.current) return;
-    const link = document.createElement('a');
-    link.download = 'colored_map.png';
-    link.href = canvasRef.current.toDataURL('image/png');
-    link.click();
-  };
 
   return (
     <div className="map-container">
