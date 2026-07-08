@@ -375,7 +375,7 @@ export default function CountryPage() {
                   if(!confirm(`중공업단지에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
                   const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, heavyIndustryComplexes: (economyData.heavyIndustryComplexes || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
-                  setEconomyData(newData);
+                  setData(p => ({ ...p, economy: { ...p.economy, data: newData } }));
                 }}>🏭 중공업단지 짓기</button>
                 <button className="btn btn-sm btn-primary" onClick={async () => {
                   const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
@@ -383,7 +383,7 @@ export default function CountryPage() {
                   if(!confirm(`조선소에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
                   const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, shipyards: (economyData.shipyards || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
-                  setEconomyData(newData);
+                  setData(p => ({ ...p, economy: { ...p.economy, data: newData } }));
                 }}>🏗️ 조선소 짓기</button>
                 <button className="btn btn-sm btn-secondary" onClick={async () => {
                   const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
@@ -391,7 +391,7 @@ export default function CountryPage() {
                   if(!confirm(`경제 투자에 ${amt}개 배정하시겠습니까? (다음 턴 GDP +${(amt * 10000).toLocaleString()})`)) return;
                   const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, economicInvestment: (economyData.economicInvestment || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
-                  setEconomyData(newData);
+                  setData(p => ({ ...p, economy: { ...p.economy, data: newData } }));
                 }}>💰 경제 투자</button>
               </div>
             )}
