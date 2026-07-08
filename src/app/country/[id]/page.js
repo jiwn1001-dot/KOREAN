@@ -365,24 +365,34 @@ export default function CountryPage() {
             <div style={{ fontSize: '0.85rem', color: 'var(--accent)', marginTop: '4px' }}>이번 턴 중공업 코인: {economyData.heavyIndustryCoins || 0}개</div>
             {economyData.heavyIndustryCoins > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', justifyContent: 'center' }}>
+                  <input type="number" id="hicAllocateAmount" className="form-input" placeholder="수량" defaultValue="1" style={{ width: '80px', textAlign: 'center' }} />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', alignSelf: 'center' }}>개 배정</span>
+                </div>
                 <button className="btn btn-sm btn-primary" onClick={async () => {
-                  if(!confirm('중공업단지에 배정하시겠습니까? (턴 종료 시 소멸)')) return;
-                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, heavyIndustryComplexes: (economyData.heavyIndustryComplexes || 0) + 1 };
+                  const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
+                  if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
+                  if(!confirm(`중공업단지에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, heavyIndustryComplexes: (economyData.heavyIndustryComplexes || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
                   setEconomyData(newData);
                 }}>🏭 중공업단지 짓기</button>
                 <button className="btn btn-sm btn-primary" onClick={async () => {
-                  if(!confirm('조선소에 배정하시겠습니까? (턴 종료 시 소멸)')) return;
-                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, shipyards: (economyData.shipyards || 0) + 1 };
+                  const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
+                  if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
+                  if(!confirm(`조선소에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, shipyards: (economyData.shipyards || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
                   setEconomyData(newData);
                 }}>🏗️ 조선소 짓기</button>
                 <button className="btn btn-sm btn-secondary" onClick={async () => {
-                  if(!confirm('경제 투자에 배정하시겠습니까? (다음 턴 GDP +10,000)')) return;
-                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - 1, economicInvestment: (economyData.economicInvestment || 0) + 1 };
+                  const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
+                  if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
+                  if(!confirm(`경제 투자에 ${amt}개 배정하시겠습니까? (다음 턴 GDP +${(amt * 10000).toLocaleString()})`)) return;
+                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, economicInvestment: (economyData.economicInvestment || 0) + amt };
                   await upsertDataEntry('economy', countryId, newData);
                   setEconomyData(newData);
-                }}>💰 경제 투자 (GDP +10,000)</button>
+                }}>💰 경제 투자</button>
               </div>
             )}
           </div>
