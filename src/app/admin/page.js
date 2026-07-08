@@ -234,7 +234,7 @@ export default function AdminPage() {
       loadCountries();
     }
     else if (activeSection === 'map') {
-      loadMapData();
+      loadMap();
       loadCountries();
     }
     else if (activeSection === 'countries') loadCountries();
