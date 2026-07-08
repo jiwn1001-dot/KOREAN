@@ -297,8 +297,7 @@ export default function AdminPage() {
         ...newData 
       };
       await upsertDataEntry('game_settings', null, payload);
-      if (newData.techTrees) setTechTrees(newData.techTrees);
-      if (newData.weaponBlueprints) setWeaponBlueprints(newData.weaponBlueprints);
+      await loadGameSettings();
       showToast('게임 설정이 저장되었습니다.');
     } catch (err) {
       showToast('저장 실패', 'error');

@@ -93,6 +93,16 @@ export async function processTurnEnd(newTurn) {
             }
           }
         }
+        if (effectMap.research_speed.has(key)) {
+          const tree = techTrees.find(t => t.name === r.name);
+          if (tree) {
+            const lvl = tree.levels.find(l => l.level === r.level);
+            if (lvl && lvl.era) {
+              if (!countryTechMultipliers[r.country_id].fastEras) countryTechMultipliers[r.country_id].fastEras = new Set();
+              countryTechMultipliers[r.country_id].fastEras.add(lvl.era);
+            }
+          }
+        }
       });
     }
 
@@ -104,17 +114,20 @@ export async function processTurnEnd(newTurn) {
 
     if (!resError && activeResearches) {
       for (const r of activeResearches) {
-        const newRemaining = Math.max(0, r.remaining_turns - 1);
+        let currentEra = null;
+        const tree = techTrees.find(t => t.name === r.name);
+        if (tree) {
+          const lvl = tree.levels.find(l => l.level === r.level);
+          if (lvl) currentEra = lvl.era;
+        }
+        
+        const isFast = currentEra && countryTechMultipliers[r.country_id]?.fastEras?.has(currentEra);
+        const deduction = isFast ? 2 : 1;
+        const newRemaining = Math.max(0, r.remaining_turns - deduction);
         let status = 'in_progress';
         
         if (newRemaining === 0) {
           // 실패 확률 계산 (50%)
-          let currentEra = null;
-          const tree = techTrees.find(t => t.name === r.name);
-          if (tree) {
-            const lvl = tree.levels.find(l => l.level === r.level);
-            if (lvl) currentEra = lvl.era;
-          }
           
           const isSafe = currentEra && safeEras[r.country_id]?.has(currentEra);
           if (!isSafe && Math.random() < 0.5) {
