@@ -1204,23 +1204,26 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {tree.levels.map((lvl, lIdx) => (
                     <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
-                      {lvl.level}단계 (턴: {lvl.turns})
+                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns})
                     </span>
                   ))}
                 </div>
                 
                 <div className="form-inline">
+                  <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
                   <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
                   <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const name = document.getElementById(`levelName_${tree.id}`).value;
                     const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
-                    if (turns > 0) {
+                    if (turns > 0 && name) {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, turns });
+                      newTrees[idx].levels.push({ level: newLevel, name, turns });
                       saveTechTrees(newTrees);
+                      document.getElementById(`levelName_${tree.id}`).value = '';
                       document.getElementById(`levelTurn_${tree.id}`).value = '';
                     } else {
-                      showToast('올바른 턴 수를 입력하세요.', 'error');
+                      showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
                   }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
                   {tree.levels.length > 0 && (
@@ -1301,13 +1304,13 @@ export default function AdminPage() {
                       </div>
                       
                       <div style={{ marginBottom: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                        현재 완료된 단계: {highestCompletedLevel > 0 ? `Lv.${highestCompletedLevel}` : '없음'}
+                        현재 완료된 단계: {highestCompletedLevel > 0 ? (tree.levels[highestCompletedLevel - 1]?.name || `Lv.${highestCompletedLevel}`) : '없음'}
                       </div>
 
                       {activeResearch ? (
                         <div style={{ padding: '12px', background: 'var(--bg-glass)', borderRadius: '8px' }}>
                           <div style={{ marginBottom: '8px' }}>
-                            <strong>[진행 중] Lv.{activeResearch.level}</strong> (남은 턴: {activeResearch.remaining_turns})
+                            <strong>[진행 중] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> (남은 턴: {activeResearch.remaining_turns})
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <select className="form-select" value={activeResearch.status} onChange={async (e) => {
@@ -1338,9 +1341,9 @@ export default function AdminPage() {
                                 status: 'in_progress', // 바로 진행 상태로
                               });
                               loadResearches(selectedCountryId);
-                              showToast(`Lv.${nextLevelData.level} 연구가 시작되었습니다.`);
+                              showToast(`${nextLevelData.name || `Lv.${nextLevelData.level}`} 연구가 시작되었습니다.`);
                             }}>
-                              🚀 다음 단계 연구 시작 (Lv.{nextLevelData.level} / {nextLevelData.turns}턴)
+                              🚀 다음 연구: {nextLevelData.name || `Lv.${nextLevelData.level}`} ({nextLevelData.turns}턴)
                             </button>
                           ) : (
                             <div style={{ padding: '12px', textAlign: 'center', background: 'var(--bg-glass)', borderRadius: '8px', color: 'var(--text-muted)' }}>
