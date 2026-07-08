@@ -1254,6 +1254,7 @@ export default function AdminPage() {
                     <option value="heavy_boost">중공업 생산 10% 증가</option>
                     <option value="light_boost">경공업 생산 10% 증가</option>
                     <option value="mining_boost">자원 생산 10% 증가</option>
+                    <option value="radar_tech">레이더 기술 (전투)</option>
                   </select>
                   <button className="btn btn-sm btn-secondary" onClick={() => {
                     const name = document.getElementById(`levelName_${tree.id}`).value;

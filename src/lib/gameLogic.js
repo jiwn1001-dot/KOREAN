@@ -53,7 +53,8 @@ export async function processTurnEnd(newTurn) {
       agri_boost: new Set(),
       heavy_boost: new Set(),
       light_boost: new Set(),
-      mining_boost: new Set()
+      mining_boost: new Set(),
+      radar_tech: new Set()
     };
     
     techTrees.forEach(tree => {
