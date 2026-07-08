@@ -1209,7 +1209,7 @@ export default function AdminPage() {
   );
 
   const renderResearch = () => {
-    const defaultCategories = ['보병', '기갑/차량', '야포', '해군', '공군', '공학', '산업', '전자기술', '화학기술'];
+    const defaultCategories = ['지상군', '해군', '항공', '공학', '산업'];
     const eras = ['선사시대', '고대시대', '중세시대', '근세시대', '대혁명기', '빅토리안시대', '1차대전기', '2차대전기', '냉전기', '현대', '근미래'];
     
     return (
