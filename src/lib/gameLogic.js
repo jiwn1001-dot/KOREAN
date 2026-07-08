@@ -282,7 +282,7 @@ export async function processTurnEnd(newTurn) {
           const adminMults = data.multipliers || { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 };
           const techMults = countryTechMultipliers[entry.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
           
-          const foodAmount = Math.floor(data.agricultureCoins * 12 * (adminMults.food || 1) * techMults.agri);
+          const foodAmount = Math.floor(data.agricultureCoins * 5 * (adminMults.food || 1) * techMults.agri);
           const cgAmount = Math.floor(data.lightIndustryCoins * 100 * (adminMults.consumerGoods || 1) * techMults.light);
           const population = data.population?.total || 0;
           

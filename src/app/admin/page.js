@@ -1285,7 +1285,16 @@ export default function AdminPage() {
         <div className="form-row">
           <div className="form-group">
             <label>무기명 (기술명과 동일해야 함)</label>
-            <input type="text" id="newBpName" className="form-input" placeholder="예: 1936년형 보병장비" />
+                        <select id="newBpName" className="form-select">
+              <option value="">-- 무기명 선택 (기술명) --</option>
+              {(Array.isArray(techTrees) ? techTrees : []).map((tree, idx) => (
+                <optgroup key={tree.id || idx} label={tree.name}>
+                  {(Array.isArray(tree.levels) ? tree.levels : []).map(lvl => (
+                    <option key={lvl.level} value={lvl.name || `${tree.name} ${lvl.level}단계`}>{lvl.name || `${tree.name} ${lvl.level}단계`}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label>요구 기술 분류</label>
@@ -1306,22 +1315,44 @@ export default function AdminPage() {
           </div>
           <div className="form-group">
             <label>필요 산업력</label>
-            <input type="number" id="newBpIndustryCost" className="form-input" placeholder="1" defaultValue="1" />
+            <input type="number" id="newBpIndustryCost" className="form-input" placeholder="1" defaultValue="1" step="0.1" />
           </div>
         </div>
         <div className="form-row">
           <div className="form-group">
             <label>소모 자원 1 (종류/개수)</label>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input type="text" id="newBpRes1Name" className="form-input" placeholder="steel" />
-              <input type="number" id="newBpRes1Cost" className="form-input" placeholder="수량" />
+              <select id="newBpRes1Name" className="form-select">
+                <option value="">-- 자원 선택 --</option>
+                <option value="steel">강철</option>
+                <option value="oil">석유</option>
+                <option value="wood">목재</option>
+                <option value="coal">석탄</option>
+                <option value="chromium">크롬</option>
+                <option value="tungsten">텅스텐</option>
+                <option value="aluminum">알루미늄</option>
+                <option value="rubber">고무</option>
+                <option value="sulfur">유황</option>
+              </select>
+              <input type="number" id="newBpRes1Cost" className="form-input" placeholder="수량" step="0.1" />
             </div>
           </div>
           <div className="form-group">
             <label>소모 자원 2 (종류/개수)</label>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input type="text" id="newBpRes2Name" className="form-input" placeholder="oil" />
-              <input type="number" id="newBpRes2Cost" className="form-input" placeholder="수량" />
+              <select id="newBpRes2Name" className="form-select">
+                <option value="">-- 자원 선택 --</option>
+                <option value="steel">강철</option>
+                <option value="oil">석유</option>
+                <option value="wood">목재</option>
+                <option value="coal">석탄</option>
+                <option value="chromium">크롬</option>
+                <option value="tungsten">텅스텐</option>
+                <option value="aluminum">알루미늄</option>
+                <option value="rubber">고무</option>
+                <option value="sulfur">유황</option>
+              </select>
+              <input type="number" id="newBpRes2Cost" className="form-input" placeholder="수량" step="0.1" />
             </div>
           </div>
         </div>
@@ -1329,11 +1360,11 @@ export default function AdminPage() {
           const name = document.getElementById('newBpName').value;
           const cat = document.getElementById('newBpTechCategory').value;
           const facility = document.getElementById('newBpFacility').value;
-          const indCost = parseInt(document.getElementById('newBpIndustryCost').value) || 1;
+          const indCost = parseFloat(document.getElementById('newBpIndustryCost').value) || 1;
           const r1n = document.getElementById('newBpRes1Name').value;
-          const r1c = parseInt(document.getElementById('newBpRes1Cost').value) || 0;
+          const r1c = parseFloat(document.getElementById('newBpRes1Cost').value) || 0;
           const r2n = document.getElementById('newBpRes2Name').value;
-          const r2c = parseInt(document.getElementById('newBpRes2Cost').value) || 0;
+          const r2c = parseFloat(document.getElementById('newBpRes2Cost').value) || 0;
           
           if (!name) return showToast('무기명을 입력하세요.', 'error');
           
