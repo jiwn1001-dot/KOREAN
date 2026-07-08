@@ -328,15 +328,15 @@ export default function CountryPage() {
     
     let warning = null;
     if (pop > 0) {
-      const isFoodDef = food < pop;
-      const isFoodAbu = food >= pop * 2;
-      const isCgDef = consumerGoods < pop;
-      const isCgAbu = consumerGoods >= pop * 2;
+      const isFoodDef = food < 0;
+      const isFoodAbu = food >= pop;
+      const isCgDef = consumerGoods < 0;
+      const isCgAbu = consumerGoods >= pop;
       
       if (isFoodDef && isCgDef) {
-        warning = { type: 'severe_inflation', msg: '🚨 [극심한 인플레이션] 식량과 소비재가 모두 부족합니다! (비축량 < 인구수)' };
+        warning = { type: 'severe_inflation', msg: '🚨 [극심한 인플레이션] 식량과 소비재가 모두 부족합니다! (잔여량 < 0)' };
       } else if (isFoodAbu && isCgAbu) {
-        warning = { type: 'severe_deflation', msg: '⚠️ [극심한 디플레이션] 식량과 소비재가 모두 넘쳐납니다! (비축량 >= 인구수*2)' };
+        warning = { type: 'severe_deflation', msg: '⚠️ [극심한 디플레이션] 식량과 소비재가 모두 넘쳐납니다! (잔여량 >= 인구수)' };
       } else if ((isFoodDef && isCgAbu) || (isFoodAbu && isCgDef)) {
         warning = { type: 'stagflation', msg: '🌪️ [스테그플레이션] 한 자원은 부족하고, 다른 자원은 넘쳐납니다!' };
       } else if (isFoodDef || isCgDef) {
