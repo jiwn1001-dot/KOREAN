@@ -255,7 +255,7 @@ export default function AdminPage() {
     }
     else if (activeSection === 'research' || activeSection === 'blueprints') {
       loadCountries();
-      loadTechTrees();
+      
       loadGameSettings();
     }
     else if (activeSection === 'resources') {
