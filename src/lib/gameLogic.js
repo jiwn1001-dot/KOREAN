@@ -54,7 +54,8 @@ export async function processTurnEnd(newTurn) {
       heavy_boost: new Set(),
       light_boost: new Set(),
       mining_boost: new Set(),
-      radar_tech: new Set()
+      radar_tech: new Set(),
+      rocket_tech: new Set()
     };
     
     techTrees.forEach(tree => {
@@ -68,10 +69,21 @@ export async function processTurnEnd(newTurn) {
     // 국가별 완료된 기술 목록
     const { data: completedResearches } = await supabase.from('researches').select('country_id, name, level').eq('status', 'completed');
     const safeEras = {};
+    const countryTechMultipliers = {};
     
     if (completedResearches) {
       completedResearches.forEach(r => {
-        if (effectMap.prevent_fail.has(`${r.name}_${r.level}`)) {
+        if (!countryTechMultipliers[r.country_id]) {
+          countryTechMultipliers[r.country_id] = { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
+        }
+        const key = `${r.name}_${r.level}`;
+        if (effectMap.agri_boost.has(key)) countryTechMultipliers[r.country_id].agri += 0.2;
+        if (effectMap.heavy_boost.has(key)) countryTechMultipliers[r.country_id].heavy += 0.2;
+        if (effectMap.light_boost.has(key)) countryTechMultipliers[r.country_id].light += 0.2;
+        if (effectMap.mining_boost.has(key)) countryTechMultipliers[r.country_id].mining += 0.2;
+        if (effectMap.rocket_tech && effectMap.rocket_tech.has(key)) countryTechMultipliers[r.country_id].rocket += 1;
+
+        if (effectMap.prevent_fail.has(key)) {
           const tree = techTrees.find(t => t.name === r.name);
           if (tree) {
             const lvl = tree.levels.find(l => l.level === r.level);
@@ -169,13 +181,21 @@ export async function processTurnEnd(newTurn) {
         
         // 3-3. 코인 산정
         data.heavyIndustryCoins = Math.floor(budget / 50000);
-        data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 50000);
+        data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 2000);
         data.lightIndustryCoins = Math.floor((nonBudget * (alloc.lightIndustry / 100)) / 50000);
         
         // 무기 생산 로직 (큐 처리)
         if (entry.country_id) {
-          let availHeavy = data.heavyIndustryComplexes || 0;
-          let availShipyard = data.shipyards || 0;
+          const adminMults = data.multipliers || { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 };
+          const techMults = countryTechMultipliers[entry.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
+          
+          // 향후 우주업데이트를 위한 로켓 관련 함숫값 (Placeholder)
+          if (techMults.rocket > 0) {
+              // TODO: 우주 관련 생산력 등 로직 구현
+          }
+
+          let availHeavy = Math.floor((data.heavyIndustryComplexes || 0) * (adminMults.heavyIndustry || 1) * techMults.heavy);
+          let availShipyard = Math.floor((data.shipyards || 0) * (adminMults.shipbuilding || 1));
           const weaponBlueprints = settingEntry?.data?.weaponBlueprints || [];
           
           const { data: qEntry } = await supabase.from('data_entries').select('id, data').eq('category', 'military_queue').eq('country_id', entry.country_id).single();
@@ -257,22 +277,33 @@ export async function processTurnEnd(newTurn) {
         data.heavyIndustryComplexes = 0;
         data.shipyards = 0;
 
-        // 3-5. 코인 기반 자동 자원 생산 (농업 -> 식량, 경공업 -> 소비재)
+        // 3-5. 코인 기반 자동 자원 생산 (농업 -> 식량, 경공업 -> 소비재) 및 인구 비례 소비
         if (entry.country_id) {
-          const foodAmount = data.agricultureCoins * 5;
-          const cgAmount = data.lightIndustryCoins * 100;
+          const adminMults = data.multipliers || { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 };
+          const techMults = countryTechMultipliers[entry.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
           
-          if (foodAmount > 0 || cgAmount > 0) {
-            const { data: cRes } = await supabase.from('resources').select('id, resource_type, amount').eq('country_id', entry.country_id);
-            if (cRes) {
-              const foodRsc = cRes.find(r => r.resource_type === 'food');
-              if (foodRsc) {
-                await supabase.from('resources').update({ amount: Number(foodRsc.amount) + foodAmount }).eq('id', foodRsc.id);
-              }
-              const cgRsc = cRes.find(r => r.resource_type === 'consumer_goods');
-              if (cgRsc) {
-                await supabase.from('resources').update({ amount: Number(cgRsc.amount) + cgAmount }).eq('id', cgRsc.id);
-              }
+          const foodAmount = Math.floor(data.agricultureCoins * 12 * (adminMults.food || 1) * techMults.agri);
+          const cgAmount = Math.floor(data.lightIndustryCoins * 100 * (adminMults.consumerGoods || 1) * techMults.light);
+          const population = data.population?.total || 0;
+          
+          const { data: cRes2 } = await supabase.from('resources').select('id, resource_type, amount, production_per_turn').eq('country_id', entry.country_id);
+          if (cRes2) {
+            const foodRsc = cRes2.find(r => r.resource_type === 'food');
+            const prevFood = foodRsc ? Number(foodRsc.amount) : 0;
+            const newFoodAmount = prevFood + foodAmount - population;
+            if (foodRsc) {
+              await supabase.from('resources').update({ amount: newFoodAmount }).eq('id', foodRsc.id);
+            } else {
+              await supabase.from('resources').insert({ country_id: entry.country_id, resource_type: 'food', amount: newFoodAmount, production_per_turn: 0 });
+            }
+
+            const cgRsc = cRes2.find(r => r.resource_type === 'consumer_goods');
+            const prevCg = cgRsc ? Number(cgRsc.amount) : 0;
+            const newCgAmount = prevCg + cgAmount - population;
+            if (cgRsc) {
+              await supabase.from('resources').update({ amount: newCgAmount }).eq('id', cgRsc.id);
+            } else {
+              await supabase.from('resources').insert({ country_id: entry.country_id, resource_type: 'consumer_goods', amount: newCgAmount, production_per_turn: 0 });
             }
           }
         }

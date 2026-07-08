@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource } from '@/lib/store';
+import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource, updateResearch } from '@/lib/store';
 import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
@@ -328,8 +328,24 @@ export default function CountryPage() {
     
     let warning = null;
     if (pop > 0) {
-      if (food + consumerGoods < pop) warning = { type: 'inflation', msg: '🚨 [인플레이션 경고] 식량과 소비재가 인구보다 부족합니다!' };
-      else if (food + consumerGoods > pop * 2) warning = { type: 'deflation', msg: '⚠️ [디플레이션 경고] 식량과 소비재가 인구 대비 과도하게 많습니다.' };
+      const isFoodDef = food < pop;
+      const isFoodAbu = food >= pop * 2;
+      const isCgDef = consumerGoods < pop;
+      const isCgAbu = consumerGoods >= pop * 2;
+      
+      if (isFoodDef && isCgDef) {
+        warning = { type: 'severe_inflation', msg: '🚨 [극심한 인플레이션] 식량과 소비재가 모두 부족합니다! (비축량 < 인구수)' };
+      } else if (isFoodAbu && isCgAbu) {
+        warning = { type: 'severe_deflation', msg: '⚠️ [극심한 디플레이션] 식량과 소비재가 모두 넘쳐납니다! (비축량 >= 인구수*2)' };
+      } else if ((isFoodDef && isCgAbu) || (isFoodAbu && isCgDef)) {
+        warning = { type: 'stagflation', msg: '🌪️ [스테그플레이션] 한 자원은 부족하고, 다른 자원은 넘쳐납니다!' };
+      } else if (isFoodDef || isCgDef) {
+        warning = { type: 'inflation', msg: '📈 [인플레이션] 식량 또는 소비재가 부족합니다.' };
+      } else if (isFoodAbu || isCgAbu) {
+        warning = { type: 'deflation', msg: '📉 [디플레이션] 식량 또는 소비재가 넘쳐납니다.' };
+      } else {
+        warning = { type: 'stable', msg: '✅ [안정적] 경제가 안정적입니다. (식량과 소비재 비축량이 적정 수준)' };
+      }
     }
 
     const budget = (economyData.gdp || 0) * ((economyData.taxRate || 0) / 100);
@@ -338,8 +354,8 @@ export default function CountryPage() {
     return (
       <div className="slide-up">
         {warning && (
-          <div className="card" style={{ padding: '16px', marginBottom: '20px', background: warning.type === 'inflation' ? 'rgba(248,113,113,0.1)' : 'rgba(96,165,250,0.1)', border: `1px solid ${warning.type === 'inflation' ? 'var(--error)' : 'var(--blue)'}` }}>
-            <h4 style={{ margin: 0, color: warning.type === 'inflation' ? 'var(--error)' : 'var(--blue)' }}>{warning.msg}</h4>
+          <div className="card" style={{ padding: '16px', marginBottom: '20px', background: warning.type.includes('inflation') || warning.type === 'stagflation' ? 'rgba(248,113,113,0.1)' : warning.type.includes('deflation') ? 'rgba(96,165,250,0.1)' : 'rgba(74,222,128,0.1)', border: `1px solid ${warning.type.includes('inflation') || warning.type === 'stagflation' ? 'var(--error)' : warning.type.includes('deflation') ? 'var(--blue)' : 'var(--success)'}` }}>
+            <h4 style={{ margin: 0, color: warning.type.includes('inflation') || warning.type === 'stagflation' ? 'var(--error)' : warning.type.includes('deflation') ? 'var(--blue)' : 'var(--success)' }}>{warning.msg}</h4>
           </div>
         )}
         
@@ -579,18 +595,39 @@ export default function CountryPage() {
                         {activeResearch.status !== 'failed' && ` (남은 턴: ${activeResearch.remaining_turns})`}
                       </div>
                       {activeResearch.status === 'failed' && (
-                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
-                          // TODO: Replace with updateResearch call when we import it, or use a fetch. 
-                          // Wait, we need to import updateResearch if we want to restart. Let's just alert for now or implement properly.
-                          alert('재시작은 아직 구현되지 않았습니다. 관리자에게 문의하세요.');
-                        }}>🔄 재시작 (관리자 문의)</button>
+                        <button className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }} onClick={async () => {
+                          const maxSlots = economyData.researchSlots ?? 1;
+                          const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
+                          if (currentInProgress >= maxSlots) {
+                            return alert(`현재 진행 중인 연구가 슬롯 한도(${maxSlots}개)에 도달했습니다.`);
+                          }
+                          await updateResearch(activeResearch.id, { status: 'in_progress', remaining_turns: activeResearch.required_turns || 5 });
+                          loadAllData();
+                          alert('연구를 재시작했습니다.');
+                        }}>🔄 재시작 (턴 초기화)</button>
+                      )}
+                      {activeResearch.status === 'queued' && (
+                        <button className="btn btn-sm btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={async () => {
+                          const maxSlots = economyData.researchSlots ?? 1;
+                          const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
+                          if (currentInProgress >= maxSlots) {
+                            return alert(`현재 진행 중인 연구가 슬롯 한도(${maxSlots}개)에 도달했습니다. 다른 연구를 취소하거나 완료될 때까지 기다리세요.`);
+                          }
+                          await updateResearch(activeResearch.id, { status: 'in_progress' });
+                          loadAllData();
+                          alert('연구가 대기열에서 시작되었습니다!');
+                        }}>▶️ 연구 시작</button>
                       )}
                     </div>
                   ) : (
                     <div>
                       {nextLevelData ? (
                         <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
-                          if (!confirm(`정말 ${tree.name} 다음 단계(${nextLevelData.name || `Lv.${nextLevelData.level}`}) 연구를 시작하시겠습니까? (소요: ${nextLevelData.turns}턴)`)) return;
+                          const maxSlots = economyData.researchSlots ?? 1;
+                          const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
+                          const willQueue = currentInProgress >= maxSlots;
+                          
+                          if (!confirm(`정말 ${tree.name} 다음 단계(${nextLevelData.name || `Lv.${nextLevelData.level}`}) 연구를 ${willQueue ? '대기열에 추가' : '시작'}하시겠습니까? (소요: ${nextLevelData.turns}턴)`)) return;
                           
                           await createResearch({
                             country_id: countryId,
@@ -599,11 +636,15 @@ export default function CountryPage() {
                             level: nextLevelData.level,
                             required_turns: nextLevelData.turns,
                             remaining_turns: nextLevelData.turns,
-                            status: 'in_progress'
+                            status: willQueue ? 'queued' : 'in_progress'
                           });
                           loadAllData(); // Reload
-                          alert(`${nextLevelData.name || `Lv.${nextLevelData.level}`} 연구가 시작되었습니다!`);
-                        }}>🚀 다음 연구 시작: {nextLevelData.name || `Lv.${nextLevelData.level}`} ({nextLevelData.turns}턴)</button>
+                          if (willQueue) {
+                            alert(`연구 슬롯이 가득 차 대기열에 추가되었습니다. (최대 ${maxSlots}개)`);
+                          } else {
+                            alert(`${nextLevelData.name || `Lv.${nextLevelData.level}`} 연구가 시작되었습니다!`);
+                          }
+                        }}>🚀 다음 연구 {researches.filter(r => r.status === 'in_progress').length >= (economyData.researchSlots ?? 1) ? '대기' : '시작'}: {nextLevelData.name || `Lv.${nextLevelData.level}`} ({nextLevelData.turns}턴)</button>
                       ) : (
                         <p style={{ color: 'var(--text-muted)' }}>모든 단계를 완료했습니다.</p>
                       )}

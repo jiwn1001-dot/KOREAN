@@ -56,6 +56,8 @@ export default function AdminPage() {
   const [economyData, setEconomyData] = useState({
     gdp: 0,
     taxRate: 0,
+    researchSlots: 1,
+    multipliers: { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 },
     population: { total: 0, mobilizable: 0 },
     allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
     commerceCoins: 0,
@@ -162,6 +164,8 @@ export default function AdminPage() {
       setEconomyData(eco?.data || {
         gdp: 0,
         taxRate: 0,
+        researchSlots: 1,
+        multipliers: { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 },
         population: { total: 0, mobilizable: 0 },
         allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
         commerceCoins: 0,
@@ -1057,6 +1061,15 @@ export default function AdminPage() {
               />
               <small style={{ color: 'var(--text-muted)' }}>예산 = GDP × (세율/100)</small>
             </div>
+            <div className="form-group">
+              <label className="form-label">연구 슬롯 (동시 진행 가능 개수)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={economyData.researchSlots ?? 1}
+                onChange={(e) => setEconomyData(p => ({ ...p, researchSlots: Number(e.target.value) }))}
+              />
+            </div>
           </div>
           
           <div className="form-group">
@@ -1068,6 +1081,33 @@ export default function AdminPage() {
               value={economyData.commerceCoins || 0}
               onChange={(e) => setEconomyData(p => ({ ...p, commerceCoins: Number(e.target.value) }))}
             />
+          </div>
+        </div>
+
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">⚙️ 국가별 생산 배율</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            기본값은 1입니다. (예: 1.5로 설정 시 기존 생산량의 1.5배 증가)
+          </p>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">조선력 배율</label>
+              <input type="number" step="0.1" className="form-input" value={economyData.multipliers?.shipbuilding ?? 1} onChange={e => setEconomyData(p => ({ ...p, multipliers: { ...(p.multipliers || {}), shipbuilding: Number(e.target.value) } }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">식량 생산력 배율</label>
+              <input type="number" step="0.1" className="form-input" value={economyData.multipliers?.food ?? 1} onChange={e => setEconomyData(p => ({ ...p, multipliers: { ...(p.multipliers || {}), food: Number(e.target.value) } }))} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">중공업 배율</label>
+              <input type="number" step="0.1" className="form-input" value={economyData.multipliers?.heavyIndustry ?? 1} onChange={e => setEconomyData(p => ({ ...p, multipliers: { ...(p.multipliers || {}), heavyIndustry: Number(e.target.value) } }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">소비재 배율</label>
+              <input type="number" step="0.1" className="form-input" value={economyData.multipliers?.consumerGoods ?? 1} onChange={e => setEconomyData(p => ({ ...p, multipliers: { ...(p.multipliers || {}), consumerGoods: Number(e.target.value) } }))} />
+            </div>
           </div>
         </div>
 
@@ -1291,12 +1331,12 @@ export default function AdminPage() {
             industryCost: indCost,
             resources
           };
-          saveGameSettings({ weaponBlueprints: [...weaponBlueprints, newBp] });
+          saveGameSettings({ weaponBlueprints: [...(Array.isArray(weaponBlueprints) ? weaponBlueprints : []), newBp] });
         }}>➕ 청사진 추가</button>
       </div>
 
       <div className="card-grid card-grid-3">
-        {(weaponBlueprints || []).map((bp, idx) => (
+        {(Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter(bp => bp).map((bp, idx) => (
           <div key={bp.id} className="card" style={{ padding: '16px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: 'var(--accent)' }}>{bp.name}</h4>
             <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
@@ -1311,11 +1351,11 @@ export default function AdminPage() {
             </div>
             <button className="btn btn-sm btn-danger" onClick={() => {
               if(!confirm('정말 삭제하시겠습니까?')) return;
-              saveGameSettings({ weaponBlueprints: (weaponBlueprints || []).filter((_, i) => i !== idx) });
+              saveGameSettings({ weaponBlueprints: (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter((_, i) => i !== idx) });
             }}>삭제</button>
           </div>
         ))}
-        {!(weaponBlueprints && weaponBlueprints.length > 0) && <p>등록된 청사진이 없습니다.</p>}
+        {!(Array.isArray(weaponBlueprints) && (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).length > 0) && <p>등록된 청사진이 없습니다.</p>}
       </div>
     </div>
   );
@@ -1451,7 +1491,7 @@ export default function AdminPage() {
           <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>모든 국가가 공유하는 기술 항목과 단계(레벨)별 소모 턴 수를 정의합니다.</p>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-            {techTrees.map((tree, idx) => (
+            {(Array.isArray(techTrees) ? techTrees : []).filter(t => t).map((tree, idx) => (
               <div key={tree.id} className="card" style={{ padding: '16px', background: 'var(--bg-glass)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
@@ -1465,7 +1505,7 @@ export default function AdminPage() {
                 </div>
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                  {tree.levels.map((lvl, lIdx) => (
+                  {(Array.isArray(tree.levels) ? tree.levels : []).filter(l => l).map((lvl, lIdx) => (
                     <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
                       {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>} {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
                     </span>
@@ -1506,8 +1546,8 @@ export default function AdminPage() {
                     } else {
                       showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
-                  }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
-                  {tree.levels.length > 0 && (
+                  }}>➕ 다음 단계 추가 (Lv.{(Array.isArray(tree.levels) ? tree.levels : []).length + 1})</button>
+                  {(Array.isArray(tree.levels) ? tree.levels : []).length > 0 && (
                     <button className="btn btn-sm btn-ghost" onClick={() => {
                       const newTrees = [...techTrees];
                       newTrees[idx].levels.pop();
@@ -1559,9 +1599,9 @@ export default function AdminPage() {
         {selectedCountryId && (
           <div className="admin-form-section">
             <h3 className="admin-form-title">국가 연구 상태 및 다음 단계 진행</h3>
-            {techTrees.length === 0 ? <p>먼저 위에서 기술 트리를 정의하세요.</p> : (
+            {(Array.isArray(techTrees) ? techTrees : []).length === 0 ? <p>먼저 위에서 기술 트리를 정의하세요.</p> : (
               <div className="card-grid card-grid-2">
-                {techTrees.map(tree => {
+                {(Array.isArray(techTrees) ? techTrees : []).filter(t => t).map(tree => {
                   // 현재 국가가 이 기술에 대해 가진 연구 기록 필터링
                   const countryResearches = researches.filter(r => r.name === tree.name);
                   
@@ -1575,7 +1615,7 @@ export default function AdminPage() {
                     : 0;
 
                   const nextLevelIndex = highestCompletedLevel; // 0-indexed in array
-                  const nextLevelData = tree.levels[nextLevelIndex];
+                  const nextLevelData = (Array.isArray(tree.levels) ? tree.levels : [])[nextLevelIndex];
 
                   return (
                     <div key={tree.id} className="card" style={{ padding: '16px' }}>
@@ -1585,19 +1625,19 @@ export default function AdminPage() {
                       </div>
                       
                       <div style={{ marginBottom: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                        현재 완료된 단계: {highestCompletedLevel > 0 ? (tree.levels[highestCompletedLevel - 1]?.name || `Lv.${highestCompletedLevel}`) : '없음'}
+                        현재 완료된 단계: {highestCompletedLevel > 0 ? ((Array.isArray(tree.levels) ? tree.levels : [])[highestCompletedLevel - 1]?.name || `Lv.${highestCompletedLevel}`) : '없음'}
                       </div>
 
                       {activeResearch ? (
                         <div style={{ padding: '12px', background: activeResearch.status === 'failed' ? 'rgba(248,113,113,0.1)' : 'var(--bg-glass)', border: activeResearch.status === 'failed' ? '1px solid var(--error)' : 'none', borderRadius: '8px' }}>
                           <div style={{ marginBottom: '8px' }}>
-                            <strong>[{activeResearch.status === 'failed' ? '실패함' : '진행 중'}] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
+                            <strong>[{activeResearch.status === 'failed' ? '실패함' : '진행 중'}] {(Array.isArray(tree.levels) ? tree.levels : [])[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
                             {activeResearch.status !== 'failed' && ` (남은 턴: ${activeResearch.remaining_turns})`}
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             {activeResearch.status === 'failed' ? (
                               <button className="btn btn-primary" style={{ flex: 1 }} onClick={async () => {
-                                await updateResearch(activeResearch.id, { status: 'in_progress', remaining_turns: tree.levels[activeResearch.level - 1]?.turns || 5 });
+                                await updateResearch(activeResearch.id, { status: 'in_progress', remaining_turns: (Array.isArray(tree.levels) ? tree.levels : [])[activeResearch.level - 1]?.turns || 5 });
                                 loadResearches(selectedCountryId);
                                 showToast('연구를 재시작합니다.');
                               }}>🔄 재시작 (턴 초기화)</button>
@@ -1701,7 +1741,8 @@ export default function AdminPage() {
       { key: 'aluminum', label: '알루미늄' },
       { key: 'rubber', label: '고무' },
       { key: 'sulfur', label: '유황' },
-      { key: 'food', label: '식료품' }
+      { key: 'food', label: '식료품' },
+      { key: 'consumer_goods', label: '소비재' }
     ];
 
     return (
