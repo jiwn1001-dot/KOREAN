@@ -199,15 +199,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleSaveMap = async (dataUrl) => {
-    try {
-      await saveMapData(dataUrl, countries.map((c) => ({ name: c.name, color: c.color })));
-      showToast('지도 저장 성공!');
-    } catch (err) {
-      console.error(err);
-      showToast('지도 저장 실패', 'error');
-    }
-  };
 
   const handleBaseMapUpload = async (dataUrl) => {
     try {
