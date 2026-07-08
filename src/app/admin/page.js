@@ -811,6 +811,21 @@ export default function AdminPage() {
                   placeholder="0.0"
                 />
               </div>
+              <div className="form-group" style={{ width: '80px' }}>
+                <label className="form-label">색상</label>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <input
+                    type="color"
+                    value={party.color || '#cccccc'}
+                    onChange={(e) => {
+                      const parties = [...politicsData.parties];
+                      parties[idx] = { ...parties[idx], color: e.target.value };
+                      setPoliticsData((p) => ({ ...p, parties }));
+                    }}
+                    style={{ width: '100%', height: '36px', padding: '0', border: 'none', cursor: 'pointer', borderRadius: '4px' }}
+                  />
+                </div>
+              </div>
             </div>
             <div className="form-row" style={{ alignItems: 'flex-end' }}>
               <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
@@ -838,7 +853,7 @@ export default function AdminPage() {
         <button className="btn btn-sm btn-ghost" onClick={() => {
           setPoliticsData((p) => ({
             ...p,
-            parties: [...(p.parties || []), { name: '', seats: 0, supportRate: 0 }],
+            parties: [...(p.parties || []), { name: '', seats: 0, supportRate: 0, color: '#cccccc' }],
           }));
         }}>➕ 정당 추가</button>
       </div>
