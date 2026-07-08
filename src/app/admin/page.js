@@ -1532,12 +1532,12 @@ export default function AdminPage() {
                 </div>
                 
                 <div className="form-inline">
-                  <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
-                  <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
-                  <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
+                  <input id={`levelName_${tree.id || idx}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
+                  <input id={`levelTurn_${tree.id || idx}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
+                  <select id={`levelEra_${tree.id || idx}`} className="form-select" style={{ width: '120px' }}>
                     {eras.map(e => <option key={e} value={e}>{e}</option>)}
                   </select>
-                  <select id={`levelEffect_${tree.id}`} className="form-select" style={{ width: '150px' }}>
+                  <select id={`levelEffect_${tree.id || idx}`} className="form-select" style={{ width: '150px' }}>
                     <option value="none">특수효과 없음</option>
                     <option value="prevent_fail">연구실패 방지</option>
                     <option value="research_speed">연구시간 50% 감소</option>
@@ -1549,19 +1549,19 @@ export default function AdminPage() {
                     <option value="radar_tech">레이더 기술 (전투)</option>
                   </select>
                   <button className="btn btn-sm btn-secondary" onClick={() => {
-                    const name = document.getElementById(`levelName_${tree.id}`).value;
-                    const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
-                    const effect = document.getElementById(`levelEffect_${tree.id}`).value;
-                    const era = document.getElementById(`levelEra_${tree.id}`).value;
+                    const name = document.getElementById(`levelName_${tree.id || idx}`).value;
+                    const turns = parseInt(document.getElementById(`levelTurn_${tree.id || idx}`).value);
+                    const effect = document.getElementById(`levelEffect_${tree.id || idx}`).value;
+                    const era = document.getElementById(`levelEra_${tree.id || idx}`).value;
                     if (turns > 0 && name) {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
                       newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
                       saveTechTrees(newTrees);
-                      document.getElementById(`levelName_${tree.id}`).value = '';
-                      document.getElementById(`levelTurn_${tree.id}`).value = '';
-                      document.getElementById(`levelEffect_${tree.id}`).value = 'none';
-                      document.getElementById(`levelEra_${tree.id}`).value = eras[0];
+                      document.getElementById(`levelName_${tree.id || idx}`).value = '';
+                      document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
+                      document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
+                      document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
                     } else {
                       showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
@@ -1706,14 +1706,14 @@ export default function AdminPage() {
                       {highestCompletedLevel > 0 && (
                         <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <select id={`techSendTarget_${tree.id}`} className="form-select" style={{ flex: 1 }}>
+                            <select id={`techSendTarget_${tree.id || idx}`} className="form-select" style={{ flex: 1 }}>
                               <option value="">-- 기술을 제공할 국가 선택 --</option>
                               {countries.filter(c => c.id !== selectedCountryId).map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                               ))}
                             </select>
                             <button className="btn btn-sm btn-secondary" onClick={async () => {
-                              const targetCountryId = document.getElementById(`techSendTarget_${tree.id}`).value;
+                              const targetCountryId = document.getElementById(`techSendTarget_${tree.id || idx}`).value;
                               if (!targetCountryId) return showToast('제공할 국가를 선택하세요.', 'error');
                               
                               if (!confirm(`정말 Lv.${highestCompletedLevel} 기술을 제공하시겠습니까?`)) return;
