@@ -1309,16 +1309,15 @@ export default function AdminPage() {
         <div className="form-row">
           <div className="form-group">
             <label>무기명 (기술명과 동일해야 함)</label>
-                        <select id="newBpName" className="form-select">
-              <option value="">-- 무기명 선택 (기술명) --</option>
-              {(Array.isArray(techTrees) ? techTrees : []).map((tree, idx) => (
-                <optgroup key={tree.id || idx} label={tree.name}>
-                  {(Array.isArray(tree.levels) ? tree.levels : []).map(lvl => (
-                    <option key={lvl.level} value={lvl.name || `${tree.name} ${lvl.level}단계`}>{lvl.name || `${tree.name} ${lvl.level}단계`}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <input type="text" id="newBpName" className="form-input" list="bpNameOptions" placeholder="직접 입력하거나 목록에서 검색/선택" />
+            <datalist id="bpNameOptions">
+              {(Array.isArray(techTrees) ? techTrees : []).map(tree => 
+                (Array.isArray(tree.levels) ? tree.levels : []).map(lvl => {
+                  const val = lvl.name || `${tree.name} ${lvl.level}단계`;
+                  return <option key={`${tree.name}_${lvl.level}`} value={val} />;
+                })
+              )}
+            </datalist>
           </div>
           <div className="form-group">
             <label>요구 기술 분류</label>
