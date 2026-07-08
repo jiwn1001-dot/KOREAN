@@ -714,7 +714,7 @@ export default function CountryPage() {
       food: { label: '식료품', icon: '🍞' },
       consumer_goods: { label: '소비재', icon: '🛍️' }
     };
-    const hasCoalToOil = researches.some(r => r.status === 'completed' && r.name.includes('석탄-석유')); // Example check, will refine later
+    const hasCoalToOil = researches.some(r => r.status === 'completed' && r.name && r.name.includes('석탄-석유')); // Example check, will refine later
     const weaponResources = resources.filter(r => r.resource_type === 'weapon'); // Assuming weapons are saved as 'weapon' type
 
     return (
@@ -758,17 +758,17 @@ export default function CountryPage() {
                 const itemRaw = document.getElementById('transferItem').value;
                 const amount = parseInt(document.getElementById('transferAmount').value);
                 
-                if (!toId) return showToast('국가를 선택하세요.', 'error');
-                if (!itemRaw) return showToast('보낼 물자를 선택하세요.', 'error');
-                if (!amount || amount <= 0) return showToast('수량을 올바르게 입력하세요.', 'error');
+                if (!toId) return alert('국가를 선택하세요.');
+                if (!itemRaw) return alert('보낼 물자를 선택하세요.');
+                if (!amount || amount <= 0) return alert('수량을 올바르게 입력하세요.');
                 
                 const [type, key] = itemRaw.split(':');
                 const res = await transferItems(countryId, toId, type, key, amount);
                 if (res.success) {
-                  showToast(res.message);
-                  loadCountryData();
+                  alert(res.message);
+                  loadAllData();
                 } else {
-                  showToast(res.message, 'error');
+                  alert(res.message);
                 }
               }}>보내기</button>
             </div>
