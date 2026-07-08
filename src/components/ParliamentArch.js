@@ -26,28 +26,23 @@ export default function ParliamentArch({ parties = [] }) {
   });
 
   // Calculate positions for an arch (half-circle)
-  // To make it look like a parliament, we arrange them in concentric semi-circles
-  const rows = Math.max(3, Math.ceil(Math.sqrt(totalSeats) / 2)); 
-  const width = 300;
-  const height = 160;
+  const rows = Math.max(3, Math.ceil(Math.sqrt(totalSeats) / 2.5)); 
+  const width = 400;
+  const height = 220;
   const cx = width / 2;
-  const cy = height - 10;
-  const maxRadius = 140;
-  const minRadius = 40;
-  const dotSize = Math.max(3, Math.min(8, 200 / rows));
+  const cy = height - 20;
+  const maxRadius = 180;
+  const minRadius = 60;
+  const dotSize = Math.max(2.5, Math.min(7, 120 / rows * 0.4));
 
-  let currentDotIndex = 0;
-  const dotPositions = [];
-
-  // Distribute dots across rows
+  const positions = [];
   const dotsPerRow = [];
   let remainingDots = totalSeats;
   
   for (let r = 0; r < rows; r++) {
-    // Outer rows get more dots
     const fraction = (r + 1) / ((rows * (rows + 1)) / 2);
     let count = Math.round(totalSeats * fraction);
-    if (r === rows - 1) count = remainingDots; // Last row takes the rest
+    if (r === rows - 1) count = remainingDots;
     remainingDots -= count;
     dotsPerRow.push(count);
   }
@@ -57,40 +52,48 @@ export default function ParliamentArch({ parties = [] }) {
     const count = dotsPerRow[r];
     
     for (let i = 0; i < count; i++) {
-      if (currentDotIndex >= dots.length) break;
-      
-      // Angle from 180 degrees (PI) to 0 degrees
       const angle = Math.PI - (Math.PI * (i / Math.max(1, count - 1)));
       const x = cx + rowRadius * Math.cos(angle);
       const y = cy - rowRadius * Math.sin(angle);
       
-      dotPositions.push({
-        x, y,
-        ...dots[currentDotIndex]
-      });
-      currentDotIndex++;
+      positions.push({ x, y, angle, r });
     }
   }
 
+  // Sort positions by angle (left to right) and then by row to cluster them as slices
+  positions.sort((a, b) => {
+    if (Math.abs(b.angle - a.angle) > 0.001) {
+      return b.angle - a.angle;
+    }
+    return a.r - b.r;
+  });
+
+  const dotPositions = positions.map((pos, idx) => ({
+    ...pos,
+    ...dots[idx]
+  }));
+
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: '400px' }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: '500px' }}>
         {dotPositions.map((dot, idx) => (
-          <circle
-            key={idx}
-            cx={dot.x}
-            cy={dot.y}
-            r={dotSize}
-            fill={dot.color}
-            opacity={0.8}
-          >
-            <title>{dot.partyName}</title>
-          </circle>
+          dot.partyName && (
+            <circle
+              key={idx}
+              cx={dot.x}
+              cy={dot.y}
+              r={dotSize}
+              fill={dot.color}
+              opacity={0.9}
+            >
+              <title>{dot.partyName}</title>
+            </circle>
+          )
         ))}
-        <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--text-primary)" fontSize="20" fontWeight="bold">
+        <text x={cx} y={cy - 10} textAnchor="middle" fill="var(--text-primary)" fontSize="24" fontWeight="bold">
           {totalSeats}
         </text>
-        <text x={cx} y={cy + 10} textAnchor="middle" fill="var(--text-muted)" fontSize="12">
+        <text x={cx} y={cy + 15} textAnchor="middle" fill="var(--text-muted)" fontSize="13">
           총 의석
         </text>
       </svg>
