@@ -1,62 +1,57 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { type, password, countryId } = body;
+    const { username, password } = body;
 
-    if (!password) {
-      return NextResponse.json({ success: false, error: '비밀번호를 입력해주세요.' }, { status: 400 });
+    if (!username || !password) {
+      return NextResponse.json({ success: false, error: '아이디와 비밀번호를 모두 입력해주세요.' }, { status: 400 });
     }
 
-    if (type === 'admin') {
-      const adminPassword = process.env.ADMIN_PASSWORD;
-      if (!adminPassword) {
-        return NextResponse.json({ success: false, error: '관리자 비밀번호가 설정되지 않았습니다.' }, { status: 500 });
-      }
+    // 1. 최고 관리자 하드코딩 인증 처리
+    const adminUsername = 'admin'; // Or use env
+    const adminPassword = process.env.ADMIN_PASSWORD;
 
-      if (password === adminPassword) {
-        return NextResponse.json({ success: true, role: 'admin' });
-      } else {
-        return NextResponse.json({ success: false, error: '비밀번호가 올바르지 않습니다.' }, { status: 401 });
-      }
+    if (username === adminUsername && password === adminPassword) {
+      return NextResponse.json({ 
+        success: true, 
+        user: { id: 'admin', username: 'admin', role: 'admin', assignedCountryId: null } 
+      });
     }
 
-    if (type === 'country') {
-      if (!countryId) {
-        return NextResponse.json({ success: false, error: '국가를 선택해주세요.' }, { status: 400 });
-      }
+    // 2. 일반 유저 / 부관리자 인증 처리 (DB 확인)
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, username, password, role, assigned_country_id')
+      .eq('username', username)
+      .single();
 
-      const { data: country, error } = await supabase
-        .from('countries')
-        .select('id, name, password')
-        .eq('id', countryId)
-        .single();
-
-      if (error || !country) {
-        return NextResponse.json({ success: false, error: '국가를 찾을 수 없습니다.' }, { status: 404 });
-      }
-
-      if (password === country.password) {
-        return NextResponse.json({
-          success: true,
-          role: 'country',
-          countryId: country.id,
-          countryName: country.name,
-        });
-      } else {
-        return NextResponse.json({ success: false, error: '비밀번호가 올바르지 않습니다.' }, { status: 401 });
-      }
+    if (error || !user) {
+      return NextResponse.json({ success: false, error: '존재하지 않는 아이디입니다.' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: false, error: '잘못된 요청입니다.' }, { status: 400 });
+    if (user.password !== password) {
+      return NextResponse.json({ success: false, error: '비밀번호가 올바르지 않습니다.' }, { status: 401 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        assignedCountryId: user.assigned_country_id,
+      }
+    });
+
   } catch (err) {
+    console.error('Login Error:', err);
     return NextResponse.json({ success: false, error: '서버 오류가 발생했습니다.' }, { status: 500 });
   }
 }

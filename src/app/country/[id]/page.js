@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, getAllImages } from '@/lib/store';
-import { canAccessCountry, isAdmin, getAuth } from '@/lib/auth';
+import { getCountry, getDataEntry, getAllImages, getResearches, getResources } from '@/lib/store';
+import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ParliamentArch from '@/components/ParliamentArch';
+import SupportPieChart from '@/components/SupportPieChart';
 
 export default function CountryPage() {
   const params = useParams();
@@ -17,12 +19,14 @@ export default function CountryPage() {
   const [activeTab, setActiveTab] = useState('politics');
   const [data, setData] = useState({});
   const [images, setImages] = useState({});
+  const [researches, setResearches] = useState([]);
+  const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
-    setAdmin(isAdmin());
+    setAdmin(isAdminOrSub());
     const access = canAccessCountry(countryId);
     setHasAccess(access);
     loadCountry();
@@ -64,6 +68,15 @@ export default function CountryPage() {
 
     setData(newData);
     setImages(newImages);
+
+    try {
+      const res = await getResearches(countryId);
+      setResearches(res || []);
+      const rsc = await getResources(countryId);
+      setResources(rsc || []);
+    } catch (err) {
+      console.error('Failed to load researches or resources', err);
+    }
   };
 
   const tabs = [
@@ -71,6 +84,8 @@ export default function CountryPage() {
     { id: 'economy', label: '경제', icon: '💰' },
     { id: 'social', label: '사회문제', icon: '📢' },
     { id: 'diplomacy', label: '외교관계', icon: '🤝' },
+    { id: 'research', label: '연구', icon: '🔬' },
+    { id: 'resource', label: '자원', icon: '📦' },
   ];
 
   if (loading) {
@@ -101,26 +116,25 @@ export default function CountryPage() {
             <div className="password-gate-icon">🔒</div>
             <h2 className="password-gate-title">{country.name}</h2>
             <p className="password-gate-desc">
-              이 국가의 정보를 열람하려면 비밀번호가 필요합니다.
+              이 국가의 정보를 열람하려면 배정된 계정으로 로그인해야 합니다.
             </p>
             <button
               className="btn btn-primary btn-lg"
               onClick={() => setShowLogin(true)}
               style={{ width: '100%' }}
             >
-              🔑 비밀번호 입력
+              🔑 로그인
             </button>
           </div>
         </div>
 
         {showLogin && (
           <LoginModal
-            type="country"
             onClose={() => setShowLogin(false)}
             onSuccess={() => {
               setShowLogin(false);
-              setHasAccess(true);
-              setAdmin(isAdmin());
+              setHasAccess(canAccessCountry(countryId));
+              setAdmin(isAdminOrSub());
             }}
           />
         )}
@@ -132,8 +146,6 @@ export default function CountryPage() {
   const economyData = data.economy?.data || {};
   const socialData = data.social?.data || {};
   const diplomacyData = data.diplomacy?.data || {};
-
-  const partyColors = ['#7c6bf0', '#00d4c8', '#f87171', '#fbbf24', '#4ade80', '#f472b6', '#60a5fa', '#a78bfa'];
 
   const renderPolitics = () => (
     <div className="slide-up">
@@ -168,6 +180,17 @@ export default function CountryPage() {
               </tr>
             </tbody>
           </table>
+          
+          {/* Leader Image */}
+          {politicsData.leaderImage && (
+            <div style={{ marginTop: '16px', textAlign: 'center' }}>
+              <img 
+                src={politicsData.leaderImage} 
+                alt="지도자" 
+                style={{ width: '150px', height: '150px', objectFit: 'cover', borderRadius: '50%', border: '4px solid var(--border-default)' }} 
+              />
+            </div>
+          )}
         </div>
 
         {/* Parties */}
@@ -175,31 +198,21 @@ export default function CountryPage() {
           <h3 className="content-section-title">🗳️ 정당 현황</h3>
           {politicsData.parties?.length > 0 ? (
             <>
-              <div className="party-bar-container">
-                <div className="party-bar">
-                  {politicsData.parties.map((party, i) => {
-                    const totalSeats = politicsData.parties.reduce((s, p) => s + (Number(p.seats) || 0), 0);
-                    const width = totalSeats > 0 ? ((Number(party.seats) || 0) / totalSeats) * 100 : 0;
-                    return (
-                      <div
-                        key={i}
-                        className="party-bar-segment"
-                        style={{
-                          width: `${width}%`,
-                          backgroundColor: partyColors[i % partyColors.length],
-                        }}
-                        title={`${party.name}: ${party.seats}석`}
-                      />
-                    );
-                  })}
-                </div>
+              <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+                <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>의석 분포</h4>
+                <ParliamentArch parties={politicsData.parties} />
               </div>
+              <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+                <h4 style={{ textAlign: 'center', marginBottom: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>지지율</h4>
+                <SupportPieChart parties={politicsData.parties} />
+              </div>
+
               <div className="party-list">
                 {politicsData.parties.map((party, i) => (
                   <div key={i} className="party-item" style={{ alignItems: 'flex-start' }}>
                     <span
                       className="party-color-dot"
-                      style={{ backgroundColor: partyColors[i % partyColors.length], marginTop: '6px' }}
+                      style={{ backgroundColor: party.color || 'var(--accent)', marginTop: '6px' }}
                     />
                     <div style={{ flex: 1 }}>
                       <span className="party-name">{party.name}</span>
@@ -282,18 +295,37 @@ export default function CountryPage() {
         </div>
       )}
 
+      {/* GDP & Growth Rate */}
+      <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
+         <div className="card stat-card" style={{ background: 'var(--gradient-card)' }}>
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>💵</div>
+            <div className="stat-label">국내총생산 (GDP)</div>
+            <div className="stat-value" style={{ color: 'var(--teal)' }}>
+              {economyData.gdp?.value || '-'}
+              {economyData.gdp?.unit && <span className="stat-unit">{economyData.gdp.unit}</span>}
+            </div>
+         </div>
+         <div className="card stat-card">
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>📈</div>
+            <div className="stat-label">경제성장률 (턴당)</div>
+            <div className="stat-value">
+              {economyData.economicGrowthRate?.value || '0'}
+              <span className="stat-unit">%</span>
+            </div>
+         </div>
+      </div>
+
       <div className="card-grid card-grid-3" style={{ marginBottom: '20px' }}>
         {[
           { key: 'heavyIndustry', label: '중공업', icon: '🏭' },
           { key: 'lightIndustry', label: '경공업', icon: '🧵' },
           { key: 'agriculture', label: '농업', icon: '🌾' },
-          { key: 'resources', label: '자원', icon: '⛏️' },
           { key: 'commerce', label: '상업', icon: '🏪' },
         ].map((item) => {
           const val = economyData[item.key] || {};
           return (
             <div key={item.key} className="card stat-card">
-              <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{item.icon}</div>
+               <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{item.icon}</div>
               <div className="stat-label">{item.label}</div>
               <div className="stat-value">
                 {val.value || '-'}
@@ -371,6 +403,77 @@ export default function CountryPage() {
     </div>
   );
 
+  const renderResearch = () => (
+    <div className="slide-up">
+      <div className="content-section">
+        <h3 className="content-section-title">🔬 연구 기술</h3>
+        {researches.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>진행 중이거나 완료된 연구가 없습니다.</p>
+        ) : (
+          <div className="card-grid card-grid-2">
+            {researches.map((r) => (
+              <div key={r.id} className="card" style={{ padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <span className="badge badge-teal" style={{ marginBottom: '8px' }}>{r.category || '일반'}</span>
+                    <h4 style={{ margin: '0 0 4px 0' }}>{r.name} (Lv.{r.level})</h4>
+                  </div>
+                  <div>
+                    {r.status === 'completed' && <span className="badge" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>완료됨</span>}
+                    {r.status === 'in_progress' && <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>진행중 ({r.remaining_turns}턴 남음)</span>}
+                    {r.status === 'queued' && <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>대기중 ({r.required_turns}턴 필요)</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderResource = () => {
+    const resourceLabels = {
+      wood: { label: '목재', icon: '🪵' },
+      steel: { label: '강철', icon: '🔩' },
+      coal: { label: '석탄', icon: '🪨' },
+      oil: { label: '석유', icon: '🛢️' },
+      chromium: { label: '크롬', icon: '💎' },
+      tungsten: { label: '텅스텐', icon: '⚡' },
+      aluminum: { label: '알루미늄', icon: '⚙️' },
+      rubber: { label: '고무', icon: '🛞' },
+      sulfur: { label: '유황', icon: '🔥' },
+      food: { label: '식료품', icon: '🍞' },
+    };
+
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h3 className="content-section-title">📦 국가 자원</h3>
+          <div className="card-grid card-grid-4">
+            {Object.entries(resourceLabels).map(([key, info]) => {
+              const rsc = resources.find(r => r.resource_type === key);
+              const amount = rsc ? rsc.amount : 0;
+              const prod = rsc ? rsc.production_per_turn : 0;
+              return (
+                <div key={key} className="card stat-card" style={{ padding: '16px' }}>
+                  <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>{info.icon}</div>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{info.label}</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {Number(amount).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: Number(prod) > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+                    {Number(prod) > 0 ? `+${prod} / 턴` : '생산 없음'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTab = () => {
     switch (activeTab) {
       case 'politics':
@@ -381,6 +484,10 @@ export default function CountryPage() {
         return renderTextSection('social', socialData, images.social);
       case 'diplomacy':
         return renderTextSection('diplomacy', diplomacyData, images.diplomacy);
+      case 'research':
+        return renderResearch();
+      case 'resource':
+        return renderResource();
       default:
         return null;
     }
@@ -404,12 +511,12 @@ export default function CountryPage() {
         </div>
         {admin && (
           <a href="/admin" className="btn btn-sm btn-secondary">
-            ⚙️ 편집
+            ⚙️ 관리자
           </a>
         )}
       </div>
 
-      <div className="tabs">
+      <div className="tabs" style={{ flexWrap: 'wrap' }}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -425,3 +532,4 @@ export default function CountryPage() {
     </div>
   );
 }
+

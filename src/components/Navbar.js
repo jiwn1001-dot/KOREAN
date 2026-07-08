@@ -10,7 +10,6 @@ export default function Navbar() {
   const pathname = usePathname();
   const [auth, setAuth] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
-  const [loginType, setLoginType] = useState('admin');
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -27,8 +26,7 @@ export default function Navbar() {
     window.location.reload();
   };
 
-  const openLogin = (type) => {
-    setLoginType(type);
+  const openLogin = () => {
     setShowLogin(true);
     setMobileOpen(false);
   };
@@ -70,7 +68,7 @@ export default function Navbar() {
               </li>
             ))}
 
-            {auth?.role === 'admin' && (
+            {(auth?.role === 'admin' || auth?.role === 'sub_admin') && (
               <li>
                 <Link
                   href="/admin"
@@ -78,38 +76,25 @@ export default function Navbar() {
                   onClick={() => setMobileOpen(false)}
                 >
                   <span>⚙️</span>
-                  관리자
+                  관리자 메뉴
                 </Link>
               </li>
             )}
 
             {!auth && (
-              <>
-                <li>
-                  <button onClick={() => openLogin('country')}>
-                    <span>🔑</span>
-                    국가 로그인
-                  </button>
-                </li>
-                <li>
-                  <button
-                    className="nav-admin-btn"
-                    onClick={() => openLogin('admin')}
-                  >
-                    <span>🛡️</span>
-                    관리자
-                  </button>
-                </li>
-              </>
+              <li>
+                <button onClick={openLogin}>
+                  <span>🔑</span>
+                  로그인 / 가입
+                </button>
+              </li>
             )}
 
             {auth && (
               <li>
                 <button onClick={handleLogout}>
                   <span>🚪</span>
-                  {auth.role === 'admin'
-                    ? '관리자 로그아웃'
-                    : `${auth.countryName || '국가'} 로그아웃`}
+                  로그아웃 ({auth.username})
                 </button>
               </li>
             )}
@@ -119,7 +104,6 @@ export default function Navbar() {
 
       {showLogin && (
         <LoginModal
-          type={loginType}
           onClose={() => setShowLogin(false)}
           onSuccess={() => {
             setShowLogin(false);

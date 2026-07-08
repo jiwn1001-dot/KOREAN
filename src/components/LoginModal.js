@@ -1,47 +1,41 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { loginAsAdmin, loginAsCountry } from '@/lib/auth';
-import { getCountries } from '@/lib/store';
+import { useState } from 'react';
+import { loginWithCredentials, register } from '@/lib/auth';
 
-export default function LoginModal({ type = 'admin', onClose, onSuccess }) {
+export default function LoginModal({ onClose, onSuccess }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [countryId, setCountryId] = useState('');
-  const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (type === 'country') {
-      getCountries().then(setCountries).catch(console.error);
-    }
-  }, [type]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    
+    if (!username || !password) {
+      setError('아이디와 비밀번호를 모두 입력해주세요.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      let success = false;
-      if (type === 'admin') {
-        success = await loginAsAdmin(password);
+      let res;
+      if (isLogin) {
+        res = await loginWithCredentials(username, password);
       } else {
-        if (!countryId) {
-          setError('국가를 선택해주세요.');
-          setLoading(false);
-          return;
-        }
-        success = await loginAsCountry(countryId, password);
+        res = await register(username, password);
       }
 
-      if (success) {
+      if (res.success) {
         onSuccess();
       } else {
-        setError('비밀번호가 올바르지 않습니다.');
+        setError(res.error || '오류가 발생했습니다.');
       }
     } catch (err) {
-      setError('로그인 중 오류가 발생했습니다.');
+      setError('연결 중 오류가 발생했습니다.');
     }
     setLoading(false);
   };
@@ -53,33 +47,44 @@ export default function LoginModal({ type = 'admin', onClose, onSuccess }) {
 
         <div className="modal-header">
           <h2 className="modal-title">
-            {type === 'admin' ? '🛡️ 관리자 로그인' : '🔑 국가 로그인'}
+            {isLogin ? '🔑 로그인' : '📝 회원가입'}
           </h2>
           <p className="modal-subtitle">
-            {type === 'admin'
-              ? '관리자 비밀번호를 입력하세요.'
-              : '국가를 선택하고 비밀번호를 입력하세요.'}
+            {isLogin
+              ? '아이디와 비밀번호를 입력하세요. 최고관리자는 admin 계정으로 로그인하세요.'
+              : '새로운 아이디와 비밀번호를 입력하여 가입하세요.'}
           </p>
         </div>
 
+        <div className="tabs" style={{ marginBottom: '20px' }}>
+          <button 
+            className={`tab ${isLogin ? 'active' : ''}`}
+            onClick={() => { setIsLogin(true); setError(''); }}
+            style={{ flex: 1 }}
+          >
+            로그인
+          </button>
+          <button 
+            className={`tab ${!isLogin ? 'active' : ''}`}
+            onClick={() => { setIsLogin(false); setError(''); }}
+            style={{ flex: 1 }}
+          >
+            회원가입
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit}>
-          {type === 'country' && (
-            <div className="form-group">
-              <label className="form-label">국가 선택</label>
-              <select
-                className="form-select"
-                value={countryId}
-                onChange={(e) => setCountryId(e.target.value)}
-              >
-                <option value="">-- 국가를 선택하세요 --</option>
-                {countries.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="form-group">
+            <label className="form-label">아이디</label>
+            <input
+              type="text"
+              className="form-input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="아이디를 입력하세요"
+              autoFocus
+            />
+          </div>
 
           <div className="form-group">
             <label className="form-label">비밀번호</label>
@@ -89,7 +94,6 @@ export default function LoginModal({ type = 'admin', onClose, onSuccess }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="비밀번호를 입력하세요"
-              autoFocus
             />
           </div>
 
@@ -113,7 +117,7 @@ export default function LoginModal({ type = 'admin', onClose, onSuccess }) {
             disabled={loading}
             style={{ width: '100%' }}
           >
-            {loading ? '로그인 중...' : '로그인'}
+            {loading ? '처리 중...' : (isLogin ? '로그인' : '회원가입')}
           </button>
         </form>
       </div>

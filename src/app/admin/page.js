@@ -9,7 +9,12 @@ import {
   getDataEntry, upsertDataEntry,
   getAllImages, deleteImage, addImageByUrl,
   getMapData, saveMapData,
+  getUsers, updateUserRole, assignCountryToUser,
+  getGameState, advanceGameState,
+  getResearches, createResearch, updateResearch, deleteResearch,
+  getResources, upsertResource
 } from '@/lib/store';
+import { processTurnEnd } from '@/lib/gameLogic';
 import LoginModal from '@/components/LoginModal';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
@@ -18,12 +23,16 @@ export default function AdminPage() {
   const router = useRouter();
   const [admin, setAdmin] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const [activeSection, setActiveSection] = useState('countries');
+  const [activeSection, setActiveSection] = useState('dashboard');
   const [toast, setToast] = useState(null);
 
   // Data
   const [countries, setCountries] = useState([]);
   const [selectedCountryId, setSelectedCountryId] = useState('');
+  const [users, setUsers] = useState([]);
+  const [gameState, setGameState] = useState({ current_turn: 1 });
+  const [researches, setResearches] = useState([]);
+  const [resources, setResources] = useState([]);
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -37,7 +46,7 @@ export default function AdminPage() {
   // Country data
   const [politicsEntry, setPoliticsEntry] = useState(null);
   const [politicsData, setPoliticsData] = useState({
-    governmentType: '', headOfState: '', parties: [], keyFigures: [], customFields: [],
+    governmentType: '', headOfState: '', leaderImage: '', parties: [], keyFigures: [], customFields: [],
   });
   const [politicsImages, setPoliticsImages] = useState([]);
   const [economyEntry, setEconomyEntry] = useState(null);
@@ -82,6 +91,24 @@ export default function AdminPage() {
     }
   };
 
+  const loadUsers = async () => {
+    try {
+      const data = await getUsers();
+      setUsers(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadGameState = async () => {
+    try {
+      const state = await getGameState();
+      setGameState(state);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const loadHistory = async () => {
     try {
       const entry = await getDataEntry('history');
@@ -118,7 +145,7 @@ export default function AdminPage() {
       const pol = await getDataEntry('politics', cId);
       setPoliticsEntry(pol);
       setPoliticsData(pol?.data || {
-        governmentType: '', headOfState: '', parties: [], keyFigures: [], customFields: [],
+        governmentType: '', headOfState: '', leaderImage: '', parties: [], keyFigures: [], customFields: [],
       });
       if (pol) setPoliticsImages(await getAllImages(pol.id));
       else setPoliticsImages([]);
@@ -167,11 +194,24 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!admin) return;
-    if (activeSection === 'history') loadHistory();
+    if (activeSection === 'dashboard') {
+      loadGameState();
+    }
+    else if (activeSection === 'users') {
+      loadUsers();
+      loadCountries();
+    }
+    else if (activeSection === 'history') loadHistory();
     else if (activeSection === 'geography') loadGeography();
     else if (activeSection === 'country-info') {
       loadCountries();
       if (selectedCountryId) loadCountryData(selectedCountryId);
+    }
+    else if (activeSection === 'research') {
+      loadCountries();
+    }
+    else if (activeSection === 'resources') {
+      loadCountries();
     }
     else if (activeSection === 'map') {
       loadMapData();
@@ -179,6 +219,24 @@ export default function AdminPage() {
     }
     else if (activeSection === 'countries') loadCountries();
   }, [activeSection, admin, selectedCountryId, loadCountryData]);
+
+  const loadResearches = async (cId) => {
+    try {
+      const data = await getResearches(cId);
+      setResearches(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadResources = async (cId) => {
+    try {
+      const data = await getResources(cId);
+      setResources(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // ==================== HANDLERS ====================
 
@@ -637,6 +695,17 @@ export default function AdminPage() {
             />
           </div>
         </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">지도자 이미지 URL (선택)</label>
+            <input
+              className="form-input"
+              value={politicsData.leaderImage || ''}
+              onChange={(e) => setPoliticsData((p) => ({ ...p, leaderImage: e.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+        </div>
       </div>
 
       {/* Parties */}
@@ -966,6 +1035,255 @@ export default function AdminPage() {
     </div>
   );
 
+  const renderDashboard = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>메인 대시보드</h2>
+      
+      <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
+        <h3 style={{ fontSize: '1.2rem', marginBottom: '10px' }}>현재 턴</h3>
+        <div style={{ fontSize: '3rem', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '20px' }}>
+          {gameState?.turn_name || '1턴'}
+        </div>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>
+          턴을 넘기면 모든 국가의 연구 기한이 감소하고 자원이 생산되며 GDP가 성장합니다.
+        </p>
+        <button 
+          className="btn btn-primary btn-lg" 
+          onClick={async () => {
+            if(!confirm('정말 턴을 넘기시겠습니까? 진행 중인 모든 프로세스가 갱신됩니다.')) return;
+            const newTurn = await advanceGameState();
+            await processTurnEnd(newTurn.current_turn);
+            loadGameState();
+            showToast('턴이 종료되었습니다.');
+          }}
+        >
+          ⏭️ 턴 넘기기
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderUsers = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>👥 유저 관리</h2>
+      <div className="card">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>ID (Username)</th>
+              <th>가입일</th>
+              <th>역할</th>
+              <th>배정 국가</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id}>
+                <td>{u.username}</td>
+                <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                <td>
+                  <select 
+                    value={u.role} 
+                    onChange={async (e) => {
+                      await updateUserRole(u.id, e.target.value);
+                      loadUsers();
+                      showToast('권한이 변경되었습니다.');
+                    }}
+                    className="form-select"
+                    style={{ padding: '4px', height: 'auto' }}
+                  >
+                    <option value="user">유저</option>
+                    <option value="sub_admin">부관리자</option>
+                    <option value="admin">최고관리자</option>
+                  </select>
+                </td>
+                <td>
+                  <select
+                    value={u.assigned_country_id || ''}
+                    onChange={async (e) => {
+                      await assignCountryToUser(u.id, e.target.value);
+                      loadUsers();
+                      showToast('배정 국가가 변경되었습니다.');
+                    }}
+                    className="form-select"
+                    style={{ padding: '4px', height: 'auto' }}
+                  >
+                    <option value="">-- 없음 --</option>
+                    {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderResearch = () => {
+    const categories = ['육군', '해군', '공군', '산업', '정치', '우주'];
+    
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>🔬 연구 관리</h2>
+        
+        <div className="form-group">
+          <label className="form-label">국가 선택</label>
+          <select
+            className="form-select"
+            value={selectedCountryId}
+            onChange={(e) => {
+              setSelectedCountryId(e.target.value);
+              if (e.target.value) loadResearches(e.target.value);
+            }}
+          >
+            <option value="">-- 국가를 선택하세요 --</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedCountryId && (
+          <div className="admin-form-section">
+            <h3 className="admin-form-title">진행/완료된 연구</h3>
+            {researches.length === 0 ? <p>등록된 연구 없음</p> : (
+              <div className="card-grid card-grid-2">
+                {researches.map(r => (
+                  <div key={r.id} className="card" style={{ padding: '16px' }}>
+                    <div style={{ fontWeight: 'bold' }}>{r.name} (Lv.{r.level}) - {r.category}</div>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                      <select className="form-select" value={r.status} onChange={async (e) => {
+                        await updateResearch(r.id, { status: e.target.value });
+                        loadResearches(selectedCountryId);
+                      }} style={{ padding: '4px', height: 'auto', flex: 1 }}>
+                        <option value="queued">대기중</option>
+                        <option value="in_progress">진행중</option>
+                        <option value="completed">완료됨</option>
+                      </select>
+                      <button className="btn btn-sm btn-danger" onClick={async () => {
+                        await deleteResearch(r.id);
+                        loadResearches(selectedCountryId);
+                      }}>삭제</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="card" style={{ marginTop: '20px', padding: '20px' }}>
+              <h4 style={{ marginBottom: '16px' }}>연구 추가</h4>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                await createResearch({
+                  country_id: selectedCountryId,
+                  category: fd.get('category'),
+                  name: fd.get('name'),
+                  level: parseInt(fd.get('level')),
+                  required_turns: parseInt(fd.get('required_turns')),
+                  remaining_turns: parseInt(fd.get('required_turns')),
+                  status: fd.get('status'),
+                });
+                e.target.reset();
+                loadResearches(selectedCountryId);
+                showToast('연구가 추가되었습니다.');
+              }}>
+                <div className="form-row">
+                  <div className="form-group"><label>분류</label><select name="category" className="form-select">{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                  <div className="form-group"><label>이름</label><input name="name" className="form-input" required /></div>
+                  <div className="form-group"><label>단계</label><input name="level" type="number" defaultValue="1" className="form-input" required /></div>
+                  <div className="form-group"><label>소모 턴 수</label><input name="required_turns" type="number" defaultValue="5" className="form-input" required /></div>
+                  <div className="form-group"><label>상태</label><select name="status" className="form-select"><option value="queued">대기중</option><option value="in_progress">진행중</option><option value="completed">완료됨</option></select></div>
+                </div>
+                <button type="submit" className="btn btn-primary">➕ 추가</button>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderResources = () => {
+    const resourceTypes = [
+      { key: 'wood', label: '목재' },
+      { key: 'steel', label: '강철' },
+      { key: 'coal', label: '석탄' },
+      { key: 'oil', label: '석유' },
+      { key: 'chromium', label: '크롬' },
+      { key: 'tungsten', label: '텅스텐' },
+      { key: 'aluminum', label: '알루미늄' },
+      { key: 'rubber', label: '고무' },
+      { key: 'sulfur', label: '유황' },
+      { key: 'food', label: '식료품' }
+    ];
+
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>📦 자원 관리</h2>
+        <div className="form-group">
+          <label className="form-label">국가 선택</label>
+          <select
+            className="form-select"
+            value={selectedCountryId}
+            onChange={(e) => {
+              setSelectedCountryId(e.target.value);
+              if (e.target.value) loadResources(e.target.value);
+            }}
+          >
+            <option value="">-- 국가를 선택하세요 --</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedCountryId && (
+          <div className="admin-form-section">
+            <h3 className="admin-form-title">국가 자원 보유량 및 생산량</h3>
+            <div className="card-grid card-grid-2">
+              {resourceTypes.map(rt => {
+                const rsc = resources.find(r => r.resource_type === rt.key) || { amount: 0, production_per_turn: 0 };
+                return (
+                  <div key={rt.key} className="card" style={{ padding: '16px' }}>
+                    <h4 style={{ marginBottom: '12px' }}>{rt.label}</h4>
+                    <div className="form-row">
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">보유량</label>
+                        <input 
+                          type="number" 
+                          className="form-input" 
+                          defaultValue={rsc.amount} 
+                          onBlur={async (e) => {
+                            await upsertResource(selectedCountryId, rt.key, Number(e.target.value), Number(rsc.production_per_turn));
+                            loadResources(selectedCountryId);
+                          }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">생산량 (턴당)</label>
+                        <input 
+                          type="number" 
+                          className="form-input" 
+                          defaultValue={rsc.production_per_turn} 
+                          onBlur={async (e) => {
+                            await upsertResource(selectedCountryId, rt.key, Number(rsc.amount), Number(e.target.value));
+                            loadResources(selectedCountryId);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderMapEditor = () => (
     <div className="slide-up">
       <h2 style={{ marginBottom: '24px' }}>🗺️ 지도 색칠</h2>
@@ -1014,11 +1332,15 @@ export default function AdminPage() {
   }
 
   const sidebarItems = [
-    { id: 'countries', label: '🏴 국가 관리', },
-    { id: 'history', label: '📜 역사', },
-    { id: 'geography', label: '🗻 지리', },
-    { id: 'country-info', label: '📊 국가별 정보', },
-    { id: 'map', label: '🗺️ 지도 색칠', },
+    { id: 'dashboard', label: '📊 대시보드 (턴)' },
+    { id: 'users', label: '👥 유저 관리' },
+    { id: 'countries', label: '🏴 국가 관리' },
+    { id: 'history', label: '📜 역사' },
+    { id: 'geography', label: '🗻 지리' },
+    { id: 'country-info', label: '📊 국가별 정보' },
+    { id: 'research', label: '🔬 연구 관리' },
+    { id: 'resources', label: '📦 자원 관리' },
+    { id: 'map', label: '🗺️ 지도 색칠' },
   ];
 
   return (
@@ -1038,10 +1360,14 @@ export default function AdminPage() {
         </div>
 
         <div className="admin-content">
+          {activeSection === 'dashboard' && renderDashboard()}
+          {activeSection === 'users' && renderUsers()}
           {activeSection === 'countries' && renderCountries()}
           {activeSection === 'history' && renderHistory()}
           {activeSection === 'geography' && renderGeography()}
           {activeSection === 'country-info' && renderCountryInfo()}
+          {activeSection === 'research' && renderResearch()}
+          {activeSection === 'resources' && renderResources()}
           {activeSection === 'map' && renderMapEditor()}
         </div>
       </div>
