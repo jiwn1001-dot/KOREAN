@@ -26,6 +26,7 @@ export default function CountryPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [admin, setAdmin] = useState(false);
   const [countries, setCountries] = useState([]);
+  const [techTrees, setTechTrees] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -80,6 +81,15 @@ export default function CountryPage() {
       setCountries(clist || []);
     } catch (err) {
       console.error('Failed to load researches or resources', err);
+    }
+    
+    try {
+      const settings = await getDataEntry('game_settings', null);
+      if (settings && settings.data?.techTrees) {
+        setTechTrees(settings.data.techTrees);
+      }
+    } catch(err) {
+      console.error('Failed to load game settings for tech trees', err);
     }
   };
 
@@ -473,6 +483,74 @@ export default function CountryPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="content-section" style={{ marginTop: '32px' }}>
+        <h3 className="content-section-title">💡 새로운 연구 시작</h3>
+        {techTrees.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>현재 열린 기술 트리가 없습니다.</p>
+        ) : (
+          <div className="card-grid card-grid-2">
+            {techTrees.map(tree => {
+              const countryResearches = researches.filter(r => r.name === tree.name);
+              const activeResearch = countryResearches.find(r => r.status === 'in_progress' || r.status === 'queued' || r.status === 'failed');
+              
+              const completedResearches = countryResearches.filter(r => r.status === 'completed');
+              const highestCompletedLevel = completedResearches.length > 0 ? Math.max(...completedResearches.map(r => r.level)) : 0;
+              const nextLevelData = tree.levels[highestCompletedLevel];
+
+              return (
+                <div key={tree.id} className="card" style={{ padding: '16px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+                    <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tree.category}</span>
+                    {tree.name}
+                  </div>
+                  <div style={{ marginBottom: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                    현재 완료된 단계: {highestCompletedLevel > 0 ? (tree.levels[highestCompletedLevel - 1]?.name || `Lv.${highestCompletedLevel}`) : '없음'}
+                  </div>
+                  
+                  {activeResearch ? (
+                    <div style={{ padding: '12px', background: activeResearch.status === 'failed' ? 'rgba(248,113,113,0.1)' : 'var(--bg-glass)', border: activeResearch.status === 'failed' ? '1px solid var(--error)' : 'none', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <strong>[{activeResearch.status === 'failed' ? '실패함' : (activeResearch.status === 'queued' ? '대기중' : '진행 중')}] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
+                        {activeResearch.status !== 'failed' && ` (남은 턴: ${activeResearch.remaining_turns})`}
+                      </div>
+                      {activeResearch.status === 'failed' && (
+                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
+                          // TODO: Replace with updateResearch call when we import it, or use a fetch. 
+                          // Wait, we need to import updateResearch if we want to restart. Let's just alert for now or implement properly.
+                          alert('재시작은 아직 구현되지 않았습니다. 관리자에게 문의하세요.');
+                        }}>🔄 재시작 (관리자 문의)</button>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      {nextLevelData ? (
+                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
+                          if (!confirm(`정말 ${tree.name} 다음 단계(${nextLevelData.name || `Lv.${nextLevelData.level}`}) 연구를 시작하시겠습니까? (소요: ${nextLevelData.turns}턴)`)) return;
+                          
+                          await createResearch({
+                            country_id: countryId,
+                            category: tree.category,
+                            name: tree.name,
+                            level: nextLevelData.level,
+                            required_turns: nextLevelData.turns,
+                            remaining_turns: nextLevelData.turns,
+                            status: 'in_progress'
+                          });
+                          loadAllData(); // Reload
+                          alert(`${nextLevelData.name || `Lv.${nextLevelData.level}`} 연구가 시작되었습니다!`);
+                        }}>🚀 다음 연구 시작: {nextLevelData.name || `Lv.${nextLevelData.level}`} ({nextLevelData.turns}턴)</button>
+                      ) : (
+                        <p style={{ color: 'var(--text-muted)' }}>모든 단계를 완료했습니다.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
