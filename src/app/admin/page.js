@@ -33,10 +33,9 @@ export default function AdminPage() {
   const [gameState, setGameState] = useState({ current_turn: 1 });
   const [researches, setResearches] = useState([]);
   const [resources, setResources] = useState([]);
-  const [gameSettings, setGameSettings] = useState({ techTrees: [], weaponTemplates: [] });
   const [techTrees, setTechTrees] = useState([]);
-  const [weaponTemplates, setWeaponTemplates] = useState([]);
-  const [effectBuilder, setEffectBuilder] = useState({});
+  const [weaponBlueprints, setWeaponBlueprints] = useState([]);
+  const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -56,17 +55,12 @@ export default function AdminPage() {
   const [economyEntry, setEconomyEntry] = useState(null);
   const [economyData, setEconomyData] = useState({
     gdp: 0,
-    taxRate: 20,
-    totalPopulation: 0,
-    mobilizablePopulation: 0,
-    nonBudgetRatio: { mining: 25, agriculture: 25, commerce: 25, lightIndustry: 25 },
-    heavyIndustryDistricts: 0,
-    shipyards: 0,
-    heavyIndustryCoins: 0,
+    taxRate: 0,
+    population: { total: 0, mobilizable: 0 },
+    allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
     commerceCoins: 0,
-    weapons: {},
-    weaponProduction: [],
-    warnings: [],
+    heavyIndustryComplexes: 0,
+    shipyards: 0,
     customFields: [],
   });
   const [economyImages, setEconomyImages] = useState([]);
@@ -166,11 +160,13 @@ export default function AdminPage() {
       const eco = await getDataEntry('economy', cId);
       setEconomyEntry(eco);
       setEconomyData(eco?.data || {
-        heavyIndustry: { value: '', unit: '' },
-        lightIndustry: { value: '', unit: '' },
-        agriculture: { value: '', unit: '' },
-        resources: { value: '', unit: '' },
-        commerce: { value: '', unit: '' },
+        gdp: 0,
+        taxRate: 0,
+        population: { total: 0, mobilizable: 0 },
+        allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
+        commerceCoins: 0,
+        heavyIndustryComplexes: 0,
+        shipyards: 0,
         customFields: [],
       });
       if (eco) setEconomyImages(await getAllImages(eco.id));
@@ -236,9 +232,9 @@ export default function AdminPage() {
       loadCountries();
       if (selectedCountryId) loadCountryData(selectedCountryId);
     }
-    else if (activeSection === 'research' || activeSection === 'weapons') {
+    else if (activeSection === 'research' || activeSection === 'blueprints') {
       loadCountries();
-      loadUsers();
+      loadTechTrees();
       loadGameSettings();
     }
     else if (activeSection === 'resources') {
@@ -263,35 +259,26 @@ export default function AdminPage() {
   const loadGameSettings = async () => {
     try {
       const entry = await getDataEntry('game_settings');
+      setGameSettingsEntry(entry);
       if (entry && entry.data) {
-        setGameSettings(entry.data);
-        if (entry.data.techTrees) setTechTrees(entry.data.techTrees);
-        if (entry.data.weaponTemplates) setWeaponTemplates(entry.data.weaponTemplates);
+        setTechTrees(entry.data.techTrees || []);
+        setWeaponBlueprints(entry.data.weaponBlueprints || []);
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const saveTechTrees = async (newTrees) => {
+  const saveGameSettings = async (newData) => {
     try {
-      const newData = { ...gameSettings, techTrees: newTrees };
-      await upsertDataEntry('game_settings', null, newData);
-      setGameSettings(newData);
-      setTechTrees(newTrees);
-      showToast('기술 트리가 저장되었습니다.');
-    } catch (err) {
-      showToast('저장 실패', 'error');
-    }
-  };
-
-  const saveWeaponTemplates = async (newTemplates) => {
-    try {
-      const newData = { ...gameSettings, weaponTemplates: newTemplates };
-      await upsertDataEntry('game_settings', null, newData);
-      setGameSettings(newData);
-      setWeaponTemplates(newTemplates);
-      showToast('무기 템플릿이 저장되었습니다.');
+      const payload = { 
+        ...(gameSettingsEntry?.data || {}), 
+        ...newData 
+      };
+      await upsertDataEntry('game_settings', null, payload);
+      if (newData.techTrees) setTechTrees(newData.techTrees);
+      if (newData.weaponBlueprints) setWeaponBlueprints(newData.weaponBlueprints);
+      showToast('게임 설정이 저장되었습니다.');
     } catch (err) {
       showToast('저장 실패', 'error');
     }
@@ -1010,149 +997,117 @@ export default function AdminPage() {
   );
 
   const renderEconomyEditor = () => {
-    // 전체인구 변경 시 동원가능인구 연동 로직
-    const handleTotalPopChange = (newTotal) => {
-      const oldTotal = Number(economyData.totalPopulation) || 0;
-      const oldMob = Number(economyData.mobilizablePopulation) || 0;
-      const diff = newTotal - oldTotal;
-      const mobDelta = Math.round(diff * 0.4);
-      const newMob = oldMob === 0 && oldTotal === 0
-        ? Math.round(newTotal * 0.4) // 최초 산정
-        : Math.max(0, oldMob + mobDelta);
-      setEconomyData((p) => ({ ...p, totalPopulation: newTotal, mobilizablePopulation: newMob }));
-    };
-
     return (
       <div className="slide-up">
         <div className="admin-form-section">
-          <h3 className="admin-form-title">💰 기본 경제 지표</h3>
+          <h3 className="admin-form-title">💰 거시 경제 (GDP 및 인구)</h3>
+          
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">전체 인구</label>
+              <input
+                type="number"
+                className="form-input"
+                value={economyData.population?.total || 0}
+                onChange={(e) => {
+                  const newTotal = Number(e.target.value);
+                  const oldTotal = economyData.population?.total || 0;
+                  const delta = newTotal - oldTotal;
+                  setEconomyData(p => ({
+                    ...p,
+                    population: {
+                      total: newTotal,
+                      mobilizable: (p.population?.mobilizable || 0) + (delta * 0.4)
+                    }
+                  }));
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">동원가능 인구</label>
+              <input
+                type="number"
+                className="form-input"
+                value={economyData.population?.mobilizable || 0}
+                onChange={(e) => setEconomyData(p => ({
+                  ...p, population: { ...p.population, mobilizable: Number(e.target.value) }
+                }))}
+              />
+              <small style={{ color: 'var(--text-muted)' }}>초기 산정: 전체의 40%</small>
+            </div>
+          </div>
+
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">GDP ($)</label>
               <input
-                className="form-input"
                 type="number"
+                className="form-input"
                 value={economyData.gdp || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, gdp: Number(e.target.value) }))}
+                onChange={(e) => setEconomyData(p => ({ ...p, gdp: Number(e.target.value) }))}
               />
             </div>
             <div className="form-group">
               <label className="form-label">세율 (%)</label>
               <input
-                className="form-input"
                 type="number"
+                className="form-input"
                 value={economyData.taxRate || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, taxRate: Number(e.target.value) }))}
+                onChange={(e) => setEconomyData(p => ({ ...p, taxRate: Number(e.target.value) }))}
               />
+              <small style={{ color: 'var(--text-muted)' }}>예산 = GDP × (세율/100)</small>
             </div>
           </div>
-          <div className="form-row" style={{ marginTop: '12px' }}>
-            <div className="form-group">
-              <label className="form-label">전체인구 (명)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.totalPopulation || 0}
-                onChange={(e) => handleTotalPopChange(Number(e.target.value))}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">동원가능인구 (명)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.mobilizablePopulation || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, mobilizablePopulation: Number(e.target.value) }))}
-              />
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                * 전체인구 변경 시 차이의 40%만큼 자동 증감
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            * 예산 = GDP × 세율 = <strong>${((economyData.gdp || 0) * ((economyData.taxRate || 0) / 100)).toLocaleString()}</strong><br/>
-            * 예상 중공업코인 (턴당): <strong>{Math.floor(((economyData.gdp || 0) * ((economyData.taxRate || 0) / 100)) / 50000).toLocaleString()}개</strong>
+          
+          <div className="form-group">
+            <label className="form-label">상업 코인 부여 (턴 종료 시 소비되며, 개당 GDP 1% 영구 상승)</label>
+            <input
+              type="number"
+              step="0.1"
+              className="form-input"
+              value={economyData.commerceCoins || 0}
+              onChange={(e) => setEconomyData(p => ({ ...p, commerceCoins: Number(e.target.value) }))}
+            />
           </div>
         </div>
 
         <div className="admin-form-section">
-          <h3 className="admin-form-title">🏪 상업코인 부여 (GDP 보정)</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">상업코인 (1개 = GDP +1%, 소수/음수 가능)</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.01"
-                value={economyData.commerceCoins ?? 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, commerceCoins: parseFloat(e.target.value) || 0 }))}
-              />
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                * 다음 턴 넘김 시 적용 후 자동 리셋됩니다. 현재 GDP ${(economyData.gdp || 0).toLocaleString()} 기준 → 적용 후 약 ${Math.round((economyData.gdp || 0) * (1 + ((economyData.commerceCoins || 0) / 100))).toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="admin-form-section">
-          <h3 className="admin-form-title">📊 비예산 GDP 배분 비율 (합계 100%)</h3>
+          <h3 className="admin-form-title">📊 비예산 배분율 설정</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            비예산 = GDP - 예산. 배분율 총합은 100% 여야 합니다. (현재 합계: {((economyData.allocation?.mining||0) + (economyData.allocation?.agriculture||0) + (economyData.allocation?.commerce||0) + (economyData.allocation?.lightIndustry||0))}%)
+          </p>
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">광업 (%)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.nonBudgetRatio?.mining || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, nonBudgetRatio: { ...p.nonBudgetRatio, mining: Number(e.target.value) } }))}
-              />
+              <input type="number" className="form-input" value={economyData.allocation?.mining || 0} onChange={e => setEconomyData(p => ({ ...p, allocation: { ...p.allocation, mining: Number(e.target.value) } }))} />
             </div>
             <div className="form-group">
-              <label className="form-label">농업 (%)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.nonBudgetRatio?.agriculture || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, nonBudgetRatio: { ...p.nonBudgetRatio, agriculture: Number(e.target.value) } }))}
-              />
+              <label className="form-label">농수산업 (%)</label>
+              <input type="number" className="form-input" value={economyData.allocation?.agriculture || 0} onChange={e => setEconomyData(p => ({ ...p, allocation: { ...p.allocation, agriculture: Number(e.target.value) } }))} />
             </div>
             <div className="form-group">
               <label className="form-label">상업 (%)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.nonBudgetRatio?.commerce || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, nonBudgetRatio: { ...p.nonBudgetRatio, commerce: Number(e.target.value) } }))}
-              />
+              <input type="number" className="form-input" value={economyData.allocation?.commerce || 0} onChange={e => setEconomyData(p => ({ ...p, allocation: { ...p.allocation, commerce: Number(e.target.value) } }))} />
             </div>
             <div className="form-group">
               <label className="form-label">경공업 (%)</label>
-              <input
-                className="form-input"
-                type="number"
-                value={economyData.nonBudgetRatio?.lightIndustry || 0}
-                onChange={(e) => setEconomyData((p) => ({ ...p, nonBudgetRatio: { ...p.nonBudgetRatio, lightIndustry: Number(e.target.value) } }))}
-              />
+              <input type="number" className="form-input" value={economyData.allocation?.lightIndustry || 0} onChange={e => setEconomyData(p => ({ ...p, allocation: { ...p.allocation, lightIndustry: Number(e.target.value) } }))} />
             </div>
-          </div>
-          <div style={{ marginTop: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            * 합계: <strong>{Number(economyData.nonBudgetRatio?.mining || 0) + Number(economyData.nonBudgetRatio?.agriculture || 0) + Number(economyData.nonBudgetRatio?.commerce || 0) + Number(economyData.nonBudgetRatio?.lightIndustry || 0)}%</strong>
           </div>
         </div>
 
         <div className="admin-form-section">
-          <h3 className="admin-form-title">🔫 현재 무기 재고</h3>
-          {Object.keys(economyData.weapons || {}).length > 0 && (
-            <div style={{ marginTop: '16px', background: 'var(--bg-glass)', padding: '12px', borderRadius: '8px' }}>
-              <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem' }}>📦 현재 무기 재고</h4>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {Object.entries(economyData.weapons).map(([name, count]) => (
-                  <span key={name} className="badge badge-teal" style={{ fontSize: '0.85rem' }}>
-                    {name}: {count}대
-                  </span>
-                ))}
-              </div>
+          <h3 className="admin-form-title">🏭 보유 산업 단지 (영구 자산)</h3>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">중공업단지 (공업력)</label>
+              <input type="number" className="form-input" value={economyData.heavyIndustryComplexes || 0} onChange={e => setEconomyData(p => ({ ...p, heavyIndustryComplexes: Number(e.target.value) }))} />
             </div>
-          )}
+            <div className="form-group">
+              <label className="form-label">조선소 (조선력)</label>
+              <input type="number" className="form-input" value={economyData.shipyards || 0} onChange={e => setEconomyData(p => ({ ...p, shipyards: Number(e.target.value) }))} />
+            </div>
+          </div>
         </div>
 
         {renderCustomFields(economyData, setEconomyData)}
@@ -1259,6 +1214,109 @@ export default function AdminPage() {
           customFields: [...(p.customFields || []), { label: '', value: '' }],
         }));
       }}>➕ 필드 추가</button>
+    </div>
+  );
+
+  const renderBlueprints = () => (
+    <div className="fade-in">
+      <h2>🛠️ 무기 청사진(설계도) 관리</h2>
+      <p style={{ color: 'var(--text-muted)' }}>유저가 무기를 생산할 수 있도록 필요 기술, 요구 공업력 등을 설정합니다.</p>
+      
+      <div className="card" style={{ padding: '20px', marginBottom: '20px', border: '1px solid var(--border-color)' }}>
+        <h4>새 청사진 추가</h4>
+        <div className="form-row">
+          <div className="form-group">
+            <label>무기명 (기술명과 동일해야 함)</label>
+            <input type="text" id="newBpName" className="form-input" placeholder="예: 1936년형 보병장비" />
+          </div>
+          <div className="form-group">
+            <label>요구 기술 분류</label>
+            <select id="newBpTechCategory" className="form-select">
+              <option value="지상군">지상군</option>
+              <option value="해군">해군</option>
+              <option value="항공">항공</option>
+              <option value="공학">공학</option>
+              <option value="화학">화학 (산업)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>필요 산업 유형</label>
+            <select id="newBpFacility" className="form-select">
+              <option value="heavy">중공업단지 (공업력)</option>
+              <option value="shipyard">조선소 (조선력)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>필요 산업력</label>
+            <input type="number" id="newBpIndustryCost" className="form-input" placeholder="1" defaultValue="1" />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>소모 자원 1 (종류/개수)</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input type="text" id="newBpRes1Name" className="form-input" placeholder="steel" />
+              <input type="number" id="newBpRes1Cost" className="form-input" placeholder="수량" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>소모 자원 2 (종류/개수)</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input type="text" id="newBpRes2Name" className="form-input" placeholder="oil" />
+              <input type="number" id="newBpRes2Cost" className="form-input" placeholder="수량" />
+            </div>
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={() => {
+          const name = document.getElementById('newBpName').value;
+          const cat = document.getElementById('newBpTechCategory').value;
+          const facility = document.getElementById('newBpFacility').value;
+          const indCost = parseInt(document.getElementById('newBpIndustryCost').value) || 1;
+          const r1n = document.getElementById('newBpRes1Name').value;
+          const r1c = parseInt(document.getElementById('newBpRes1Cost').value) || 0;
+          const r2n = document.getElementById('newBpRes2Name').value;
+          const r2c = parseInt(document.getElementById('newBpRes2Cost').value) || 0;
+          
+          if (!name) return showToast('무기명을 입력하세요.', 'error');
+          
+          const resources = {};
+          if (r1n && r1c > 0) resources[r1n] = r1c;
+          if (r2n && r2c > 0) resources[r2n] = r2c;
+          
+          const newBp = {
+            id: Date.now().toString(),
+            name,
+            techCategory: cat,
+            facility,
+            industryCost: indCost,
+            resources
+          };
+          saveGameSettings({ weaponBlueprints: [...weaponBlueprints, newBp] });
+        }}>➕ 청사진 추가</button>
+      </div>
+
+      <div className="card-grid card-grid-3">
+        {weaponBlueprints.map((bp, idx) => (
+          <div key={bp.id} className="card" style={{ padding: '16px' }}>
+            <h4 style={{ margin: '0 0 10px 0', color: 'var(--accent)' }}>{bp.name}</h4>
+            <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
+              <div><strong>기술 분류:</strong> {bp.techCategory}</div>
+              <div><strong>생산 시설:</strong> {bp.facility === 'heavy' ? '중공업단지' : '조선소'} ({bp.industryCost})</div>
+              <div>
+                <strong>필요 자원:</strong> 
+                {Object.keys(bp.resources || {}).length > 0 
+                  ? Object.entries(bp.resources).map(([k, v]) => ` ${k}(${v})`).join(',')
+                  : ' 없음'}
+              </div>
+            </div>
+            <button className="btn btn-sm btn-danger" onClick={() => {
+              if(!confirm('정말 삭제하시겠습니까?')) return;
+              saveGameSettings({ weaponBlueprints: weaponBlueprints.filter((_, i) => i !== idx) });
+            }}>삭제</button>
+          </div>
+        ))}
+        {weaponBlueprints.length === 0 && <p>등록된 청사진이 없습니다.</p>}
+      </div>
     </div>
   );
 
@@ -1408,100 +1466,47 @@ export default function AdminPage() {
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {tree.levels.map((lvl, lIdx) => (
-                    <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div>
-                        {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>}
-                      </div>
-                      {lvl.effect && lvl.effect !== 'none' && (
-                        <div style={{ color: 'var(--primary)', fontSize: '0.75rem' }}>
-                          ⚡ {typeof lvl.effect === 'string' ? lvl.effect : (lvl.effect.type === 'resource_conversion' ? `자원변환(${lvl.effect.inResource}->${lvl.effect.outResource})` : `효율증가(${lvl.effect.target} +${lvl.effect.value}%)`)}
-                        </div>
-                      )}
+                    <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
+                      {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>} {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
                     </span>
                   ))}
                 </div>
                 
-                  {(() => {
-                    const bState = effectBuilder[tree.id] || { type: 'none' };
-                    const setBState = (val) => setEffectBuilder(p => ({ ...p, [tree.id]: val }));
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px' }}>
-                        <div className="form-inline">
-                          <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
-                          <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
-                          <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
-                            {eras.map(e => <option key={e} value={e}>{e}</option>)}
-                          </select>
-                          <select 
-                            className="form-select" 
-                            style={{ width: '150px' }}
-                            value={bState.type}
-                            onChange={(e) => setBState({ type: e.target.value })}
-                          >
-                            <option value="none">특수효과 없음</option>
-                            <option value="prevent_fail">연구실패 방지</option>
-                            <option value="research_speed">연구시간 50% 감소</option>
-                            <option value="resource_conversion">자원 변환 능력</option>
-                            <option value="efficiency_boost">생산 효율 증가</option>
-                          </select>
-                        </div>
-                        
-                        {bState.type === 'resource_conversion' && (
-                          <div className="form-inline" style={{ marginTop: '4px', background: 'var(--bg-elevated)', padding: '8px', borderRadius: '4px' }}>
-                            <span style={{ fontSize: '0.8rem' }}>소모:</span>
-                            <select className="form-select" value={bState.inResource || 'coal'} onChange={(e) => setBState({...bState, inResource: e.target.value})}>
-                              {resourceTypes.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-                            </select>
-                            <input type="number" className="form-input" placeholder="수량" value={bState.inAmount || 100} onChange={(e) => setBState({...bState, inAmount: Number(e.target.value)})} style={{ width: '80px' }}/>
-                            <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>생산:</span>
-                            <select className="form-select" value={bState.outResource || 'oil'} onChange={(e) => setBState({...bState, outResource: e.target.value})}>
-                              {resourceTypes.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-                            </select>
-                            <input type="number" className="form-input" placeholder="수량" value={bState.outAmount || 50} onChange={(e) => setBState({...bState, outAmount: Number(e.target.value)})} style={{ width: '80px' }}/>
-                          </div>
-                        )}
-
-                        {bState.type === 'efficiency_boost' && (
-                          <div className="form-inline" style={{ marginTop: '4px', background: 'var(--bg-elevated)', padding: '8px', borderRadius: '4px' }}>
-                            <span style={{ fontSize: '0.8rem' }}>적용 대상:</span>
-                            <select className="form-select" value={bState.target || 'heavy'} onChange={(e) => setBState({...bState, target: e.target.value})}>
-                              <option value="heavy">중공업단지 (무기)</option>
-                              <option value="naval">조선소 (함선)</option>
-                              <option value="agri">농수산업장 (식량)</option>
-                              <option value="light">경공업 (소비재)</option>
-                            </select>
-                            <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>증가율:</span>
-                            <input type="number" className="form-input" placeholder="%" value={bState.value || 10} onChange={(e) => setBState({...bState, value: Number(e.target.value)})} style={{ width: '80px' }}/>
-                            <span style={{ fontSize: '0.8rem' }}>%</span>
-                          </div>
-                        )}
-
-                        <button className="btn btn-sm btn-secondary" style={{ alignSelf: 'flex-start', marginTop: '4px' }} onClick={() => {
-                          const name = document.getElementById(`levelName_${tree.id}`).value;
-                          const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
-                          const era = document.getElementById(`levelEra_${tree.id}`).value;
-                          
-                          let effect = bState.type;
-                          if (bState.type === 'resource_conversion' || bState.type === 'efficiency_boost') {
-                            effect = { ...bState };
-                          }
-
-                          if (turns > 0 && name) {
-                            const newTrees = [...techTrees];
-                            const newLevel = newTrees[idx].levels.length + 1;
-                            newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
-                            saveTechTrees(newTrees);
-                            document.getElementById(`levelName_${tree.id}`).value = '';
-                            document.getElementById(`levelTurn_${tree.id}`).value = '';
-                            document.getElementById(`levelEra_${tree.id}`).value = eras[0];
-                            setBState({ type: 'none' });
-                          } else {
-                            showToast('이름과 턴 수를 모두 입력하세요.', 'error');
-                          }
-                        }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
-                      </div>
-                    );
-                  })()}
+                <div className="form-inline">
+                  <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="소분류 이름 (예: 1936년형)" style={{ width: '180px' }} />
+                  <input id={`levelTurn_${tree.id}`} type="number" className="form-input" placeholder="소모 턴 수" style={{ width: '100px' }} />
+                  <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
+                    {eras.map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                  <select id={`levelEffect_${tree.id}`} className="form-select" style={{ width: '150px' }}>
+                    <option value="none">특수효과 없음</option>
+                    <option value="prevent_fail">연구실패 방지</option>
+                    <option value="research_speed">연구시간 50% 감소</option>
+                    <option value="unlock_special">특수유닛 해금</option>
+                    <option value="agri_boost">농수산 생산 10% 증가</option>
+                    <option value="heavy_boost">중공업 생산 10% 증가</option>
+                    <option value="light_boost">경공업 생산 10% 증가</option>
+                    <option value="mining_boost">자원 생산 10% 증가</option>
+                    <option value="radar_tech">레이더 기술 (전투)</option>
+                  </select>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const name = document.getElementById(`levelName_${tree.id}`).value;
+                    const turns = parseInt(document.getElementById(`levelTurn_${tree.id}`).value);
+                    const effect = document.getElementById(`levelEffect_${tree.id}`).value;
+                    const era = document.getElementById(`levelEra_${tree.id}`).value;
+                    if (turns > 0 && name) {
+                      const newTrees = [...techTrees];
+                      const newLevel = newTrees[idx].levels.length + 1;
+                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
+                      saveTechTrees(newTrees);
+                      document.getElementById(`levelName_${tree.id}`).value = '';
+                      document.getElementById(`levelTurn_${tree.id}`).value = '';
+                      document.getElementById(`levelEffect_${tree.id}`).value = 'none';
+                      document.getElementById(`levelEra_${tree.id}`).value = eras[0];
+                    } else {
+                      showToast('이름과 턴 수를 모두 입력하세요.', 'error');
+                    }
+                  }}>➕ 다음 단계 추가 (Lv.{tree.levels.length + 1})</button>
                   {tree.levels.length > 0 && (
                     <button className="btn btn-sm btn-ghost" onClick={() => {
                       const newTrees = [...techTrees];
@@ -1524,7 +1529,7 @@ export default function AdminPage() {
               const name = document.getElementById('newTreeName').value;
               if (name && !techTrees.find(t => t.name === name)) {
                 const newTree = { id: Date.now().toString(), category: cat, name, levels: [] };
-                saveTechTrees([...techTrees, newTree]);
+                saveGameSettings({ techTrees: [...techTrees, newTree] });
                 document.getElementById('newTreeName').value = '';
               } else {
                 showToast('이름을 입력하거나 중복되지 않게 해주세요.', 'error');
@@ -1685,108 +1690,6 @@ export default function AdminPage() {
     );
   };
 
-  const renderWeapons = () => {
-    const addTemplate = () => {
-      const newTemplate = {
-        id: 'wpn_' + Date.now(),
-        name: '',
-        requiredTech: '',
-        facility: 'heavy',
-        powerCost: 1, // 턴당 시설 1개에서 생산되는 수량
-        resourceCosts: { 철: 0, 알루미늄: 0, 고무: 0, 텅스텐: 0, 크로뮴: 0, 유황: 0, 우라늄: 0, 석유: 0 }
-      };
-      setWeaponTemplates([...weaponTemplates, newTemplate]);
-    };
-
-    const updateTemplate = (idx, field, value) => {
-      const newArr = [...weaponTemplates];
-      if (field.startsWith('res_')) {
-        const resName = field.replace('res_', '');
-        newArr[idx].resourceCosts[resName] = Number(value);
-      } else {
-        newArr[idx][field] = value;
-      }
-      setWeaponTemplates(newArr);
-    };
-
-    const removeTemplate = (idx) => {
-      if (confirm('삭제하시겠습니까?')) {
-        setWeaponTemplates(weaponTemplates.filter((_, i) => i !== idx));
-      }
-    };
-
-    const resourcesList = ['철', '알루미늄', '고무', '텅스텐', '크로뮴', '유황', '우라늄', '석유'];
-
-    return (
-      <div className="slide-up">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 className="admin-page-title">🔫 글로벌 무기 템플릿 설정</h2>
-          <button className="btn btn-primary" onClick={() => saveWeaponTemplates(weaponTemplates)}>
-            💾 템플릿 일괄 저장
-          </button>
-        </div>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
-          * 이곳에서 설정한 무기 설계도는 모든 유저의 국가 페이지에서 "무기 생산" 메뉴에 공통으로 나타납니다.<br/>
-          * "요구 기술"을 연구 완료한 국가만 해당 무기를 생산할 수 있습니다.
-        </p>
-
-        {weaponTemplates.map((t, i) => (
-          <div key={t.id} className="admin-form-section" style={{ position: 'relative' }}>
-            <button 
-              className="btn btn-danger" 
-              style={{ position: 'absolute', top: '16px', right: '16px', padding: '4px 8px' }}
-              onClick={() => removeTemplate(i)}
-            >
-              삭제
-            </button>
-            <h3 className="admin-form-title">설계도 #{i + 1}</h3>
-            
-            <div className="form-row">
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">무기 이름</label>
-                <input className="form-input" value={t.name || ''} onChange={e => updateTemplate(i, 'name', e.target.value)} placeholder="예: 1936년형 보병장비" />
-              </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">요구 기술명</label>
-                <input className="form-input" value={t.requiredTech || ''} onChange={e => updateTemplate(i, 'requiredTech', e.target.value)} placeholder="예: 1936년형 보병장비" />
-              </div>
-            </div>
-
-            <div className="form-row" style={{ marginTop: '12px' }}>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">생산 시설 (공장 유형)</label>
-                <select className="form-input" value={t.facility || 'heavy'} onChange={e => updateTemplate(i, 'facility', e.target.value)}>
-                  <option value="heavy">🏭 중공업단지 (지상/공군/공학/화학)</option>
-                  <option value="shipyard">⚓ 조선소 (해군)</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">생산 효율 (시설 1개당 턴당 생산량)</label>
-                <input className="form-input" type="number" min="1" value={t.powerCost || 1} onChange={e => updateTemplate(i, 'powerCost', Number(e.target.value))} />
-              </div>
-            </div>
-
-            <div style={{ marginTop: '16px' }}>
-              <label className="form-label">자원 소모량 (턴당 시설 1개 가동 시)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px' }}>
-                {resourcesList.map(r => (
-                  <div key={r} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.9rem', width: '60px' }}>{r}</span>
-                    <input className="form-input" style={{ width: '60px' }} type="number" min="0" value={t.resourceCosts?.[r] || 0} onChange={e => updateTemplate(i, `res_${r}`, e.target.value)} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-        
-        <button className="btn btn-secondary" style={{ width: '100%', padding: '16px' }} onClick={addTemplate}>
-          ➕ 새 템플릿 추가
-        </button>
-      </div>
-    );
-  };
-
   const renderResources = () => {
     const resourceTypes = [
       { key: 'wood', label: '목재' },
@@ -1923,7 +1826,7 @@ export default function AdminPage() {
     { id: 'geography', label: '🗻 지리' },
     { id: 'country-info', label: '📊 국가별 정보' },
     { id: 'research', label: '🔬 연구 관리' },
-    { id: 'weapons', label: '🔫 무기 템플릿' },
+    { id: 'blueprints', label: '🛠️ 무기 청사진' },
     { id: 'resources', label: '📦 자원 관리' },
     { id: 'map', label: '🗺️ 지도 색칠' },
   ];
@@ -1952,7 +1855,7 @@ export default function AdminPage() {
           {activeSection === 'geography' && renderGeography()}
           {activeSection === 'country-info' && renderCountryInfo()}
           {activeSection === 'research' && renderResearch()}
-          {activeSection === 'weapons' && renderWeapons()}
+          {activeSection === 'blueprints' && renderBlueprints()}
           {activeSection === 'resources' && renderResources()}
           {activeSection === 'map' && renderMapEditor()}
         </div>

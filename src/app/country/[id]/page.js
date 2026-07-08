@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { getCountry, getDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch } from '@/lib/store';
-import { transferTech, transferHeavyIndustryCoins, transferWeapons, transferResources } from '@/lib/gameLogic';
-import { supabase } from '@/lib/supabase';
+import { transferTech } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
@@ -28,7 +27,6 @@ export default function CountryPage() {
   const [admin, setAdmin] = useState(false);
   const [countries, setCountries] = useState([]);
   const [techTrees, setTechTrees] = useState([]);
-  const [weaponTemplates, setWeaponTemplates] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -90,11 +88,8 @@ export default function CountryPage() {
       if (settings && settings.data?.techTrees) {
         setTechTrees(settings.data.techTrees);
       }
-      if (settings && settings.data?.weaponTemplates) {
-        setWeaponTemplates(settings.data.weaponTemplates);
-      }
     } catch(err) {
-      console.error('Failed to load game settings', err);
+      console.error('Failed to load game settings for tech trees', err);
     }
   };
 
@@ -105,6 +100,7 @@ export default function CountryPage() {
     { id: 'diplomacy', label: '외교관계', icon: '🤝' },
     { id: 'research', label: '연구', icon: '🔬' },
     { id: 'resource', label: '자원', icon: '📦' },
+    { id: 'military', label: '군수', icon: '⚔️' },
   ];
 
   if (loading) {
@@ -316,370 +312,84 @@ export default function CountryPage() {
   );
 
   const renderEconomy = () => {
-    const eco = economyData || {};
-    const budget = eco.budget || 0;
-    const coins = eco.heavyIndustryCoins || 0;
-    const weapons = eco.weapons || {};
-
-    const handleAllocate = async (type) => {
-      if (coins <= 0) return alert('할당할 중공업 코인이 없습니다.');
-      if (!confirm(`중공업 코인 1개를 소모하여 ${type === 'heavy' ? '중공업단지' : '조선소'}를 1개 짓겠습니까?`)) return;
-
-      const newEco = { ...eco };
-      newEco.heavyIndustryCoins -= 1;
-      if (type === 'heavy') newEco.heavyIndustryDistricts = (newEco.heavyIndustryDistricts || 0) + 1;
-      else newEco.shipyards = (newEco.shipyards || 0) + 1;
-
-      try {
-        await supabase.from('data_entries').update({ data: newEco }).eq('id', data.economy.id);
-        alert('성공적으로 할당되었습니다!');
-        loadAllData();
-      } catch (err) {
-        alert('오류가 발생했습니다.');
-      }
-    };
-
-    const handleTransferCoins = async () => {
-      if (coins <= 0) return alert('송금할 코인이 없습니다.');
-      const targetId = document.getElementById('transfer_coin_target').value;
-      if (!targetId) return alert('송금할 국가를 선택하세요.');
-      const amount = parseInt(document.getElementById('transfer_coin_amount').value);
-      if (!amount || amount <= 0 || amount > coins) return alert('올바른 수량을 입력하세요.');
-
-      if (!confirm(`정말 ${amount}개의 중공업 코인을 송금하시겠습니까?`)) return;
-
-      const result = await transferHeavyIndustryCoins(countryId, targetId, amount);
-      if (result.success) {
-        alert('송금 완료!');
-        loadAllData();
-      } else {
-        alert(result.error);
-      }
-    };
-
-    const handleTransferWeapon = async () => {
-      const weaponName = document.getElementById('transfer_weapon_name').value;
-      if (!weaponName) return alert('송금할 무기를 선택하세요.');
-      const targetId = document.getElementById('transfer_weapon_target').value;
-      if (!targetId) return alert('송금할 국가를 선택하세요.');
-      const amount = parseInt(document.getElementById('transfer_weapon_amount').value);
-      const maxAmount = weapons[weaponName] || 0;
-      if (!amount || amount <= 0 || amount > maxAmount) return alert('올바른 수량을 입력하세요.');
-
-      if (!confirm(`정말 [${weaponName}] ${amount}대를 송금하시겠습니까?`)) return;
-
-      const result = await transferWeapons(countryId, targetId, weaponName, amount);
-      if (result.success) {
-        alert('송금 완료!');
-        loadAllData();
-      } else {
-        alert(result.error);
-      }
-    };
-
-    const completedTechNames = researches.filter(r => r.status === 'completed').map(r => r.name);
-    const availableTemplates = weaponTemplates.filter(t => !t.requiredTech || completedTechNames.includes(t.requiredTech));
+    const food = resources.find(r => r.resource_type === 'food')?.amount || 0;
+    const consumerGoods = resources.find(r => r.resource_type === 'consumer_goods')?.amount || 0;
+    const pop = economyData.population?.total || 0;
     
-    const allocations = eco.weaponAllocations || {};
-    const handleAllocationChange = (templateId, val) => {
-      const newAlloc = { ...allocations, [templateId]: Number(val) };
-      setEconomyData(p => ({ ...p, weaponAllocations: newAlloc }));
-    };
+    let warning = null;
+    if (pop > 0) {
+      if (food + consumerGoods < pop) warning = { type: 'inflation', msg: '🚨 [인플레이션 경고] 식량과 소비재가 인구보다 부족합니다!' };
+      else if (food + consumerGoods > pop * 2) warning = { type: 'deflation', msg: '⚠️ [디플레이션 경고] 식량과 소비재가 인구 대비 과도하게 많습니다.' };
+    }
 
-    const handleSaveAllocations = async () => {
-      // 검증: 총 할당량이 보유 공장을 넘지 않는지 확인
-      let heavyUsed = 0;
-      let shipyardUsed = 0;
-      
-      for (const t of availableTemplates) {
-        const amount = allocations[t.id] || 0;
-        if (t.facility === 'heavy') heavyUsed += amount;
-        else shipyardUsed += amount;
-      }
-
-      if (heavyUsed > (eco.heavyIndustryDistricts || 0)) {
-        return alert(`중공업단지 할당량(${heavyUsed})이 보유량(${eco.heavyIndustryDistricts || 0})을 초과했습니다.`);
-      }
-      if (shipyardUsed > (eco.shipyards || 0)) {
-        return alert(`조선소 할당량(${shipyardUsed})이 보유량(${eco.shipyards || 0})을 초과했습니다.`);
-      }
-
-      try {
-        await supabase.from('data_entries').update({ data: { ...eco, weaponAllocations: allocations } }).eq('id', data.economy.id);
-        alert('할당이 저장되었습니다.');
-        loadAllData();
-      } catch (err) {
-        alert('오류가 발생했습니다.');
-      }
-    };
+    const budget = (economyData.gdp || 0) * ((economyData.taxRate || 0) / 100);
+    const nonBudget = (economyData.gdp || 0) - budget;
 
     return (
       <div className="slide-up">
-        {images.economy?.length > 0 && (
-          <div className="image-gallery" style={{ marginBottom: '24px' }}>
-            {images.economy.map((img) => (
-              <div key={img.id} className="image-gallery-item">
-                <img src={img.url} alt={img.caption || ''} />
-              </div>
-            ))}
+        {warning && (
+          <div className="card" style={{ padding: '16px', marginBottom: '20px', background: warning.type === 'inflation' ? 'rgba(248,113,113,0.1)' : 'rgba(96,165,250,0.1)', border: `1px solid ${warning.type === 'inflation' ? 'var(--error)' : 'var(--blue)'}` }}>
+            <h4 style={{ margin: 0, color: warning.type === 'inflation' ? 'var(--error)' : 'var(--blue)' }}>{warning.msg}</h4>
           </div>
         )}
-
-        {/* Warnings */}
-        {eco.warnings && eco.warnings.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-            {eco.warnings.map((w, i) => (
-              <div key={i} style={{ 
-                padding: '16px', 
-                background: w.includes('인플') ? 'rgba(248,113,113,0.15)' : 'rgba(59,130,246,0.15)', 
-                borderLeft: w.includes('인플') ? '4px solid var(--error)' : '4px solid var(--teal)', 
-                borderRadius: '4px', 
-                color: w.includes('인플') ? '#ff4d4f' : '#36cfc9',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
-                {w}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* GDP & Budget */}
-        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
-           <div className="card stat-card" style={{ background: 'var(--gradient-card)' }}>
-              <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>💵</div>
-              <div className="stat-label">국내총생산 (GDP)</div>
-              <div className="stat-value" style={{ color: 'var(--teal)' }}>
-                ${Number(eco.gdp || 0).toLocaleString()}
-              </div>
-           </div>
-           <div className="card stat-card">
-              <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏦</div>
-              <div className="stat-label">국가 예산 (세율 {eco.taxRate || 0}%)</div>
-              <div className="stat-value">
-                ${Number(budget).toLocaleString()}
-              </div>
-           </div>
-        </div>
-
-        {/* Population */}
+        
         <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
           <div className="card stat-card">
             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>👥</div>
-            <div className="stat-label">전체인구</div>
-            <div className="stat-value">
-              {Number(eco.totalPopulation || 0).toLocaleString()}<span className="stat-unit">명</span>
-            </div>
+            <div className="stat-label">전체 인구</div>
+            <div className="stat-value">{Number(economyData.population?.total || 0).toLocaleString()}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>동원 가능: {Number(economyData.population?.mobilizable || 0).toLocaleString()}</div>
           </div>
+          <div className="card stat-card" style={{ background: 'var(--gradient-card)' }}>
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>💵</div>
+            <div className="stat-label">국내총생산 (GDP)</div>
+            <div className="stat-value" style={{ color: 'var(--teal)' }}>${Number(economyData.gdp || 0).toLocaleString()}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>세율: {economyData.taxRate || 0}%</div>
+          </div>
+        </div>
+
+        <div className="card-grid card-grid-3" style={{ marginBottom: '20px' }}>
           <div className="card stat-card">
-            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🎖️</div>
-            <div className="stat-label">동원가능인구</div>
-            <div className="stat-value">
-              {Number(eco.mobilizablePopulation || 0).toLocaleString()}<span className="stat-unit">명</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Heavy Industry Coins */}
-        <div className="card" style={{ padding: '20px', marginBottom: '20px', background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
-          <h3 style={{ margin: '0 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>⚙️ 사용 가능한 중공업 코인</span>
-            <span style={{ fontSize: '1.5rem', color: 'var(--accent)' }}>{coins}개</span>
-          </h3>
-          
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={() => handleAllocate('heavy')} disabled={coins <= 0}>
-              🏭 중공업단지 짓기 (-1)
-            </button>
-            <button className="btn btn-secondary" onClick={() => handleAllocate('shipyard')} disabled={coins <= 0}>
-              ⚓ 조선소 짓기 (-1)
-            </button>
-          </div>
-
-          <div style={{ background: 'var(--bg-glass)', padding: '12px', borderRadius: '8px' }}>
-            <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem' }}>💸 코인 송금하기</h4>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select id="transfer_coin_target" className="form-input" style={{ flex: 1 }}>
-                <option value="">-- 국가 선택 --</option>
-                {countries.filter(c => c.id !== countryId).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <input id="transfer_coin_amount" type="number" className="form-input" style={{ width: '80px' }} placeholder="수량" min="1" max={coins} />
-              <button className="btn btn-primary" onClick={handleTransferCoins} disabled={coins <= 0}>전송</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Non-Budget Coins */}
-        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
-          <div className="card stat-card" style={{ padding: '16px' }}>
-             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🌾</div>
-            <div className="stat-label">이번 턴 농수산업장 코인</div>
-            <div className="stat-value" style={{ color: 'var(--success)' }}>
-              {(() => {
-                const nonBudget = (eco.gdp || 0) - budget;
-                const ratio = eco.nonBudgetRatio?.agriculture || 0;
-                return Math.floor((nonBudget * (ratio / 100)) / 50000).toLocaleString();
-              })()}개
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>턴마다 코인 1개당 식량 5개 생산 (자동소멸)</div>
-          </div>
-          <div className="card stat-card" style={{ padding: '16px' }}>
-             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🧶</div>
-            <div className="stat-label">이번 턴 경공업 코인</div>
-            <div className="stat-value" style={{ color: 'var(--warning)' }}>
-              {(() => {
-                const nonBudget = (eco.gdp || 0) - budget;
-                const ratio = eco.nonBudgetRatio?.lightIndustry || 0;
-                return Math.floor((nonBudget * (ratio / 100)) / 50000).toLocaleString();
-              })()}개
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>턴마다 코인 1개당 소비재 100개 생산 (자동소멸)</div>
-          </div>
-        </div>
-
-        {/* Industry Power */}
-        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
-          <div className="card stat-card">
-             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏭</div>
-            <div className="stat-label">중공업단지 (공업력)</div>
-            <div className="stat-value">
-              {eco.heavyIndustryDistricts || 0}
-            </div>
-          </div>
-          <div className="card stat-card">
-             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>⚓</div>
-            <div className="stat-label">조선소 (조선력)</div>
-            <div className="stat-value">
-              {eco.shipyards || 0}
-            </div>
-          </div>
-        </div>
-
-        {/* Weapon Factory Allocation */}
-        <div className="content-section" style={{ marginBottom: '20px' }}>
-          <h3 className="content-section-title">🏭 무기 생산 할당</h3>
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            보유한 공장을 각 무기 생산에 할당하세요. 턴을 넘길 때 할당된 공장 수에 비례하여 무기가 생산되며, 자원이 소모됩니다.
-          </p>
-          {availableTemplates.length === 0 ? (
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>생산 가능한 무기 기술이 없습니다.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {availableTemplates.map(t => {
-                const val = allocations[t.id] || 0;
-                return (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--accent)' }}>
-                    <div>
-                      <div style={{ fontWeight: 'bold' }}>{t.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        필요: {t.facility === 'heavy' ? '🏭 중공업단지' : '⚓ 조선소'} | 
-                        효율: 턴당 {t.powerCost}대 생산 | 
-                        자원(공장1개당): {Object.entries(t.resourceCosts || {}).filter(([_,v]) => v>0).map(([k,v]) => `${k} ${v}`).join(', ') || '없음'}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <label style={{ fontSize: '0.9rem' }}>공장 할당량:</label>
-                      <input 
-                        type="number" 
-                        className="form-input" 
-                        style={{ width: '80px' }} 
-                        min="0" 
-                        value={val} 
-                        onChange={(e) => handleAllocationChange(t.id, e.target.value)} 
-                        disabled={!admin && !hasAccess} 
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              {(admin || hasAccess) && (
-                <button className="btn btn-primary" style={{ marginTop: '12px', alignSelf: 'flex-start' }} onClick={handleSaveAllocations}>
-                  💾 생산 할당 저장
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Weapons Inventory */}
-        {Object.keys(weapons).length > 0 && (
-          <div className="content-section" style={{ marginBottom: '20px' }}>
-            <h3 className="content-section-title">🔫 무기 재고</h3>
-            <div className="card-grid card-grid-3" style={{ marginBottom: '16px' }}>
-              {Object.entries(weapons).map(([name, count]) => (
-                <div key={name} className="card stat-card" style={{ padding: '12px' }}>
-                  <div className="stat-label">{name}</div>
-                  <div className="stat-value">{count}<span className="stat-unit">대</span></div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ background: 'var(--bg-glass)', padding: '16px', borderRadius: '8px' }}>
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '1rem' }}>💸 무기 지원하기</h4>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <select id="transfer_weapon_name" className="form-input" style={{ flex: 1, minWidth: '150px' }}>
-                  <option value="">-- 무기 선택 --</option>
-                  {Object.entries(weapons).filter(([_, count]) => count > 0).map(([name, _]) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-                <select id="transfer_weapon_target" className="form-input" style={{ flex: 1, minWidth: '150px' }}>
-                  <option value="">-- 타겟 국가 --</option>
-                  {countries.filter(c => c.id !== countryId).map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <input id="transfer_weapon_amount" type="number" className="form-input" style={{ width: '100px' }} placeholder="수량" min="1" />
-                <button className="btn btn-primary" onClick={handleTransferWeapon}>전송</button>
+            <div className="stat-label">예산 (Budget)</div>
+            <div className="stat-value">${Number(budget).toLocaleString()}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--accent)', marginTop: '4px' }}>이번 턴 중공업 코인: {economyData.heavyIndustryCoins || 0}개</div>
+            {economyData.heavyIndustryCoins > 0 && (
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'center' }}>
+                <button className="btn btn-sm btn-primary" onClick={() => alert('구현 중: 중공업단지로 변환 (턴 종료 시 소멸)')}>중공업단지 짓기</button>
+                <button className="btn btn-sm btn-primary" onClick={() => alert('구현 중: 조선소로 변환 (턴 종료 시 소멸)')}>조선소 짓기</button>
               </div>
+            )}
+          </div>
+          <div className="card stat-card">
+            <div className="stat-label">비예산 (Non-Budget)</div>
+            <div className="stat-value">${Number(nonBudget).toLocaleString()}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              광업 {economyData.allocation?.mining || 0}% | 농업 {economyData.allocation?.agriculture || 0}%<br/>
+              상업 {economyData.allocation?.commerce || 0}% | 경공업 {economyData.allocation?.lightIndustry || 0}%
             </div>
           </div>
-        )}
-
-        {/* Non-Budget Ratios */}
-        <div className="content-section">
-          <h3 className="content-section-title">📊 비예산 산업 비율</h3>
-          <div className="card-grid card-grid-4">
-            <div className="card stat-card" style={{ padding: '12px' }}>
-              <div className="stat-label">광업</div>
-              <div className="stat-value">{eco.nonBudgetRatio?.mining || 0}%</div>
-            </div>
-            <div className="card stat-card" style={{ padding: '12px' }}>
-              <div className="stat-label">농업</div>
-              <div className="stat-value">{eco.nonBudgetRatio?.agriculture || 0}%</div>
-            </div>
-            <div className="card stat-card" style={{ padding: '12px' }}>
-              <div className="stat-label">상업</div>
-              <div className="stat-value">{eco.nonBudgetRatio?.commerce || 0}%</div>
-            </div>
-            <div className="card stat-card" style={{ padding: '12px' }}>
-              <div className="stat-label">경공업</div>
-              <div className="stat-value">{eco.nonBudgetRatio?.lightIndustry || 0}%</div>
+          <div className="card stat-card">
+            <div className="stat-label">이번 턴 생산 코인</div>
+            <div style={{ fontSize: '0.9rem', marginTop: '8px', textAlign: 'left', display: 'inline-block' }}>
+              <div>🌾 농수산업장: {economyData.agricultureCoins || 0}개</div>
+              <div>🧵 경공업 공장: {economyData.lightIndustryCoins || 0}개</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>(턴 종료 시 식량 및 소비재로 자동 변환)</div>
             </div>
           </div>
         </div>
 
-        {eco.customFields?.length > 0 && (
-          <div className="content-section" style={{ marginTop: '20px' }}>
-            <h3 className="content-section-title">📋 추가 경제 지표</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {eco.customFields.map((field, i) => (
-                <div key={i} className="card stat-card" style={{ textAlign: 'left', padding: '16px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>{field.label}</div>
-                  <div className="markdown-body" style={{ fontSize: '0.95rem' }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{field.value}</ReactMarkdown>
-                  </div>
-                  {field.image && <img src={field.image} alt={field.label} style={{ marginTop: '12px', maxWidth: '100%', borderRadius: '8px' }} />}
-                </div>
-              ))}
-            </div>
+        <div className="card-grid card-grid-2" style={{ marginBottom: '20px' }}>
+          <div className="card stat-card">
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏭</div>
+            <div className="stat-label">영구 보유 중공업단지</div>
+            <div className="stat-value">{economyData.heavyIndustryComplexes || 0}</div>
           </div>
-        )}
+          <div className="card stat-card">
+            <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>🏗️</div>
+            <div className="stat-label">영구 보유 조선소</div>
+            <div className="stat-value">{economyData.shipyards || 0}</div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -871,71 +581,6 @@ export default function CountryPage() {
       rubber: { label: '고무', icon: '🛞' },
       sulfur: { label: '유황', icon: '🔥' },
       food: { label: '식료품', icon: '🍞' },
-      consumer_goods: { label: '소비재', icon: '🛋️' },
-    };
-
-    const completedTechNames = researches.filter(r => r.status === 'completed').map(r => r.name);
-    
-    const conversionEffects = [];
-    techTrees.forEach(tree => {
-      tree.levels.forEach(lvl => {
-        if (completedTechNames.includes(lvl.name) && lvl.effect && lvl.effect.type === 'resource_conversion') {
-          conversionEffects.push({
-            techName: lvl.name,
-            inResource: lvl.effect.inResource,
-            inAmount: lvl.effect.inAmount,
-            outResource: lvl.effect.outResource,
-            outAmount: lvl.effect.outAmount
-          });
-        }
-      });
-    });
-
-    const handleCustomConversion = async (effect) => {
-      const inRes = resources.find(r => r.resource_type === effect.inResource);
-      const inAmount = inRes ? Number(inRes.amount) : 0;
-      if (inAmount < effect.inAmount) return alert(`${resourceLabels[effect.inResource]?.label || effect.inResource} 자원이 ${effect.inAmount}개 이상 필요합니다.`);
-      
-      if (!confirm(`${resourceLabels[effect.inResource]?.label || effect.inResource} ${effect.inAmount}개를 소모하여 ${resourceLabels[effect.outResource]?.label || effect.outResource} ${effect.outAmount}개로 변환하시겠습니까?`)) return;
-
-      const outRes = resources.find(r => r.resource_type === effect.outResource);
-      const newIn = inAmount - effect.inAmount;
-      const newOut = (outRes ? Number(outRes.amount) : 0) + effect.outAmount;
-
-      try {
-        await supabase.from('resources').update({ amount: newIn }).eq('id', inRes.id);
-        if (outRes) {
-          await supabase.from('resources').update({ amount: newOut }).eq('id', outRes.id);
-        } else {
-          await supabase.from('resources').insert({ country_id: countryId, resource_type: effect.outResource, amount: newOut, production_per_turn: 0 });
-        }
-        alert('자원 변환 성공!');
-        loadAllData();
-      } catch (err) {
-        alert('오류 발생');
-      }
-    };
-
-    const handleTransferResource = async () => {
-      const resType = document.getElementById('transfer_resource_type').value;
-      if (!resType) return alert('송금할 자원을 선택하세요.');
-      const targetId = document.getElementById('transfer_resource_target').value;
-      if (!targetId) return alert('송금할 국가를 선택하세요.');
-      const amount = parseInt(document.getElementById('transfer_resource_amount').value);
-      
-      const resData = resources.find(r => r.resource_type === resType);
-      const maxAmount = resData ? Number(resData.amount) : 0;
-      if (!amount || amount <= 0 || amount > maxAmount) return alert('올바른 수량을 입력하세요.');
-
-      if (!confirm(`정말 자원을 송금하시겠습니까?`)) return;
-
-      const result = await transferResources(countryId, targetId, resType, amount);
-      if (result.success) {
-        alert('자원 송금 완료!');
-        loadAllData();
-      } else {
-        alert(result.error);
-      }
     };
 
     return (
@@ -962,53 +607,49 @@ export default function CountryPage() {
             })}
           </div>
         </div>
+      </div>
+    );
+  };
 
-        {/* 특수 기술 효과 */}
-        {conversionEffects.length > 0 && (
-          <div className="content-section" style={{ marginTop: '20px' }}>
-            <h3 className="content-section-title">🧪 특수 기술 효과</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {conversionEffects.map((eff, idx) => (
-                <div key={idx} className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 'bold', color: 'var(--primary)' }}>{eff.techName} (자원 변환)</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      {resourceLabels[eff.inResource]?.label || eff.inResource} {eff.inAmount}개를 소모하여 {resourceLabels[eff.outResource]?.label || eff.outResource} {eff.outAmount}개를 생산합니다.
-                    </div>
-                  </div>
-                  <button className="btn btn-secondary" onClick={() => handleCustomConversion(eff)}>변환하기</button>
+  const renderMilitary = () => {
+    const hasCoalToOil = researches.some(r => r.status === 'completed' && r.name.includes('석탄-석유')); // Example check, will refine later
+    const weaponResources = resources.filter(r => r.resource_type === 'weapon'); // Assuming weapons are saved as 'weapon' type
+
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h3 className="content-section-title">⚔️ 군수 장비 인벤토리</h3>
+          {weaponResources.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>보유 중인 군수 장비가 없습니다.</p>
+          ) : (
+            <div className="card-grid card-grid-3">
+              {weaponResources.map(w => (
+                <div key={w.id} className="card stat-card" style={{ padding: '16px' }}>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{w.name || '알 수 없는 무기'}</div>
+                  <div style={{ fontSize: '1.4rem', color: 'var(--teal)', marginTop: '8px' }}>{Number(w.amount).toLocaleString()}개</div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* 자원 지원하기 */}
-        <div className="content-section" style={{ marginTop: '20px' }}>
-          <h3 className="content-section-title">💸 자원 지원하기</h3>
-          <div style={{ background: 'var(--bg-glass)', padding: '16px', borderRadius: '8px' }}>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <select id="transfer_resource_type" className="form-input" style={{ flex: 1, minWidth: '150px' }}>
-                <option value="">-- 자원 선택 --</option>
-                {Object.entries(resourceLabels).map(([key, info]) => {
-                  const rsc = resources.find(r => r.resource_type === key);
-                  if (rsc && rsc.amount > 0) {
-                    return <option key={key} value={key}>{info.label}</option>;
-                  }
-                  return null;
-                })}
-              </select>
-              <select id="transfer_resource_target" className="form-input" style={{ flex: 1, minWidth: '150px' }}>
-                <option value="">-- 타겟 국가 --</option>
-                {countries.filter(c => c.id !== countryId).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <input id="transfer_resource_amount" type="number" className="form-input" style={{ width: '100px' }} placeholder="수량" min="1" />
-              <button className="btn btn-primary" onClick={handleTransferResource}>전송</button>
-            </div>
+        <div className="content-section" style={{ marginTop: '30px' }}>
+          <h3 className="content-section-title">🏭 무기 생산 예약</h3>
+          <div className="card" style={{ padding: '20px' }}>
+            <p style={{ color: 'var(--text-muted)' }}>연구가 완료된 무기 청사진을 기반으로, 매 턴 할당된 공업력을 소모하여 무기를 자동 생산합니다.</p>
+            <button className="btn btn-secondary" onClick={() => alert('생산 예약 UI 구현 중...')}>➕ 새로운 생산 라인 추가</button>
           </div>
         </div>
+
+        {hasCoalToOil && (
+          <div className="content-section" style={{ marginTop: '30px' }}>
+            <h3 className="content-section-title">⚗️ 특수 화학 기술 (석탄 → 석유)</h3>
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--accent)' }}>
+              <p>석탄 4개를 소모하여 석유 1개를 생산할 수 있습니다.</p>
+              <button className="btn btn-primary" onClick={() => alert('변환 로직 구현 중...')}>변환하기</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1027,6 +668,8 @@ export default function CountryPage() {
         return renderResearch();
       case 'resource':
         return renderResource();
+      case 'military':
+        return renderMilitary();
       default:
         return null;
     }

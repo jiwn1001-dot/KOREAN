@@ -135,10 +135,7 @@ export async function processTurnEnd(newTurn) {
       }
     }
 
-    // 3. 경제 시스템 (GDP, 예산, 생산, 인플레이션, 상업코인, 무기생산)
-    const { data: gameSettingsEntry } = await supabase.from('data_entries').select('data').eq('category', 'game_settings').is('country_id', null).single();
-    const weaponTemplates = gameSettingsEntry?.data?.weaponTemplates || [];
-
+    // 3. 경제, 코인 산정 및 자동 자원 생산
     const { data: ecoEntries, error: ecoError } = await supabase
       .from('data_entries')
       .select('id, country_id, data')
@@ -146,159 +143,55 @@ export async function processTurnEnd(newTurn) {
 
     if (!ecoError && ecoEntries) {
       for (const entry of ecoEntries) {
-        if (!entry.country_id) continue;
-        const data = entry.data || {};
+        let data = entry.data || {};
         
-        let gdp = Number(data.gdp) || 0;
-        let taxRate = Number(data.taxRate) || 0;
-        let totalPopulation = Number(data.totalPopulation) || 0;
-        let mobilizablePopulation = Number(data.mobilizablePopulation) || 0;
-        
-        // 기존 성장률 로직 호환성 유지용
-        let growthRate = Number(data.economicGrowthRate?.value || data.economicGrowthRate || 0);
-        if (gdp > 0 && growthRate !== 0) {
-          gdp = gdp * (1 + (growthRate / 100));
+        // 3-1. 상업 코인에 의한 GDP 증가 (영구)
+        let currentGdp = Number(data.gdp || 0);
+        const commCoins = Number(data.commerceCoins || 0);
+        if (commCoins !== 0) {
+          currentGdp = currentGdp * (1 + (commCoins * 0.01));
+          data.gdp = currentGdp;
+          data.commerceCoins = 0; // 소모됨
         }
 
-        // --- 상업코인 GDP 반영 (코인 1개당 GDP 1% 상승) ---
-        const commerceCoins = Number(data.commerceCoins) || 0;
-        if (commerceCoins !== 0) {
-          gdp = gdp * (1 + (commerceCoins / 100));
-          data.commerceCoins = 0; // 적용 후 리셋
-        }
-        data.gdp = gdp;
-
-        // --- 예산 및 중공업 코인 ---
-        const budget = gdp * (taxRate / 100);
-        const heavyIndustryCoins = Math.floor(budget / 50000);
-        data.heavyIndustryCoins = heavyIndustryCoins; // 턴마다 리셋 및 새로 할당
-        data.budget = budget; // 디스플레이용
+        // 3-2. 예산 및 비예산 분배
+        const taxRate = Number(data.taxRate || 0);
+        const budget = currentGdp * (taxRate / 100);
+        const nonBudget = currentGdp - budget;
         
-        // --- 비예산 및 농업/경공업 생산 ---
-        const nonBudgetGdp = gdp - budget;
-        const ratios = data.nonBudgetRatio || { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 };
+        const alloc = data.allocation || { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 };
         
-        // --- Compute Efficiency Boosts ---
-        const { data: completedResearches } = await supabase
-          .from('researches')
-          .select('name')
-          .eq('country_id', entry.country_id)
-          .eq('status', 'completed');
-        const completedNames = completedResearches ? completedResearches.map(r => r.name) : [];
+        // 3-3. 코인 산정
+        data.heavyIndustryCoins = Math.floor(budget / 50000);
+        data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 50000);
+        data.lightIndustryCoins = Math.floor((nonBudget * (alloc.lightIndustry / 100)) / 50000);
+        
+        // 3-4. 이전 턴에 지어둔 단지/조선소 초기화 (매년 새로 배정해야 하므로)
+        // 무기 생산 로직은 이 초기화 직전에 실행되어야 함. (무기 생산 기능은 추후 추가될 예정이나, 지금은 일단 0으로 초기화)
+        data.heavyIndustryComplexes = 0;
+        data.shipyards = 0;
 
-        const efficiencyBoosts = { heavy: 0, naval: 0, agri: 0, light: 0 };
-        techTrees.forEach(tree => {
-          tree.levels.forEach(lvl => {
-            if (completedNames.includes(lvl.name) && lvl.effect && lvl.effect.type === 'efficiency_boost') {
-              const target = lvl.effect.target;
-              if (efficiencyBoosts[target] !== undefined) {
-                efficiencyBoosts[target] += Number(lvl.effect.value);
+        // 3-5. 코인 기반 자동 자원 생산 (농업 -> 식량, 경공업 -> 소비재)
+        if (entry.country_id) {
+          const foodAmount = data.agricultureCoins * 5;
+          const cgAmount = data.lightIndustryCoins * 100;
+          
+          if (foodAmount > 0 || cgAmount > 0) {
+            const { data: cRes } = await supabase.from('resources').select('id, resource_type, amount').eq('country_id', entry.country_id);
+            if (cRes) {
+              const foodRsc = cRes.find(r => r.resource_type === 'food');
+              if (foodRsc) {
+                await supabase.from('resources').update({ amount: Number(foodRsc.amount) + foodAmount }).eq('id', foodRsc.id);
+              }
+              const cgRsc = cRes.find(r => r.resource_type === 'consumer_goods');
+              if (cgRsc) {
+                await supabase.from('resources').update({ amount: Number(cgRsc.amount) + cgAmount }).eq('id', cgRsc.id);
               }
             }
-          });
-        });
-
-        const agriShare = nonBudgetGdp * (Number(ratios.agriculture || 0) / 100);
-        const lightShare = nonBudgetGdp * (Number(ratios.lightIndustry || 0) / 100);
-        
-        const agriCoins = Math.floor(agriShare / 50000); // 농수산업장
-        const lightCoins = Math.floor(lightShare / 50000); // 경공업코인
-        
-        let foodProduced = agriCoins * 5;
-        if (efficiencyBoosts.agri > 0) foodProduced = Math.floor(foodProduced * (1 + efficiencyBoosts.agri / 100));
-        
-        let consumerGoodsProduced = lightCoins * 100;
-        if (efficiencyBoosts.light > 0) consumerGoodsProduced = Math.floor(consumerGoodsProduced * (1 + efficiencyBoosts.light / 100));
-
-        
-        // --- 자원 갱신 ---
-        const { data: countryResources } = await supabase.from('resources').select('*').eq('country_id', entry.country_id);
-        let foodAmount = 0;
-        let cgAmount = 0;
-        
-        if (countryResources) {
-          const foodRes = countryResources.find(r => r.resource_type === 'food');
-          const cgRes = countryResources.find(r => r.resource_type === 'consumer_goods');
-          if (foodRes) foodAmount = Number(foodRes.amount);
-          if (cgRes) cgAmount = Number(cgRes.amount);
-        }
-        
-        foodAmount += foodProduced;
-        cgAmount += consumerGoodsProduced;
-        
-        const updateRes = async (type, amt) => {
-          const existing = countryResources?.find(r => r.resource_type === type);
-          if (existing) {
-            await supabase.from('resources').update({ amount: amt }).eq('id', existing.id);
-          } else {
-            await supabase.from('resources').insert({ country_id: entry.country_id, resource_type: type, amount: amt, production_per_turn: 0 });
-          }
-        };
-        
-        await updateRes('food', foodAmount);
-        await updateRes('consumer_goods', cgAmount);
-
-        // --- 무기 생산 (중공업단지 + 조선소) ---
-        // 해당 국가의 완료된 연구 기술 목록 가져오기
-        // 해당 국가의 완료된 연구 기술 목록은 위에서(completedNames) 이미 가져왔습니다.
-
-
-        const weapons = data.weapons || {};
-        const allocations = data.weaponAllocations || {};
-        
-        for (const tmpl of weaponTemplates) {
-          const allocAmount = allocations[tmpl.id] || 0;
-          if (allocAmount <= 0) continue;
-          
-          // 요구 기술 검증
-          if (tmpl.requiredTech && !completedNames.includes(tmpl.requiredTech)) continue;
-
-          let possibleRuns = allocAmount;
-          
-          // 자원 소모 검증
-          const resCosts = tmpl.resourceCosts || {};
-          const resourcesToConsume = [];
-          for (const [resName, cost] of Object.entries(resCosts)) {
-            if (cost > 0) {
-              // DB에 한글 이름으로 저장되어 있을 경우를 위해 리소스 찾기
-              const resData = countryResources?.find(r => r.resource_type === resName);
-              const currentAmt = resData ? Number(resData.amount) : 0;
-              const maxRunsWithRes = Math.floor(currentAmt / cost);
-              if (maxRunsWithRes < possibleRuns) possibleRuns = maxRunsWithRes;
-              resourcesToConsume.push({ type: resName, costPerRun: cost, existing: resData });
-            }
-          }
-
-          if (possibleRuns > 0) {
-            // 자원 차감
-            for (const r of resourcesToConsume) {
-              const deduct = r.costPerRun * possibleRuns;
-              const newAmt = (Number(r.existing?.amount) || 0) - deduct;
-              await updateRes(r.type, newAmt);
-              if (r.existing) r.existing.amount = newAmt; // 업데이트 반영 (다른 무기 생산을 위해)
-            }
-            // 무기 생산
-            const baseProduction = possibleRuns * (tmpl.powerCost || 1);
-            let finalProduction = baseProduction;
-            const targetEff = tmpl.facility === 'heavy' ? efficiencyBoosts.heavy : efficiencyBoosts.naval;
-            if (targetEff > 0) finalProduction = Math.floor(finalProduction * (1 + targetEff / 100));
-            
-            weapons[tmpl.name] = (weapons[tmpl.name] || 0) + finalProduction;
           }
         }
-        data.weapons = weapons;
-        
-        // --- 인플레이션 / 디플레이션 판정 ---
-        const warnings = [];
-        if (totalPopulation > 0) {
-          if (foodAmount < totalPopulation) warnings.push('⚠️ 식량 인플레이션 (식량 부족)');
-          else if (foodAmount >= totalPopulation * 2) warnings.push('📉 식량 디플레이션 (식량 과잉)');
-          
-          if (cgAmount < totalPopulation) warnings.push('⚠️ 소비재 인플레이션 (소비재 부족)');
-          else if (cgAmount >= totalPopulation * 2) warnings.push('📉 소비재 디플레이션 (소비재 과잉)');
-        }
-        data.warnings = warnings;
-        
+
+        // DB 업데이트
         await supabase
           .from('data_entries')
           .update({ data })
@@ -427,141 +320,4 @@ export async function transferTech(targetCountryId, techName, techLevel, isAdmin
     console.error(err);
     return { success: false, error: err.message };
   }
-}
-
-/**
- * 유저간 중공업 코인 전송
- */
-export async function transferHeavyIndustryCoins(fromCountryId, toCountryId, amount) {
-  if (amount <= 0) return { success: false, error: '올바른 수량을 입력하세요.' };
-
-  // 1. Check sender
-  const { data: fromEntry } = await supabase
-    .from('data_entries')
-    .select('id, data')
-    .eq('country_id', fromCountryId)
-    .eq('category', 'economy')
-    .single();
-
-  if (!fromEntry || !fromEntry.data) return { success: false, error: '보내는 국가의 경제 데이터가 없습니다.' };
-  
-  const fromCoins = Number(fromEntry.data.heavyIndustryCoins || 0);
-  if (fromCoins < amount) return { success: false, error: '중공업 코인이 부족합니다.' };
-
-  // 2. Fetch receiver
-  const { data: toEntry } = await supabase
-    .from('data_entries')
-    .select('id, data')
-    .eq('country_id', toCountryId)
-    .eq('category', 'economy')
-    .single();
-
-  if (!toEntry) return { success: false, error: '받는 국가의 경제 데이터가 없습니다.' };
-  const toData = toEntry.data || {};
-
-  // 3. Update sender
-  const newFromData = { ...fromEntry.data, heavyIndustryCoins: fromCoins - amount };
-  await supabase.from('data_entries').update({ data: newFromData }).eq('id', fromEntry.id);
-
-  // 4. Update receiver
-  const newToData = { ...toData, heavyIndustryCoins: Number(toData.heavyIndustryCoins || 0) + amount };
-  await supabase.from('data_entries').update({ data: newToData }).eq('id', toEntry.id);
-
-  return { success: true };
-}
-
-/**
- * 유저간 무기 전송
- */
-export async function transferWeapons(fromCountryId, toCountryId, weaponName, amount) {
-  if (amount <= 0) return { success: false, error: '올바른 수량을 입력하세요.' };
-
-  // 1. Check sender
-  const { data: fromEntry } = await supabase
-    .from('data_entries')
-    .select('id, data')
-    .eq('country_id', fromCountryId)
-    .eq('category', 'economy')
-    .single();
-
-  if (!fromEntry || !fromEntry.data) return { success: false, error: '보내는 국가의 경제 데이터가 없습니다.' };
-  
-  const fromWeapons = fromEntry.data.weapons || {};
-  const currentAmount = fromWeapons[weaponName] || 0;
-  if (currentAmount < amount) return { success: false, error: '해당 무기의 재고가 부족합니다.' };
-
-  // 2. Fetch receiver
-  const { data: toEntry } = await supabase
-    .from('data_entries')
-    .select('id, data')
-    .eq('country_id', toCountryId)
-    .eq('category', 'economy')
-    .single();
-
-  if (!toEntry) return { success: false, error: '받는 국가의 경제 데이터가 없습니다.' };
-  const toData = toEntry.data || {};
-  const toWeapons = toData.weapons || {};
-
-  // 3. Update sender
-  fromWeapons[weaponName] -= amount;
-  if (fromWeapons[weaponName] === 0) delete fromWeapons[weaponName];
-  const newFromData = { ...fromEntry.data, weapons: fromWeapons };
-  await supabase.from('data_entries').update({ data: newFromData }).eq('id', fromEntry.id);
-
-  // 4. Update receiver
-  toWeapons[weaponName] = (toWeapons[weaponName] || 0) + amount;
-  const newToData = { ...toData, weapons: toWeapons };
-  await supabase.from('data_entries').update({ data: newToData }).eq('id', toEntry.id);
-
-  return { success: true };
-}
-
-/**
- * 유저간 자원 전송
- */
-export async function transferResources(fromCountryId, toCountryId, resourceType, amount) {
-  if (amount <= 0) return { success: false, error: '올바른 수량을 입력하세요.' };
-
-  // 1. Fetch sender resource
-  const { data: fromRes } = await supabase
-    .from('resources')
-    .select('id, amount')
-    .eq('country_id', fromCountryId)
-    .eq('resource_type', resourceType)
-    .single();
-    
-  if (!fromRes || Number(fromRes.amount) < amount) return { success: false, error: '자원이 부족합니다.' };
-
-  // 2. Fetch receiver resource
-  const { data: toRes } = await supabase
-    .from('resources')
-    .select('id, amount')
-    .eq('country_id', toCountryId)
-    .eq('resource_type', resourceType)
-    .maybeSingle();
-
-  // 3. Update sender
-  await supabase.from('resources').update({ amount: Number(fromRes.amount) - amount }).eq('id', fromRes.id);
-
-  // 4. Update receiver
-  if (toRes) {
-    await supabase.from('resources').update({ amount: Number(toRes.amount) + amount }).eq('id', toRes.id);
-  } else {
-    await supabase.from('resources').insert({
-      country_id: toCountryId,
-      resource_type: resourceType,
-      amount: amount,
-      production_per_turn: 0
-    });
-  }
-
-  // 5. Log transfer
-  await supabase.from('resource_transfers').insert({
-    from_country_id: fromCountryId,
-    to_country_id: toCountryId,
-    resource_type: resourceType,
-    amount: amount
-  });
-
-  return { success: true };
 }
