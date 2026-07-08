@@ -715,7 +715,7 @@ export default function CountryPage() {
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <select id="transferTarget" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
                 <option value="">-- 받을 국가 선택 --</option>
-                {countries.filter(c => c.id !== id).map(c => (
+                {countries.filter(c => c.id !== countryId).map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -752,7 +752,7 @@ export default function CountryPage() {
                 if (!amount || amount <= 0) return showToast('수량을 올바르게 입력하세요.', 'error');
                 
                 const [type, key] = itemRaw.split(':');
-                const res = await transferItems(id, toId, type, key, amount);
+                const res = await transferItems(countryId, toId, type, key, amount);
                 if (res.success) {
                   showToast(res.message);
                   loadCountryData();
