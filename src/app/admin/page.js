@@ -1429,25 +1429,12 @@ export default function AdminPage() {
                               if (!targetCountryId) return showToast('제공할 국가를 선택하세요.', 'error');
                               
                               if (!confirm(`정말 Lv.${highestCompletedLevel} 기술을 제공하시겠습니까?`)) return;
-                              
-                              // 대상 국가에 해당 기술이 이미 더 높은 레벨로 있는지 확인
-                              const { data: targetResearches } = await supabase.from('researches').select('level').eq('country_id', targetCountryId).eq('name', tree.name).eq('status', 'completed');
-                              const targetMaxLevel = targetResearches && targetResearches.length > 0 ? Math.max(...targetResearches.map(r => r.level)) : 0;
-                              
-                              if (targetMaxLevel >= highestCompletedLevel) {
-                                return showToast('상대 국가가 이미 같거나 더 높은 단계의 기술을 보유하고 있습니다.', 'error');
+                              const result = await transferTech(targetCountryId, tree.name, highestCompletedLevel, true);
+                              if (result.success) {
+                                showToast('기술 제공이 완료되었습니다.');
+                              } else {
+                                showToast(result.error || '기술 제공에 실패했습니다.', 'error');
                               }
-                              
-                              await createResearch({
-                                country_id: targetCountryId,
-                                category: tree.category,
-                                name: tree.name,
-                                level: highestCompletedLevel,
-                                required_turns: 0,
-                                remaining_turns: 0,
-                                status: 'completed',
-                              });
-                              showToast('기술 제공이 완료되었습니다.');
                             }}>🎁 기술 제공하기</button>
                             
                             {!activeResearch && (

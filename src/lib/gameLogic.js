@@ -237,7 +237,7 @@ export async function consumeResources(countryId, requiredResources) {
   return true; 
 }
 
-export async function transferTech(targetCountryId, techName, techLevel) {
+export async function transferTech(targetCountryId, techName, techLevel, isAdmin = false) {
   try {
     // 1. Get target's current tech level
     const { data: currentRes } = await supabase
@@ -253,11 +253,13 @@ export async function transferTech(targetCountryId, techName, techLevel) {
       return { success: false, error: '대상 국가가 이미 해당 기술을 같거나 높은 단계로 보유하고 있습니다.' };
     }
 
-    // Calculate skip bonus
-    const levelsSkipped = techLevel - currentLevel - 1;
+    // Calculate skip bonus (Skeleton only, do not write to DB yet)
     let bonusToAdd = 0;
-    if (levelsSkipped > 0) {
-      bonusToAdd = levelsSkipped * 10;
+    if (!isAdmin) {
+      const levelsSkipped = techLevel - currentLevel - 1;
+      if (levelsSkipped > 0) {
+        bonusToAdd = levelsSkipped * 10;
+      }
     }
 
     // Update or insert target research
@@ -273,28 +275,8 @@ export async function transferTech(targetCountryId, techName, techLevel) {
       });
     }
 
-    // Add bonus if applicable
-    if (bonusToAdd > 0) {
-      const { data: ecoEntry } = await supabase
-        .from('data_entries')
-        .select('*')
-        .eq('category', 'economy')
-        .eq('country_id', targetCountryId)
-        .single();
-
-      if (ecoEntry) {
-        const data = ecoEntry.data || {};
-        data.techSkipBonus = (data.techSkipBonus || 0) + bonusToAdd;
-        await supabase.from('data_entries').update({ data }).eq('id', ecoEntry.id);
-      } else {
-        await supabase.from('data_entries').insert({
-          category: 'economy',
-          country_id: targetCountryId,
-          title: '경제 수치',
-          data: { techSkipBonus: bonusToAdd }
-        });
-      }
-    }
+    // [뼈대] 보너스는 나중에 생산력에 비례하여 직접 계산되도록 추가할 예정이므로 DB 저장은 제거함
+    // if (bonusToAdd > 0) { ... }
 
     return { success: true, bonusAdded: bonusToAdd };
   } catch (err) {
