@@ -1847,7 +1847,7 @@ export default function AdminPage() {
                   </div>
                   <button className="btn btn-sm btn-danger" onClick={() => {
                     const newTrees = techTrees.filter((_, i) => i !== idx);
-                    saveTechTrees(newTrees);
+                    saveGameSettings({ techTrees: newTrees });
                   }}>기술 트리 삭제</button>
                 </div>
                 
@@ -1890,7 +1890,7 @@ export default function AdminPage() {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
                       newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era, effectValue });
-                      saveTechTrees(newTrees);
+                      saveGameSettings({ techTrees: newTrees });
                       document.getElementById(`levelName_${tree.id || idx}`).value = '';
                       document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
                       document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
@@ -1904,7 +1904,7 @@ export default function AdminPage() {
                     <button className="btn btn-sm btn-ghost" onClick={() => {
                       const newTrees = [...techTrees];
                       newTrees[idx].levels.pop();
-                      saveTechTrees(newTrees);
+                      saveGameSettings({ techTrees: newTrees });
                     }}>마지막 단계 삭제</button>
                   )}
                 </div>

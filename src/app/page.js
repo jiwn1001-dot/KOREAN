@@ -47,6 +47,14 @@ export default function Home() {
       badge: '전체 공개',
       badgeClass: 'badge-teal',
     },
+    {
+      href: '/tech-tree',
+      icon: '🌳',
+      title: '기술 트리',
+      desc: '게임 내 모든 기술 계통도 열람',
+      badge: '전체 공개',
+      badgeClass: 'badge-teal',
+    },
   ];
 
   return (
@@ -97,7 +105,7 @@ export default function Home() {
               공개 정보
             </h2>
           </div>
-          <div className="card-grid card-grid-3">
+          <div className="card-grid card-grid-4">
             {categoryCards.map((cat) => (
               <Link key={cat.href} href={cat.href} style={{ textDecoration: 'none' }}>
                 <div className="card country-card">
