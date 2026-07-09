@@ -31,6 +31,8 @@ export default function CountryPage() {
   const [techTrees, setTechTrees] = useState([]);
   const [unitTemplates, setUnitTemplates] = useState([]);
   const [militaryUnits, setMilitaryUnits] = useState([]);
+  const [createUnitTemplateId, setCreateUnitTemplateId] = useState('');
+  const [createUnitCount, setCreateUnitCount] = useState(1);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -122,6 +124,7 @@ export default function CountryPage() {
     { id: 'social', label: '사회문제', icon: '📢' },
     { id: 'diplomacy', label: '외교관계', icon: '🤝' },
     { id: 'research', label: '연구', icon: '🔬' },
+    { id: 'tech_tree', label: '테크트리 조회', icon: '🌳' },
     { id: 'resource', label: '자원', icon: '📦' },
     { id: 'military', label: '군수', icon: '⚔️' },
     { id: 'formation', label: '편제', icon: '🎖️' },
@@ -904,6 +907,103 @@ export default function CountryPage() {
     );
   };
 
+  const renderTechTreeView = () => {
+    // 1. Group techTrees by Category
+    const treesByCategory = {};
+    techTrees.forEach(tree => {
+      if (!treesByCategory[tree.category]) treesByCategory[tree.category] = [];
+      treesByCategory[tree.category].push(tree);
+    });
+
+    // 2. Determine distinct eras
+    const allEras = new Set();
+    techTrees.forEach(tree => {
+      (tree.levels || []).forEach(lvl => {
+        if (lvl.era) allEras.add(lvl.era);
+      });
+    });
+    const sortedEras = Array.from(allEras).sort((a, b) => {
+      // Try to parse as numbers (e.g. 1936), otherwise alphabetical
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h2 className="content-section-title">🌳 전체 테크트리 조회 (조회 전용)</h2>
+          <p style={{ color: 'var(--text-muted)' }}>게임 내 모든 기술 계통도를 연도/시대 별로 한눈에 확인합니다. (가로 스크롤 가능)</p>
+          
+          <div style={{ overflowX: 'auto', paddingBottom: '20px' }}>
+            <div style={{ minWidth: '800px' }}>
+              {/* Header: Eras */}
+              <div style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', marginBottom: '16px' }}>
+                <div style={{ width: '150px', flexShrink: 0, fontWeight: 'bold', padding: '10px' }}>분류</div>
+                {sortedEras.map(era => (
+                  <div key={era} style={{ flex: 1, minWidth: '150px', fontWeight: 'bold', textAlign: 'center', padding: '10px', borderLeft: '1px solid var(--border-color)' }}>
+                    {era}
+                  </div>
+                ))}
+              </div>
+
+              {/* Rows: Categories & Trees */}
+              {Object.keys(treesByCategory).map(category => (
+                <div key={category} style={{ marginBottom: '24px' }}>
+                  <div style={{ fontWeight: 'bold', color: 'var(--accent)', fontSize: '1.1rem', marginBottom: '8px', borderBottom: '1px dashed var(--border-color)', paddingBottom: '4px' }}>
+                    [{category}]
+                  </div>
+                  {treesByCategory[category].map(tree => (
+                    <div key={tree.id} style={{ display: 'flex', marginBottom: '16px', position: 'relative' }}>
+                      <div style={{ width: '150px', flexShrink: 0, padding: '10px 10px 10px 0', fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                        {tree.name}
+                      </div>
+                      
+                      {/* Tree Nodes mapped to Era columns */}
+                      {sortedEras.map((era, index) => {
+                        const levelData = (tree.levels || []).find(lvl => lvl.era === era);
+                        return (
+                          <div key={era} style={{ flex: 1, minWidth: '150px', padding: '0 10px', position: 'relative' }}>
+                            {/* Horizontal Line connecting nodes */}
+                            {index > 0 && <div style={{ position: 'absolute', left: '-50%', top: '50%', width: '100%', height: '2px', background: 'var(--border-color)', zIndex: 0 }}></div>}
+                            
+                            {levelData ? (
+                              <div style={{ 
+                                position: 'relative', zIndex: 1, 
+                                background: 'var(--bg-glass)', border: '1px solid var(--accent)', 
+                                padding: '10px', borderRadius: '6px', textAlign: 'center', 
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)', fontSize: '0.85rem'
+                              }}>
+                                <div style={{ fontWeight: 'bold' }}>{levelData.name}</div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>
+                                  Lv.{levelData.level} | {levelData.turns}턴
+                                </div>
+                                {levelData.effect !== 'none' && (
+                                  <div style={{ color: 'var(--teal)', fontSize: '0.7rem', marginTop: '4px' }}>
+                                    ✨ 효과: {levelData.effect} {levelData.effectValue > 0 ? `(+${levelData.effectValue})` : ''}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>-</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderFormation = () => {
     // 1. Calculate research bonuses
     const completedTechs = researches.filter(r => r.status === 'completed');
@@ -950,7 +1050,7 @@ export default function CountryPage() {
               <h3 style={{ marginBottom: '16px' }}>부대 창설</h3>
               <div className="form-group">
                 <label className="form-label">유닛 종류 선택</label>
-                <select id="createUnitTemplate" className="form-select">
+                <select id="createUnitTemplate" className="form-select" value={createUnitTemplateId} onChange={e => setCreateUnitTemplateId(e.target.value)}>
                   <option value="">-- 템플릿 선택 --</option>
                   {unitTemplates.map(tmpl => (
                     <option key={tmpl.id} value={tmpl.id}>
@@ -965,12 +1065,41 @@ export default function CountryPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">생성 수량</label>
-                <input type="number" id="createUnitCount" className="form-input" defaultValue="1" min="1" />
+                <input type="number" id="createUnitCount" className="form-input" value={createUnitCount} min="1" onChange={e => setCreateUnitCount(Math.max(1, parseInt(e.target.value) || 1))} />
               </div>
+              
+              {/* 소모 비용 미리보기 */}
+              {createUnitTemplateId && (() => {
+                const template = unitTemplates.find(t => t.id === createUnitTemplateId);
+                if (!template) return null;
+                const totalManpowerCost = (template.manpowerCost || 0) * createUnitCount;
+                const isManpowerShort = totalMobilizable < totalManpowerCost;
+                
+                return (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>소모 자원 미리보기</h4>
+                    <div style={{ fontSize: '0.9rem', marginBottom: '4px', color: isManpowerShort ? 'var(--error)' : 'inherit' }}>
+                      <strong>동원가능인구:</strong> {totalManpowerCost.toLocaleString()} 필요 / {totalMobilizable.toLocaleString()} 보유
+                    </div>
+                    {template.requiredWeapons?.map(rw => {
+                      const needed = rw.amount * createUnitCount;
+                      const res = resources.find(r => r.resource_type === rw.weaponName);
+                      const current = res ? Number(res.amount) : 0;
+                      const isShort = current < needed;
+                      return (
+                        <div key={rw.weaponName} style={{ fontSize: '0.9rem', marginBottom: '2px', color: isShort ? 'var(--error)' : 'inherit' }}>
+                          <strong>{rw.weaponName}:</strong> {needed.toLocaleString()} 필요 / {current.toLocaleString()} 보유
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
-                const tmplId = document.getElementById('createUnitTemplate').value;
+                const tmplId = createUnitTemplateId;
                 const customName = document.getElementById('createUnitCustomName').value;
-                const count = parseInt(document.getElementById('createUnitCount').value);
+                const count = createUnitCount;
                 
                 if (!tmplId || !count || count <= 0) return alert('템플릿과 수량을 확인하세요.');
                 const template = unitTemplates.find(t => t.id === tmplId);
@@ -1081,6 +1210,8 @@ export default function CountryPage() {
         return renderTextSection('diplomacy', diplomacyData, images.diplomacy);
       case 'research':
         return renderResearch();
+      case 'tech_tree':
+        return renderTechTreeView();
       case 'resource':
         return renderResource();
       case 'military':

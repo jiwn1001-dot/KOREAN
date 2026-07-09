@@ -4,11 +4,15 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getCountries } from '@/lib/store';
 import { getAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
 export default function Home() {
   const [countries, setCountries] = useState([]);
   const [auth, setAuth] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showRankingModal, setShowRankingModal] = useState(false);
+  const [rankingData, setRankingData] = useState([]);
+  const [rankingType, setRankingType] = useState('gdp'); // 'gdp' or 'combat'
 
   useEffect(() => {
     setAuth(getAuth());
@@ -60,6 +64,24 @@ export default function Home() {
           <Link href="/history" className="btn btn-primary btn-lg">
             📜 역사 보기
           </Link>
+          <button className="btn btn-secondary btn-lg" onClick={async () => {
+            setShowRankingModal(true);
+            const { data: entries } = await supabase.from('data_entries').select('*').in('category', ['economy', 'politics']);
+            if (entries) {
+              const countryStats = {};
+              countries.forEach(c => {
+                countryStats[c.id] = { name: c.name, flag: c.flag_url, gdp: 0, combatScore: 0 };
+              });
+              entries.forEach(e => {
+                if (!countryStats[e.country_id]) return;
+                if (e.category === 'economy') countryStats[e.country_id].gdp = e.data?.gdp || 0;
+                if (e.category === 'politics') countryStats[e.country_id].combatScore = e.data?.combatScore || 0;
+              });
+              setRankingData(Object.values(countryStats));
+            }
+          }}>
+            🏆 글로벌 랭킹 보드
+          </button>
           <Link href="/map" className="btn btn-secondary btn-lg">
             🗺️ 지도 보기
           </Link>
@@ -181,6 +203,44 @@ export default function Home() {
             </p>
           </div>
         </section>
+
+        {/* 랭킹 모달 */}
+        {showRankingModal && (
+          <div className="modal-backdrop" onClick={() => setShowRankingModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+              <div className="modal-header">
+                <h2>🏆 글로벌 랭킹 보드</h2>
+                <button className="btn btn-sm btn-ghost" onClick={() => setShowRankingModal(false)}>✕</button>
+              </div>
+              <div style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                  <button className={`btn ${rankingType === 'gdp' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1 }} onClick={() => setRankingType('gdp')}>💰 GDP 랭킹</button>
+                  <button className={`btn ${rankingType === 'combat' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1 }} onClick={() => setRankingType('combat')}>⚔️ 전적 랭킹</button>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
+                  {rankingData.sort((a, b) => rankingType === 'gdp' ? b.gdp - a.gdp : b.combatScore - a.combatScore).map((data, idx) => (
+                    <div key={data.name} className="card" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', background: idx === 0 ? 'rgba(255, 215, 0, 0.1)' : idx === 1 ? 'rgba(192, 192, 192, 0.1)' : idx === 2 ? 'rgba(205, 127, 50, 0.1)' : 'var(--bg-card)' }}>
+                      <div style={{ width: '40px', fontSize: '1.2rem', fontWeight: 'bold', color: idx === 0 ? '#FFD700' : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : 'var(--text-muted)' }}>
+                        {idx + 1}
+                      </div>
+                      <div style={{ width: '40px' }}>
+                        {data.flag && <img src={data.flag} alt={data.name} style={{ width: '30px', height: '20px', objectFit: 'cover', borderRadius: '4px' }} />}
+                      </div>
+                      <div style={{ flex: 1, fontWeight: 'bold' }}>
+                        {data.name}
+                      </div>
+                      <div style={{ fontWeight: 'bold', color: 'var(--accent)' }}>
+                        {rankingType === 'gdp' ? `$${data.gdp.toLocaleString()}` : `${data.combatScore.toLocaleString()}점`}
+                      </div>
+                    </div>
+                  ))}
+                  {rankingData.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>데이터가 없습니다.</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

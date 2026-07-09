@@ -782,6 +782,16 @@ export default function AdminPage() {
               placeholder="https://..."
             />
           </div>
+          <div className="form-group">
+            <label className="form-label">전적 (Combat Score)</label>
+            <input
+              type="number"
+              className="form-input"
+              value={politicsData.combatScore || 0}
+              onChange={(e) => setPoliticsData((p) => ({ ...p, combatScore: Number(e.target.value) || 0 }))}
+              placeholder="예: 승리 점수"
+            />
+          </div>
         </div>
       </div>
 
