@@ -1605,6 +1605,10 @@ export default function AdminPage() {
           </div>
 
           <div className="form-row" style={{ alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>유닛 이미지 URL (선택)</label>
+              <input type="text" id="newUnitImage" className="form-input" placeholder="https://..." />
+            </div>
             <div className="form-group" style={{ flex: 2 }}>
               <label>소모군수품 (무기이름:수량, 콤마 구분)</label>
               <input type="text" id="newUnitWeapons" className="form-input" placeholder="예: 소총:100,기관총:10" />
@@ -1644,11 +1648,13 @@ export default function AdminPage() {
               fuelType: document.getElementById('newUnitFuelType').value,
               fuelPerTurn: parseInt(document.getElementById('newUnitFuelAmt').value) || 0,
               supplyConsumption: parseInt(document.getElementById('newUnitSupply').value) || 0,
+              image: document.getElementById('newUnitImage').value || '',
             };
 
             saveGameSettings({ unitTemplates: [...unitTemplates, newTemplate] });
             document.getElementById('newUnitName').value = '';
             document.getElementById('newUnitWeapons').value = '';
+            document.getElementById('newUnitImage').value = '';
           }}>➕ 유닛 템플릿 추가</button>
         </div>
 
@@ -1658,10 +1664,15 @@ export default function AdminPage() {
           {unitTemplates.map((tmpl, idx) => (
             <div key={tmpl.id} className="card" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                <div>
-                  <span className="badge badge-accent" style={{ marginRight: '6px' }}>{tmpl.majorCategory}</span>
-                  <span className="badge" style={{ marginRight: '6px' }}>{tmpl.minorCategory}</span>
-                  <h4 style={{ margin: '4px 0 0', color: 'var(--accent)' }}>{tmpl.name}</h4>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  {tmpl.image && (
+                    <img src={tmpl.image} alt={tmpl.name} style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                  )}
+                  <div>
+                    <span className="badge badge-accent" style={{ marginRight: '6px' }}>{tmpl.majorCategory}</span>
+                    <span className="badge" style={{ marginRight: '6px' }}>{tmpl.minorCategory}</span>
+                    <h4 style={{ margin: '4px 0 0', color: 'var(--accent)' }}>{tmpl.name}</h4>
+                  </div>
                 </div>
                 <button className="btn btn-sm btn-danger" onClick={() => {
                   if (!confirm('이 유닛 템플릿을 삭제하시겠습니까?')) return;

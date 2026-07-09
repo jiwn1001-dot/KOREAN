@@ -1041,9 +1041,14 @@ export default function CountryPage() {
                     return (
                       <div key={unit.id} className="card" style={{ padding: '12px', background: 'var(--bg-glass)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <div style={{ fontWeight: 'bold' }}>
-                            <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tmpl.majorCategory}</span>
-                            {nameDisplay} (x{unit.count})
+                          <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {tmpl.image && (
+                              <img src={tmpl.image} alt={tmpl.name} style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                            )}
+                            <div>
+                              <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tmpl.majorCategory}</span>
+                              {nameDisplay} (x{unit.count})
+                            </div>
                           </div>
                           <button className="btn btn-sm btn-ghost" onClick={async () => {
                             if (!confirm('이 유닛을 해체하시겠습니까? (소모된 인력과 무기는 반환되지 않습니다.)')) return;
