@@ -122,6 +122,7 @@ export default function AdminPage() {
   const [editingBlueprintId, setEditingBlueprintId] = useState(null);
   const [editingUnitId, setEditingUnitId] = useState(null);
   const [editingTechTreeId, setEditingTechTreeId] = useState(null);
+  const [editingTechLevelId, setEditingTechLevelId] = useState(null);
   const [unitTemplates, setUnitTemplates] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
   const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
@@ -2330,7 +2331,20 @@ export default function AdminPage() {
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {(Array.isArray(tree.levels) ? tree.levels : []).filter(l => l).map((lvl, lIdx) => (
-                    <span key={lIdx} className="badge" style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
+                    <span 
+                      key={lIdx} 
+                      className="badge" 
+                      style={{ padding: '6px 10px', fontSize: '0.85rem', cursor: 'pointer', border: editingTechLevelId === `${tree.id || idx}_${lIdx}` ? '2px solid var(--accent)' : 'none' }}
+                      onClick={() => {
+                        document.getElementById(`levelName_${tree.id || idx}`).value = lvl.name || '';
+                        document.getElementById(`levelTurn_${tree.id || idx}`).value = lvl.turns || '';
+                        document.getElementById(`levelEra_${tree.id || idx}`).value = lvl.era || eras[0];
+                        document.getElementById(`levelEffect_${tree.id || idx}`).value = lvl.effect || 'none';
+                        document.getElementById(`levelEffectValue_${tree.id || idx}`).value = lvl.effectValue || '';
+                        setEditingTechLevelId(`${tree.id || idx}_${lIdx}`);
+                      }}
+                      title="클릭하여 수정"
+                    >
                       {lvl.name || `${lvl.level}단계`} (턴: {lvl.turns}) {lvl.era && <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>[{lvl.era}]</span>} {lvl.effect && lvl.effect !== 'none' && <span style={{ color: 'var(--primary)', marginLeft: '4px' }}>[{lvl.effect}]</span>}
                     </span>
                   ))}
@@ -2357,26 +2371,61 @@ export default function AdminPage() {
                     <option value="observation_boost">관측력 증가</option>
                   </select>
                   <input id={`levelEffectValue_${tree.id || idx}`} type="number" className="form-input" placeholder="효과값" style={{ width: '70px' }} title="관통력/대공/관측력 증가량" />
-                  <button className="btn btn-sm btn-secondary" onClick={() => {
-                    const name = document.getElementById(`levelName_${tree.id || idx}`).value;
-                    const turns = parseInt(document.getElementById(`levelTurn_${tree.id || idx}`).value);
-                    const effect = document.getElementById(`levelEffect_${tree.id || idx}`).value;
-                    const era = document.getElementById(`levelEra_${tree.id || idx}`).value;
-                    const effectValue = parseInt(document.getElementById(`levelEffectValue_${tree.id || idx}`).value) || 0;
-                    if (turns > 0 && name) {
-                      const newTrees = [...techTrees];
-                      const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era, effectValue });
-                      saveGameSettings({ techTrees: newTrees });
-                      document.getElementById(`levelName_${tree.id || idx}`).value = '';
-                      document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
-                      document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
-                      document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
-                      document.getElementById(`levelEffectValue_${tree.id || idx}`).value = '';
-                    } else {
-                      showToast('이름과 턴 수를 모두 입력하세요.', 'error');
-                    }
-                  }}>➕ 다음 단계 추가 (Lv.{(Array.isArray(tree.levels) ? tree.levels : []).length + 1})</button>
+                  
+                  {editingTechLevelId && editingTechLevelId.startsWith(`${tree.id || idx}_`) ? (
+                    <>
+                      <button className="btn btn-sm btn-primary" onClick={() => {
+                        const lIdx = parseInt(editingTechLevelId.split('_')[1]);
+                        const name = document.getElementById(`levelName_${tree.id || idx}`).value;
+                        const turns = parseInt(document.getElementById(`levelTurn_${tree.id || idx}`).value);
+                        const effect = document.getElementById(`levelEffect_${tree.id || idx}`).value;
+                        const era = document.getElementById(`levelEra_${tree.id || idx}`).value;
+                        const effectValue = parseInt(document.getElementById(`levelEffectValue_${tree.id || idx}`).value) || 0;
+                        if (turns > 0 && name) {
+                          const newTrees = [...techTrees];
+                          newTrees[idx].levels[lIdx] = { ...newTrees[idx].levels[lIdx], name, turns, effect, era, effectValue };
+                          saveGameSettings({ techTrees: newTrees });
+                          setEditingTechLevelId(null);
+                          document.getElementById(`levelName_${tree.id || idx}`).value = '';
+                          document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
+                          document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
+                          document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
+                          document.getElementById(`levelEffectValue_${tree.id || idx}`).value = '';
+                        } else {
+                          showToast('이름과 턴 수를 모두 입력하세요.', 'error');
+                        }
+                      }}>저장</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => {
+                        setEditingTechLevelId(null);
+                        document.getElementById(`levelName_${tree.id || idx}`).value = '';
+                        document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
+                        document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
+                        document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
+                        document.getElementById(`levelEffectValue_${tree.id || idx}`).value = '';
+                      }}>취소</button>
+                    </>
+                  ) : (
+                    <button className="btn btn-sm btn-secondary" onClick={() => {
+                      const name = document.getElementById(`levelName_${tree.id || idx}`).value;
+                      const turns = parseInt(document.getElementById(`levelTurn_${tree.id || idx}`).value);
+                      const effect = document.getElementById(`levelEffect_${tree.id || idx}`).value;
+                      const era = document.getElementById(`levelEra_${tree.id || idx}`).value;
+                      const effectValue = parseInt(document.getElementById(`levelEffectValue_${tree.id || idx}`).value) || 0;
+                      if (turns > 0 && name) {
+                        const newTrees = [...techTrees];
+                        const newLevel = newTrees[idx].levels.length + 1;
+                        newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era, effectValue });
+                        saveGameSettings({ techTrees: newTrees });
+                        document.getElementById(`levelName_${tree.id || idx}`).value = '';
+                        document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
+                        document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
+                        document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
+                        document.getElementById(`levelEffectValue_${tree.id || idx}`).value = '';
+                      } else {
+                        showToast('이름과 턴 수를 모두 입력하세요.', 'error');
+                      }
+                    }}>➕ 다음 단계 추가 (Lv.{(Array.isArray(tree.levels) ? tree.levels : []).length + 1})</button>
+                  )}
                   {(Array.isArray(tree.levels) ? tree.levels : []).length > 0 && (
                     <button className="btn btn-sm btn-ghost" onClick={() => {
                       const newTrees = [...techTrees];
