@@ -119,6 +119,9 @@ export default function AdminPage() {
   const [resources, setResources] = useState([]);
   const [techTrees, setTechTrees] = useState([]);
   const [weaponBlueprints, setWeaponBlueprints] = useState([]);
+  const [editingBlueprintId, setEditingBlueprintId] = useState(null);
+  const [editingUnitId, setEditingUnitId] = useState(null);
+  const [editingTechTreeId, setEditingTechTreeId] = useState(null);
   const [unitTemplates, setUnitTemplates] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
   const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
@@ -1458,8 +1461,22 @@ export default function AdminPage() {
       <p style={{ color: 'var(--text-muted)' }}>유저가 무기를 생산할 수 있도록 필요 기술, 요구 공업력 등을 설정합니다.</p>
       
       <div className="card" style={{ padding: '20px', marginBottom: '20px', border: '1px solid var(--border-color)' }}>
-        <h4>새 청사진 추가</h4>
-        <div className="form-row">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h4>{editingBlueprintId ? '청사진 수정' : '새 청사진 추가'}</h4>
+          {editingBlueprintId && (
+            <button className="btn btn-sm" onClick={() => {
+              setEditingBlueprintId(null);
+              document.getElementById('newBpName').value = '';
+              document.getElementById('newBpIndustryCost').value = '1';
+              document.getElementById('newBpProductionTurns').value = '1';
+              document.getElementById('newBpRes1Name').value = '';
+              document.getElementById('newBpRes1Cost').value = '';
+              document.getElementById('newBpRes2Name').value = '';
+              document.getElementById('newBpRes2Cost').value = '';
+            }}>취소</button>
+          )}
+        </div>
+        <div className="form-row" style={{ marginTop: '16px' }}>
           <div className="form-group">
             <label>무기명 (기술명과 동일해야 함)</label>
             <input type="text" id="newBpName" className="form-input" list="bpNameOptions" placeholder="직접 입력하거나 목록에서 검색/선택" />
@@ -1492,6 +1509,10 @@ export default function AdminPage() {
           <div className="form-group">
             <label>필요 산업력</label>
             <input type="number" id="newBpIndustryCost" className="form-input" placeholder="1" defaultValue="1" step="0.1" />
+          </div>
+          <div className="form-group">
+            <label>생산소모턴수</label>
+            <input type="number" id="newBpProductionTurns" className="form-input" placeholder="1" defaultValue="1" min="1" />
           </div>
         </div>
         <div className="form-row">
@@ -1549,39 +1570,80 @@ export default function AdminPage() {
           if (r2n && r2c > 0) resources[r2n] = r2c;
           
           const newBp = {
-            id: Date.now().toString(),
+            id: editingBlueprintId || Date.now().toString(),
             name,
             techCategory: cat,
             facility,
             industryCost: indCost,
+            productionTurns: parseInt(document.getElementById('newBpProductionTurns')?.value) || 1,
             resources
           };
-          saveGameSettings({ weaponBlueprints: [...(Array.isArray(weaponBlueprints) ? weaponBlueprints : []), newBp] });
-        }}>➕ 청사진 추가</button>
+          
+          if (editingBlueprintId) {
+            const updated = (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).map(b => b.id === editingBlueprintId ? newBp : b);
+            saveGameSettings({ weaponBlueprints: updated });
+            setEditingBlueprintId(null);
+          } else {
+            saveGameSettings({ weaponBlueprints: [...(Array.isArray(weaponBlueprints) ? weaponBlueprints : []), newBp] });
+          }
+          
+          document.getElementById('newBpName').value = '';
+          document.getElementById('newBpIndustryCost').value = '1';
+          document.getElementById('newBpProductionTurns').value = '1';
+          document.getElementById('newBpRes1Name').value = '';
+          document.getElementById('newBpRes1Cost').value = '';
+          document.getElementById('newBpRes2Name').value = '';
+          document.getElementById('newBpRes2Cost').value = '';
+        }}>➕ {editingBlueprintId ? '청사진 수정 완료' : '청사진 추가'}</button>
       </div>
 
-      <div className="card-grid card-grid-3">
-        {(Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter(bp => bp).map((bp, idx) => (
-          <div key={bp.id} className="card" style={{ padding: '16px' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: 'var(--accent)' }}>{bp.name}</h4>
-            <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
-              <div><strong>기술 분류:</strong> {bp.techCategory}</div>
-              <div><strong>생산 시설:</strong> {bp.facility === 'heavy' ? '중공업단지' : '조선소'} ({bp.industryCost})</div>
-              <div>
-                <strong>필요 자원:</strong> 
-                {Object.keys(bp.resources || {}).length > 0 
-                  ? Object.entries(bp.resources || {}).map(([k, v]) => ` ${k}(${v})`).join(',')
-                  : ' 없음'}
-              </div>
+      {['지상군', '해군', '항공', '공학', '화학'].map(cat => {
+        const bps = (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter(bp => bp && bp.techCategory === cat);
+        if (bps.length === 0) return null;
+        return (
+          <div key={cat} style={{ marginBottom: '24px' }}>
+            <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '16px' }}>{cat} 청사진</h3>
+            <div className="card-grid card-grid-3">
+              {bps.map((bp) => (
+                <div key={bp.id} className="card" style={{ padding: '16px' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: 'var(--accent)' }}>{bp.name}</h4>
+                  <div style={{ fontSize: '0.9rem', marginBottom: '8px' }}>
+                    <div><strong>생산 시설:</strong> {bp.facility === 'heavy' ? '중공업단지' : '조선소'} ({bp.industryCost})</div>
+                    <div><strong>생산소모턴수:</strong> {bp.productionTurns || 1}턴</div>
+                    <div>
+                      <strong>필요 자원:</strong> 
+                      {Object.keys(bp.resources || {}).length > 0 
+                        ? Object.entries(bp.resources || {}).map(([k, v]) => ` ${k}(${v})`).join(',')
+                        : ' 없음'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => {
+                      document.getElementById('newBpName').value = bp.name || '';
+                      document.getElementById('newBpTechCategory').value = bp.techCategory || '지상군';
+                      document.getElementById('newBpFacility').value = bp.facility || 'heavy';
+                      document.getElementById('newBpIndustryCost').value = bp.industryCost || '1';
+                      document.getElementById('newBpProductionTurns').value = bp.productionTurns || '1';
+                      const resKeys = Object.keys(bp.resources || {});
+                      document.getElementById('newBpRes1Name').value = resKeys[0] || '';
+                      document.getElementById('newBpRes1Cost').value = bp.resources?.[resKeys[0]] || '';
+                      document.getElementById('newBpRes2Name').value = resKeys[1] || '';
+                      document.getElementById('newBpRes2Cost').value = bp.resources?.[resKeys[1]] || '';
+                      setEditingBlueprintId(bp.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}>수정</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => {
+                      if(!confirm('정말 삭제하시겠습니까?')) return;
+                      saveGameSettings({ weaponBlueprints: (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter(b => b.id !== bp.id) });
+                    }}>삭제</button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <button className="btn btn-sm btn-danger" onClick={() => {
-              if(!confirm('정말 삭제하시겠습니까?')) return;
-              saveGameSettings({ weaponBlueprints: (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).filter((_, i) => i !== idx) });
-            }}>삭제</button>
           </div>
-        ))}
-        {!(Array.isArray(weaponBlueprints) && (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).length > 0) && <p>등록된 청사진이 없습니다.</p>}
-      </div>
+        );
+      })}
+      {!(Array.isArray(weaponBlueprints) && (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).length > 0) && <p>등록된 청사진이 없습니다.</p>}
     </div>
   );
   const renderUnitTemplates = () => {
@@ -1609,7 +1671,17 @@ export default function AdminPage() {
 
         {/* 새 템플릿 생성 폼 */}
         <div className="card" style={{ padding: '20px', marginBottom: '24px', border: '1px solid var(--border-color)' }}>
-          <h4 style={{ marginBottom: '16px' }}>➕ 새 유닛 템플릿 추가</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h4>{editingUnitId ? '유닛 템플릿 수정' : '➕ 새 유닛 템플릿 추가'}</h4>
+            {editingUnitId && (
+              <button className="btn btn-sm" onClick={() => {
+                setEditingUnitId(null);
+                document.getElementById('newUnitName').value = '';
+                document.getElementById('newUnitWeapons').value = '';
+                document.getElementById('newUnitImage').value = '';
+              }}>취소</button>
+            )}
+          </div>
           
           <div className="form-row">
             <div className="form-group">
@@ -1701,7 +1773,7 @@ export default function AdminPage() {
             }
 
             const newTemplate = {
-              id: Date.now().toString(),
+              id: editingUnitId || Date.now().toString(),
               name,
               majorCategory: document.getElementById('newUnitMajor').value,
               minorCategory: document.getElementById('newUnitMinor').value,
@@ -1721,53 +1793,110 @@ export default function AdminPage() {
               image: document.getElementById('newUnitImage').value || '',
             };
 
-            saveGameSettings({ unitTemplates: [...unitTemplates, newTemplate] });
+            if (editingUnitId) {
+              const updated = unitTemplates.map(t => t.id === editingUnitId ? newTemplate : t);
+              saveGameSettings({ unitTemplates: updated });
+              setEditingUnitId(null);
+            } else {
+              saveGameSettings({ unitTemplates: [...unitTemplates, newTemplate] });
+            }
+            
             document.getElementById('newUnitName').value = '';
             document.getElementById('newUnitWeapons').value = '';
             document.getElementById('newUnitImage').value = '';
-          }}>➕ 유닛 템플릿 추가</button>
+          }}>➕ {editingUnitId ? '템플릿 수정 완료' : '유닛 템플릿 추가'}</button>
         </div>
 
         {/* 등록된 템플릿 목록 */}
-        <div className="card-grid card-grid-2">
+        <div>
           {unitTemplates.length === 0 && <p>등록된 유닛 템플릿이 없습니다.</p>}
-          {unitTemplates.map((tmpl, idx) => (
-            <div key={tmpl.id} className="card" style={{ padding: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  {tmpl.image && (
-                    <img src={tmpl.image} alt={tmpl.name} style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
-                  )}
-                  <div>
-                    <span className="badge badge-accent" style={{ marginRight: '6px' }}>{tmpl.majorCategory}</span>
-                    <span className="badge" style={{ marginRight: '6px' }}>{tmpl.minorCategory}</span>
-                    <h4 style={{ margin: '4px 0 0', color: 'var(--accent)' }}>{tmpl.name}</h4>
-                  </div>
-                </div>
-                <button className="btn btn-sm btn-danger" onClick={() => {
-                  if (!confirm('이 유닛 템플릿을 삭제하시겠습니까?')) return;
-                  saveGameSettings({ unitTemplates: unitTemplates.filter((_, i) => i !== idx) });
-                }}>삭제</button>
+          {majorCategories.map(major => {
+            const majorUnits = unitTemplates.filter(t => t.majorCategory === major);
+            if (majorUnits.length === 0) return null;
+            return (
+              <div key={major} style={{ marginBottom: '32px' }}>
+                <h3 style={{ borderBottom: '2px solid var(--accent)', paddingBottom: '8px', marginBottom: '16px' }}>{major} 템플릿</h3>
+                {(minorCategoryMap[major] || []).map(minor => {
+                  const minorUnits = majorUnits.filter(t => t.minorCategory === minor);
+                  if (minorUnits.length === 0) return null;
+                  return (
+                    <div key={minor} style={{ marginBottom: '20px', marginLeft: '16px' }}>
+                      <h4 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', marginBottom: '12px', color: 'var(--text-muted)' }}>{minor}</h4>
+                      <div className="card-grid card-grid-2">
+                        {minorUnits.map(tmpl => (
+                          <div key={tmpl.id} className="card" style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                {tmpl.image && (
+                                  <img src={tmpl.image} alt={tmpl.name} style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                                )}
+                                <div>
+                                  <span className="badge badge-accent" style={{ marginRight: '6px' }}>{tmpl.majorCategory}</span>
+                                  <span className="badge" style={{ marginRight: '6px' }}>{tmpl.minorCategory}</span>
+                                  <h4 style={{ margin: '4px 0 0', color: 'var(--accent)' }}>{tmpl.name}</h4>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button className="btn btn-sm btn-ghost" onClick={() => {
+                                  document.getElementById('newUnitName').value = tmpl.name || '';
+                                  document.getElementById('newUnitMajor').value = tmpl.majorCategory || '육군';
+                                  const minorSel = document.getElementById('newUnitMinor');
+                                  minorSel.innerHTML = '';
+                                  (minorCategoryMap[tmpl.majorCategory || '육군'] || []).forEach(m => {
+                                    const opt = document.createElement('option');
+                                    opt.value = m; opt.textContent = m;
+                                    minorSel.appendChild(opt);
+                                  });
+                                  minorSel.value = tmpl.minorCategory || '';
+                                  document.getElementById('newUnitDef').value = tmpl.defense || 0;
+                                  document.getElementById('newUnitSpd').value = tmpl.speed || 0;
+                                  document.getElementById('newUnitAtk').value = tmpl.attack || 0;
+                                  document.getElementById('newUnitHp').value = tmpl.hp || 100;
+                                  document.getElementById('newUnitWidth').value = tmpl.combatWidth || 1;
+                                  document.getElementById('newUnitSlot').value = tmpl.slotSize || 0;
+                                  document.getElementById('newUnitCarrier').value = tmpl.carrierCapacity || 0;
+                                  document.getElementById('newUnitEffDur').value = tmpl.effectDuration || 0;
+                                  document.getElementById('newUnitManpower').value = tmpl.manpowerCost || 0;
+                                  document.getElementById('newUnitFuelType').value = tmpl.fuelType || 'none';
+                                  document.getElementById('newUnitFuelAmt').value = tmpl.fuelPerTurn || 0;
+                                  document.getElementById('newUnitSupply').value = tmpl.supplyConsumption || 0;
+                                  document.getElementById('newUnitImage').value = tmpl.image || '';
+                                  document.getElementById('newUnitWeapons').value = (tmpl.requiredWeapons || []).map(w => `${w.weaponName}:${w.amount}`).join(',');
+                                  setEditingUnitId(tmpl.id);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}>수정</button>
+                                <button className="btn btn-sm btn-danger" onClick={() => {
+                                  if (!confirm('이 유닛 템플릿을 삭제하시겠습니까?')) return;
+                                  saveGameSettings({ unitTemplates: unitTemplates.filter(t => t.id !== tmpl.id) });
+                                }}>삭제</button>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                              <div>⚔️ 공격력: {tmpl.attack}</div>
+                              <div>🛡️ 방어력: {tmpl.defense}</div>
+                              <div>💨 속도: {tmpl.speed}</div>
+                              <div>❤️ 체력: {tmpl.hp}</div>
+                              <div>📐 전장너비: {tmpl.combatWidth}</div>
+                              <div>👥 소모인력: {tmpl.manpowerCost?.toLocaleString()}</div>
+                              <div>⛽ 연료: {tmpl.fuelType === 'none' ? '없음' : `${tmpl.fuelType} (${tmpl.fuelPerTurn}/턴)`}</div>
+                              {tmpl.slotSize > 0 && <div>🚢 소모칸수: {tmpl.slotSize}</div>}
+                              {tmpl.carrierCapacity > 0 && <div>✈️ 함재기: {tmpl.carrierCapacity}</div>}
+                              {tmpl.effectDuration > 0 && <div>⏱️ 효과턴수: {tmpl.effectDuration}</div>}
+                            </div>
+                            {tmpl.requiredWeapons?.length > 0 && (
+                              <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                🔧 소모군수품: {tmpl.requiredWeapons.map(w => `${w.weaponName}×${w.amount}`).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                <div>⚔️ 공격력: {tmpl.attack}</div>
-                <div>🛡️ 방어력: {tmpl.defense}</div>
-                <div>💨 속도: {tmpl.speed}</div>
-                <div>❤️ 체력: {tmpl.hp}</div>
-                <div>📐 전장너비: {tmpl.combatWidth}</div>
-                <div>👥 소모인력: {tmpl.manpowerCost?.toLocaleString()}</div>
-                <div>⛽ 연료: {tmpl.fuelType === 'none' ? '없음' : `${tmpl.fuelType} (${tmpl.fuelPerTurn}/턴)`}</div>
-                {tmpl.slotSize > 0 && <div>🚢 소모칸수: {tmpl.slotSize}</div>}
-                {tmpl.carrierCapacity > 0 && <div>✈️ 함재기: {tmpl.carrierCapacity}</div>}
-                {tmpl.effectDuration > 0 && <div>⏱️ 효과턴수: {tmpl.effectDuration}</div>}
-              </div>
-              {tmpl.requiredWeapons?.length > 0 && (
-                <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  🔧 소모군수품: {tmpl.requiredWeapons.map(w => `${w.weaponName}×${w.amount}`).join(', ')}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -2163,14 +2292,40 @@ export default function AdminPage() {
             {(Array.isArray(techTrees) ? techTrees : []).filter(t => t).map((tree, idx) => (
               <div key={tree.id} className="card" style={{ padding: '16px', background: 'var(--bg-glass)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-                    <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tree.category}</span>
-                    {tree.name}
+                  {editingTechTreeId === tree.id ? (
+                    <div style={{ display: 'flex', gap: '8px', flex: 1, marginRight: '16px' }}>
+                      <select id={`editTreeCategory_${tree.id}`} className="form-select" defaultValue={tree.category}>
+                        {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input id={`editTreeName_${tree.id}`} className="form-input" defaultValue={tree.name} style={{ flex: 1 }} />
+                      <button className="btn btn-sm btn-primary" onClick={() => {
+                        const newCat = document.getElementById(`editTreeCategory_${tree.id}`).value;
+                        const newName = document.getElementById(`editTreeName_${tree.id}`).value;
+                        if (newName) {
+                          const updated = techTrees.map(t => t.id === tree.id ? { ...t, category: newCat, name: newName } : t);
+                          saveGameSettings({ techTrees: updated });
+                          setEditingTechTreeId(null);
+                        }
+                      }}>저장</button>
+                      <button className="btn btn-sm" onClick={() => setEditingTechTreeId(null)}>취소</button>
+                    </div>
+                  ) : (
+                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', flex: 1 }}>
+                      <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tree.category}</span>
+                      {tree.name}
+                    </div>
+                  )}
+                  
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {editingTechTreeId !== tree.id && (
+                      <button className="btn btn-sm btn-ghost" onClick={() => setEditingTechTreeId(tree.id)}>수정</button>
+                    )}
+                    <button className="btn btn-sm btn-danger" onClick={() => {
+                      if (!confirm('정말 삭제하시겠습니까?')) return;
+                      const newTrees = techTrees.filter((_, i) => i !== idx);
+                      saveGameSettings({ techTrees: newTrees });
+                    }}>삭제</button>
                   </div>
-                  <button className="btn btn-sm btn-danger" onClick={() => {
-                    const newTrees = techTrees.filter((_, i) => i !== idx);
-                    saveGameSettings({ techTrees: newTrees });
-                  }}>기술 트리 삭제</button>
                 </div>
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>

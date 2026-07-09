@@ -229,59 +229,78 @@ export async function processTurnEnd(newTurn) {
             
             for (let i = 0; i < queue.length; i++) {
               let qItem = queue[i];
-              if (qItem.progress >= qItem.target) continue;
-              
               const bp = weaponBlueprints.find(b => b.id === qItem.bpId);
               if (!bp) continue;
               
-              const reqFacility = bp.facility === 'heavy' ? availHeavy : availShipyard;
-              const reqAmount = bp.industryCost || 1;
-              
-              let maxProd = Math.floor(reqFacility / reqAmount);
-              if (maxProd <= 0) continue;
-              
-              if (bp.resources) {
-                for (const [resType, resReq] of Object.entries(bp.resources)) {
-                  const currAmt = rMap[resType] ? Number(rMap[resType].amount) : 0;
-                  const maxByRes = Math.floor(currAmt / resReq);
-                  if (maxByRes < maxProd) maxProd = maxByRes;
+              // 1. 배송 대기열(deliveries) 처리
+              if (qItem.deliveries) {
+                for (let j = qItem.deliveries.length - 1; j >= 0; j--) {
+                  let d = qItem.deliveries[j];
+                  d.remainingTurns -= 1;
+                  
+                  if (d.remainingTurns <= 0) {
+                    const wpKey = `weapon:${bp.name}`;
+                    if (rMap[wpKey]) {
+                      rMap[wpKey].amount = Number(rMap[wpKey].amount) + d.amount;
+                      await supabase.from('resources').update({ amount: rMap[wpKey].amount }).eq('id', rMap[wpKey].id);
+                    } else {
+                      const { data: newW } = await supabase.from('resources').insert({
+                        country_id: entry.country_id,
+                        resource_type: wpKey,
+                        amount: d.amount,
+                        production_per_turn: 0
+                      }).select().single();
+                      if (newW) rMap[wpKey] = newW;
+                    }
+                    qItem.deliveries.splice(j, 1);
+                  }
+                  updated = true;
                 }
               }
               
-              const needed = qItem.target - qItem.progress;
-              if (maxProd > needed) maxProd = needed;
-              
-              if (maxProd > 0) {
-                qItem.progress += maxProd;
-                if (bp.facility === 'heavy') availHeavy -= maxProd * reqAmount;
-                else availShipyard -= maxProd * reqAmount;
+              // 2. 새로운 생산 착수 (지불)
+              if (qItem.progress < qItem.target) {
+                const reqFacility = bp.facility === 'heavy' ? availHeavy : availShipyard;
+                const reqAmount = bp.industryCost || 1;
                 
-                if (bp.resources) {
-                  for (const [resType, resReq] of Object.entries(bp.resources)) {
-                    rMap[resType].amount = Number(rMap[resType].amount) - (maxProd * resReq);
-                    await supabase.from('resources').update({ amount: rMap[resType].amount }).eq('id', rMap[resType].id);
+                let maxProd = Math.floor(reqFacility / reqAmount);
+                if (maxProd > 0) {
+                  if (bp.resources) {
+                    for (const [resType, resReq] of Object.entries(bp.resources)) {
+                      const currAmt = rMap[resType] ? Number(rMap[resType].amount) : 0;
+                      const maxByRes = Math.floor(currAmt / resReq);
+                      if (maxByRes < maxProd) maxProd = maxByRes;
+                    }
+                  }
+                  
+                  const needed = qItem.target - qItem.progress;
+                  if (maxProd > needed) maxProd = needed;
+                  
+                  if (maxProd > 0) {
+                    qItem.progress += maxProd;
+                    if (bp.facility === 'heavy') availHeavy -= maxProd * reqAmount;
+                    else availShipyard -= maxProd * reqAmount;
+                    
+                    if (bp.resources) {
+                      for (const [resType, resReq] of Object.entries(bp.resources)) {
+                        rMap[resType].amount = Number(rMap[resType].amount) - (maxProd * resReq);
+                        await supabase.from('resources').update({ amount: rMap[resType].amount }).eq('id', rMap[resType].id);
+                      }
+                    }
+                    
+                    if (!qItem.deliveries) qItem.deliveries = [];
+                    qItem.deliveries.push({
+                      amount: maxProd,
+                      remainingTurns: bp.productionTurns || 1
+                    });
+                    updated = true;
                   }
                 }
-                
-                const wpKey = `weapon:${bp.name}`;
-                if (rMap[wpKey]) {
-                  rMap[wpKey].amount = Number(rMap[wpKey].amount) + maxProd;
-                  await supabase.from('resources').update({ amount: rMap[wpKey].amount }).eq('id', rMap[wpKey].id);
-                } else {
-                  const { data: newW } = await supabase.from('resources').insert({
-                    country_id: entry.country_id,
-                    resource_type: wpKey,
-                    amount: maxProd,
-                    production_per_turn: 0
-                  }).select().single();
-                  if (newW) rMap[wpKey] = newW;
-                }
-                updated = true;
               }
             }
             
             if (updated) {
-              queue = queue.filter(q => q.progress < q.target);
+              queue = queue.filter(q => q.progress < q.target || (q.deliveries && q.deliveries.length > 0));
               await supabase.from('data_entries').update({ data: { queue } }).eq('id', qEntry.id);
             }
           }

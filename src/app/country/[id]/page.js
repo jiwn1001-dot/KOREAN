@@ -807,7 +807,7 @@ export default function CountryPage() {
                 const target = parseInt(document.getElementById('newQueueTarget').value);
                 if (!bpId || !target || target <= 0) return alert('올바른 값을 입력하세요.');
                 
-                const newQueue = [...militaryQueue, { bpId, target, progress: 0 }];
+                const newQueue = [...militaryQueue, { bpId, target, progress: 0, deliveries: [] }];
                 await upsertDataEntry('military_queue', countryId, { queue: newQueue });
                 setMilitaryQueue(newQueue);
                 document.getElementById('newQueueTarget').value = '';
@@ -824,6 +824,7 @@ export default function CountryPage() {
                     <th>순위</th>
                     <th>무기명</th>
                     <th>진행도 / 목표량</th>
+                    <th>입고 대기 중 (생산소모턴수)</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -835,6 +836,19 @@ export default function CountryPage() {
                         <td>{idx + 1}</td>
                         <td>{bp.name || '알 수 없는 무기'}</td>
                         <td>{q.progress || 0} / {q.target}</td>
+                        <td>
+                          {q.deliveries && q.deliveries.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {q.deliveries.map((d, dIdx) => (
+                                <span key={dIdx} className="badge badge-accent">
+                                  {d.amount}개 ({d.remainingTurns}턴 뒤 입고)
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>없음</span>
+                          )}
+                        </td>
                         <td>
                           <button className="btn btn-sm btn-danger" onClick={async () => {
                             if (!confirm('대기열에서 삭제하시겠습니까?')) return;
