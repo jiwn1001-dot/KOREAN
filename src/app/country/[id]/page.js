@@ -1059,6 +1059,9 @@ export default function CountryPage() {
                         <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                           <div>⚔️ {tmpl.attack} | 🛡️ {tmpl.defense} | 💨 {tmpl.speed}</div>
                           <div>❤️ {tmpl.hp} | 📐 {tmpl.combatWidth}</div>
+                          <div style={{ gridColumn: 'span 2', marginTop: '2px' }}>
+                            📦 보급소모: {tmpl.supplyConsumption || 0}
+                          </div>
                         </div>
                       </div>
                     );

@@ -1598,6 +1598,10 @@ export default function AdminPage() {
               <label>턴당 연료소모량 (유닛 1개당)</label>
               <input type="number" id="newUnitFuelAmt" className="form-input" defaultValue="0" />
             </div>
+            <div className="form-group">
+              <label>보급소모</label>
+              <input type="number" id="newUnitSupply" className="form-input" defaultValue="0" />
+            </div>
           </div>
 
           <div className="form-row" style={{ alignItems: 'flex-end' }}>
@@ -1639,6 +1643,7 @@ export default function AdminPage() {
               manpowerCost: parseInt(document.getElementById('newUnitManpower').value) || 0,
               fuelType: document.getElementById('newUnitFuelType').value,
               fuelPerTurn: parseInt(document.getElementById('newUnitFuelAmt').value) || 0,
+              supplyConsumption: parseInt(document.getElementById('newUnitSupply').value) || 0,
             };
 
             saveGameSettings({ unitTemplates: [...unitTemplates, newTemplate] });
