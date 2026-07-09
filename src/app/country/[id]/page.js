@@ -760,7 +760,7 @@ export default function CountryPage() {
       consumer_goods: { label: '소비재', icon: '🛍️' }
     };
     const hasCoalToOil = researches.some(r => r.status === 'completed' && r.name && r.name.includes('석탄-석유')); // Example check, will refine later
-    const weaponResources = resources.filter(r => r.resource_type === 'weapon'); // Assuming weapons are saved as 'weapon' type
+    const weaponResources = resources.filter(r => r.resource_type && r.resource_type.startsWith('weapon:'));
 
     return (
       <div className="slide-up">
@@ -772,7 +772,7 @@ export default function CountryPage() {
             <div className="card-grid card-grid-3">
               {weaponResources.map(w => (
                 <div key={w.id} className="card stat-card" style={{ padding: '16px' }}>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{w.name || '알 수 없는 무기'}</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{w.resource_type.replace('weapon:', '')}</div>
                   <div style={{ fontSize: '1.4rem', color: 'var(--teal)', marginTop: '8px' }}>{Number(w.amount).toLocaleString()}개</div>
                 </div>
               ))}
@@ -966,7 +966,7 @@ export default function CountryPage() {
                     </div>
                     {template.requiredWeapons?.map(rw => {
                       const needed = rw.amount * createUnitCount;
-                      const res = resources.find(r => r.resource_type === rw.weaponName);
+                      const res = resources.find(r => r.resource_type === `weapon:${rw.weaponName}`);
                       const current = res ? Number(res.amount) : 0;
                       const isShort = current < needed;
                       return (
@@ -999,7 +999,7 @@ export default function CountryPage() {
                 const weaponDeductions = [];
                 for (const rw of reqWeapons) {
                   const needed = rw.amount * count;
-                  const res = resources.find(r => r.resource_type === rw.weaponName);
+                  const res = resources.find(r => r.resource_type === `weapon:${rw.weaponName}`);
                   if (!res || Number(res.amount) < needed) {
                     return alert(`무기 [${rw.weaponName}]가 부족합니다. (필요: ${needed}, 현재: ${res ? res.amount : 0})`);
                   }
@@ -1010,7 +1010,7 @@ export default function CountryPage() {
 
                 // 1. 무기 차감
                 for (const wd of weaponDeductions) {
-                  await upsertResource(countryId, wd.name, wd.newAmount, wd.prod);
+                  await upsertResource(countryId, `weapon:${wd.name}`, wd.newAmount, wd.prod);
                 }
                 
                 // 2. 동원가능인구 차감
@@ -1184,8 +1184,8 @@ export default function CountryPage() {
                 </optgroup>
                 <optgroup label="무기">
                   {weaponResources.filter(w => w.amount > 0).map(w => (
-                    <option key={w.id} value={`weapon:${w.name}`}>
-                      {w.name} (보유: {w.amount})
+                    <option key={w.id} value={w.resource_type}>
+                      무기: {w.resource_type.replace('weapon:', '')} (보유: {w.amount}개)
                     </option>
                   ))}
                 </optgroup>

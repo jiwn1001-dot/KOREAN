@@ -223,8 +223,7 @@ export async function processTurnEnd(newTurn) {
             const rMap = {};
             if (cRes) {
               cRes.forEach(r => {
-                if (r.resource_type === 'weapon') rMap[`weapon_${r.name}`] = r;
-                else rMap[r.resource_type] = r;
+                rMap[r.resource_type] = r;
               });
             }
             
@@ -264,15 +263,14 @@ export async function processTurnEnd(newTurn) {
                   }
                 }
                 
-                const wpKey = `weapon_${bp.name}`;
+                const wpKey = `weapon:${bp.name}`;
                 if (rMap[wpKey]) {
                   rMap[wpKey].amount = Number(rMap[wpKey].amount) + maxProd;
                   await supabase.from('resources').update({ amount: rMap[wpKey].amount }).eq('id', rMap[wpKey].id);
                 } else {
                   const { data: newW } = await supabase.from('resources').insert({
                     country_id: entry.country_id,
-                    resource_type: 'weapon',
-                    name: bp.name,
+                    resource_type: wpKey,
                     amount: maxProd,
                     production_per_turn: 0
                   }).select().single();
