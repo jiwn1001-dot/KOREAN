@@ -365,6 +365,9 @@ export default function CountryPage() {
             <div className="stat-label">전체 인구</div>
             <div className="stat-value">{Number(economyData.population?.total || 0).toLocaleString()}</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>동원 가능: {Number(economyData.population?.mobilizable || 0).toLocaleString()}</div>
+            {economyData.population?.growthRate > 0 && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: '2px' }}>턴당 인구 증가: +1/{economyData.population.growthRate}</div>
+            )}
           </div>
           <div className="card stat-card" style={{ background: 'var(--gradient-card)' }}>
             <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>💵</div>

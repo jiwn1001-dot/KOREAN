@@ -183,7 +183,7 @@ export default function AdminPage() {
         taxRate: 0,
         researchSlots: 1,
         multipliers: { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 },
-        population: { total: 0, mobilizable: 0 },
+        population: { total: 0, mobilizable: 0, growthRate: 0 },
         allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
         commerceCoins: 0,
         heavyIndustryComplexes: 0,
@@ -1025,35 +1025,106 @@ export default function AdminPage() {
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">전체 인구</label>
-              <input
-                type="number"
-                className="form-input"
-                value={economyData.population?.total || 0}
-                onChange={(e) => {
-                  const newTotal = Number(e.target.value);
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={economyData.population?.total || 0}
+                  onChange={(e) => {
+                    const newTotal = Number(e.target.value);
+                    const oldTotal = economyData.population?.total || 0;
+                    const delta = newTotal - oldTotal;
+                    setEconomyData(p => ({
+                      ...p,
+                      population: {
+                        ...p.population,
+                        total: newTotal,
+                        mobilizable: (p.population?.mobilizable || 0) + (delta * 0.4)
+                      }
+                    }));
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <input 
+                  type="number" 
+                  id="totalPopDelta" 
+                  className="form-input" 
+                  placeholder="±증감치" 
+                  style={{ width: '100px' }} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      document.getElementById('btnApplyTotalPop').click();
+                    }
+                  }}
+                />
+                <button id="btnApplyTotalPop" type="button" className="btn btn-sm btn-secondary" onClick={() => {
+                  const delta = Number(document.getElementById('totalPopDelta').value) || 0;
+                  if (delta === 0) return;
                   const oldTotal = economyData.population?.total || 0;
-                  const delta = newTotal - oldTotal;
+                  const newTotal = oldTotal + delta;
                   setEconomyData(p => ({
                     ...p,
                     population: {
+                      ...p.population,
                       total: newTotal,
                       mobilizable: (p.population?.mobilizable || 0) + (delta * 0.4)
                     }
                   }));
-                }}
-              />
+                  document.getElementById('totalPopDelta').value = '';
+                }}>적용</button>
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">동원가능 인구</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={economyData.population?.mobilizable || 0}
+                  onChange={(e) => setEconomyData(p => ({
+                    ...p, population: { ...p.population, mobilizable: Number(e.target.value) }
+                  }))}
+                  style={{ flex: 1 }}
+                />
+                <input 
+                  type="number" 
+                  id="mobPopDelta" 
+                  className="form-input" 
+                  placeholder="±증감치" 
+                  style={{ width: '100px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      document.getElementById('btnApplyMobPop').click();
+                    }
+                  }}
+                />
+                <button id="btnApplyMobPop" type="button" className="btn btn-sm btn-secondary" onClick={() => {
+                  const delta = Number(document.getElementById('mobPopDelta').value) || 0;
+                  if (delta === 0) return;
+                  setEconomyData(p => ({
+                    ...p, population: { ...p.population, mobilizable: (p.population?.mobilizable || 0) + delta }
+                  }));
+                  document.getElementById('mobPopDelta').value = '';
+                }}>적용</button>
+              </div>
+              <small style={{ color: 'var(--text-muted)' }}>초기 1회 40% 산정 후 수동/증감치로 관리</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">인구증가율 (나눌 값)</label>
               <input
                 type="number"
                 className="form-input"
-                value={economyData.population?.mobilizable || 0}
+                value={economyData.population?.growthRate || 0}
                 onChange={(e) => setEconomyData(p => ({
-                  ...p, population: { ...p.population, mobilizable: Number(e.target.value) }
+                  ...p, population: { ...p.population, growthRate: Number(e.target.value) }
                 }))}
               />
-              <small style={{ color: 'var(--text-muted)' }}>초기 산정: 전체의 40%</small>
+              <small style={{ color: 'var(--text-muted)' }}>예: 100 입력 시 매 턴 (해당 인구 / 100) 만큼 증가</small>
             </div>
           </div>
 

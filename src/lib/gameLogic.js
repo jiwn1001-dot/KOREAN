@@ -323,6 +323,13 @@ export async function processTurnEnd(newTurn) {
           }
         }
 
+        // 3-6. 인구 증가율 처리 (나눌 값으로 적용)
+        if (data.population && data.population.growthRate > 0) {
+          const gRate = data.population.growthRate;
+          data.population.total = Math.floor(data.population.total + (data.population.total / gRate));
+          data.population.mobilizable = Math.floor(data.population.mobilizable + (data.population.mobilizable / gRate));
+        }
+
         // DB 업데이트
         await supabase
           .from('data_entries')
