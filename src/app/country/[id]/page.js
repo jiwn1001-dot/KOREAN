@@ -33,6 +33,7 @@ export default function CountryPage() {
   const [militaryUnits, setMilitaryUnits] = useState([]);
   const [createUnitTemplateId, setCreateUnitTemplateId] = useState('');
   const [createUnitCount, setCreateUnitCount] = useState(1);
+  const [globalEra, setGlobalEra] = useState('선사시대');
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -102,6 +103,7 @@ export default function CountryPage() {
       if (settings && settings.data?.techTrees) {
         setTechTrees(settings.data.techTrees);
         setUnitTemplates(settings.data.unitTemplates || []);
+        setGlobalEra(settings.data.globalEra || '선사시대');
       }
     } catch(err) {
       console.error('Failed to load game settings for tech trees', err);
@@ -598,6 +600,14 @@ export default function CountryPage() {
               const highestCompletedLevel = completedResearches.length > 0 ? Math.max(...completedResearches.map(r => r.level)) : 0;
               const nextLevelData = tree.levels[highestCompletedLevel];
 
+              const eras = ['선사시대', '고대시대', '중세시대', '근세시대', '대혁명기', '빅토리안시대', '1차대전기', '2차대전기', '냉전기', '현대', '근미래'];
+              let isEraLocked = false;
+              if (nextLevelData?.era) {
+                const globalEraIdx = eras.indexOf(globalEra);
+                const nextEraIdx = eras.indexOf(nextLevelData.era);
+                if (nextEraIdx > globalEraIdx) isEraLocked = true;
+              }
+
               return (
                 <div key={tree.id} className="card" style={{ padding: '16px' }}>
                   <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
@@ -642,7 +652,12 @@ export default function CountryPage() {
                   ) : (
                     <div>
                       {nextLevelData ? (
-                        <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
+                        isEraLocked ? (
+                          <div style={{ padding: '12px', background: 'rgba(248,113,113,0.1)', border: '1px solid var(--error)', borderRadius: '8px', color: 'var(--error)', textAlign: 'center', fontWeight: 'bold' }}>
+                            글로벌 시대 제한<br/><span style={{ fontSize: '0.85rem' }}>(요구: {nextLevelData.era}, 현재: {globalEra})</span>
+                          </div>
+                        ) : (
+                          <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
                           const maxSlots = economyData.researchSlots ?? 1;
                           const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
                           const willQueue = currentInProgress >= maxSlots;
@@ -665,6 +680,7 @@ export default function CountryPage() {
                             alert(`${nextLevelData.name || `Lv.${nextLevelData.level}`} 연구가 시작되었습니다!`);
                           }
                         }}>🚀 다음 연구 {researches.filter(r => r.status === 'in_progress').length >= (economyData.researchSlots ?? 1) ? '대기' : '시작'}: {nextLevelData.name || `Lv.${nextLevelData.level}`} ({nextLevelData.turns}턴)</button>
+                        )
                       ) : (
                         <p style={{ color: 'var(--text-muted)' }}>모든 단계를 완료했습니다.</p>
                       )}

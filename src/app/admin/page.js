@@ -1813,6 +1813,25 @@ export default function AdminPage() {
       <div className="slide-up">
         <h2 style={{ marginBottom: '24px' }}>🔬 연구 관리 (기술 트리)</h2>
         
+        {/* 글로벌 시대 설정 */}
+        <div className="card" style={{ padding: '20px', marginBottom: '24px', border: '1px solid var(--accent)' }}>
+          <h3 style={{ marginBottom: '16px', fontSize: '1.2rem', color: 'var(--accent)' }}>🌍 현재 글로벌 시대 설정</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>
+            유저들은 여기서 설정된 시대(혹은 그 이전 시대)의 기술까지만 연구할 수 있습니다.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <select
+              className="form-select"
+              value={gameSettingsEntry?.data?.globalEra || '선사시대'}
+              onChange={(e) => saveGameSettings({ globalEra: e.target.value })}
+              style={{ width: '200px' }}
+            >
+              {eras.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>* 변경 즉시 모든 유저에게 적용됩니다.</span>
+          </div>
+        </div>
+
         {/* 글로벌 기술 트리 에디터 */}
         <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
           <h3 style={{ marginBottom: '16px', fontSize: '1.2rem' }}>글로벌 기술 트리 편집기</h3>
