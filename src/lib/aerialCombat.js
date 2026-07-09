@@ -471,6 +471,8 @@ export function tacticalSupplyRaid(targetCountry, supplyReduction) {
     description: `보급 체계를 ${supplyReduction}만큼 폭격하여 상대의 보급 한계를 줄입니다.`
   };
 }
+
+/**
  * 상대방이 수락/거절할 때까지 대기
  * @param {string} requesterId - 요청하는 국가 ID
  * @returns {Object} {status: 'pending', requesterId, timestamp}
