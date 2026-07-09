@@ -32,6 +32,7 @@ import {
   getResources, upsertResource,
   saveAerialCombatSession, getAerialCombatSession
 } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import { processTurnEnd, rollbackTurn, resetToTurnOne, transferTech } from '@/lib/gameLogic';
 import { 
   createAerialCombatSession, 

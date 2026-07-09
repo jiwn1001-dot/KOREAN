@@ -33,6 +33,8 @@ export default function CountryPage() {
   const [militaryUnits, setMilitaryUnits] = useState([]);
   const [createUnitTemplateId, setCreateUnitTemplateId] = useState('');
   const [createUnitCount, setCreateUnitCount] = useState(1);
+  const [queueBpId, setQueueBpId] = useState('');
+  const [queueTargetAmount, setQueueTargetAmount] = useState('');
   const [globalEra, setGlobalEra] = useState('선사시대');
   const [pendingTransfers, setPendingTransfers] = useState([]);
 
@@ -530,10 +532,18 @@ export default function CountryPage() {
     </div>
   );
 
-  const renderResearch = () => (
+  const renderResearch = () => {
+    const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
+    const maxSlots = economyData.researchSlots ?? 1;
+    return (
     <div className="slide-up">
       <div className="content-section">
-        <h3 className="content-section-title">🔬 연구 기술</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
+          <h3 className="content-section-title" style={{ marginBottom: 0 }}>🔬 연구 기술</h3>
+          <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: currentInProgress >= maxSlots ? 'var(--error)' : 'var(--accent)' }}>
+            현재 연구 슬롯: {currentInProgress} / {maxSlots}
+          </div>
+        </div>
         {researches.length === 0 ? (
           <p style={{ color: 'var(--text-muted)' }}>진행 중이거나 완료된 연구가 없습니다.</p>
         ) : (
@@ -549,8 +559,7 @@ export default function CountryPage() {
                     {r.status === 'completed' && <span className="badge" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>완료됨</span>}
                     {r.status === 'failed' && <span className="badge" style={{ background: 'rgba(248,113,113,0.1)', color: 'var(--error)' }}>실패함</span>}
                     {r.status === 'in_progress' && <span className="badge" style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}>진행중 ({r.remaining_turns}턴 남음)</span>}
-                    {r.status === 'queued' && <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>대기중 ({r.required_turns}턴 필요)</span>}
-                    {(r.status === 'in_progress' || r.status === 'queued') && (
+                    {r.status === 'in_progress' && (
                       <button className="btn btn-sm btn-danger" style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.8rem' }} onClick={async () => {
                         if (!confirm(`'${r.name}' 연구를 취소하시겠습니까?`)) return;
                         await deleteResearch(r.id);
@@ -603,7 +612,7 @@ export default function CountryPage() {
           <div className="card-grid card-grid-2">
             {techTrees.map(tree => {
               const countryResearches = researches.filter(r => r.name === tree.name);
-              const activeResearch = countryResearches.find(r => r.status === 'in_progress' || r.status === 'queued' || r.status === 'failed');
+              const activeResearch = countryResearches.find(r => r.status === 'in_progress' || r.status === 'failed');
               
               const completedResearches = countryResearches.filter(r => r.status === 'completed');
               const highestCompletedLevel = completedResearches.length > 0 ? Math.max(...completedResearches.map(r => r.level)) : 0;
@@ -630,7 +639,7 @@ export default function CountryPage() {
                   {activeResearch ? (
                     <div style={{ padding: '12px', background: activeResearch.status === 'failed' ? 'rgba(248,113,113,0.1)' : 'var(--bg-glass)', border: activeResearch.status === 'failed' ? '1px solid var(--error)' : 'none', borderRadius: '8px' }}>
                       <div style={{ marginBottom: '8px' }}>
-                        <strong>[{activeResearch.status === 'failed' ? '실패함' : (activeResearch.status === 'queued' ? '대기중' : '진행 중')}] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
+                        <strong>[{activeResearch.status === 'failed' ? '실패함' : '진행 중'}] {tree.levels[activeResearch.level - 1]?.name || `Lv.${activeResearch.level}`}</strong> 
                         {activeResearch.status !== 'failed' && ` (남은 턴: ${activeResearch.remaining_turns})`}
                       </div>
                       {activeResearch.status === 'failed' && (
@@ -644,18 +653,6 @@ export default function CountryPage() {
                           loadAllData();
                           alert('연구를 재시작했습니다.');
                         }}>🔄 재시작 (턴 초기화)</button>
-                      )}
-                      {activeResearch.status === 'queued' && (
-                        <button className="btn btn-sm btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={async () => {
-                          const maxSlots = economyData.researchSlots ?? 1;
-                          const currentInProgress = researches.filter(r => r.status === 'in_progress').length;
-                          if (currentInProgress >= maxSlots) {
-                            return alert(`현재 진행 중인 연구가 슬롯 한도(${maxSlots}개)에 도달했습니다. 다른 연구를 취소하거나 완료될 때까지 기다리세요.`);
-                          }
-                          await updateResearch(activeResearch.id, { status: 'in_progress' });
-                          loadAllData();
-                          alert('연구가 대기열에서 시작되었습니다!');
-                        }}>▶️ 연구 시작</button>
                       )}
                     </div>
                   ) : (
@@ -703,6 +700,7 @@ export default function CountryPage() {
       </div>
     </div>
   );
+  };
 
   const renderResource = () => {
     const resourceLabels = {
@@ -785,8 +783,8 @@ export default function CountryPage() {
           <div className="card" style={{ padding: '20px' }}>
             <p style={{ color: 'var(--text-muted)' }}>연구가 완료된 무기를 대기열에 등록하면 매 턴 배정된 공업력과 자원을 소모해 자동 생산됩니다.</p>
             
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', marginTop: '12px' }}>
-              <select id="newQueueBp" className="form-select" style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', marginTop: '12px' }}>
+              <select id="newQueueBp" className="form-select" style={{ flex: 1 }} value={queueBpId} onChange={e => setQueueBpId(e.target.value)}>
                 <option value="">-- 생산할 무기 선택 --</option>
                 {weaponBlueprints.filter(bp => {
                   return researches.some(r => {
@@ -801,19 +799,46 @@ export default function CountryPage() {
                   <option key={bp.id} value={bp.id}>{bp.name} (요구: {bp.facility === 'heavy' ? '중공업단지' : '조선소'} {bp.industryCost})</option>
                 ))}
               </select>
-              <input type="number" id="newQueueTarget" className="form-input" placeholder="목표량" style={{ width: '100px' }} />
+              <input type="number" id="newQueueTarget" className="form-input" placeholder="목표량" style={{ width: '100px' }} value={queueTargetAmount} onChange={e => setQueueTargetAmount(e.target.value)} />
               <button className="btn btn-secondary" onClick={async () => {
-                const bpId = document.getElementById('newQueueBp').value;
-                const target = parseInt(document.getElementById('newQueueTarget').value);
+                const bpId = queueBpId;
+                const target = parseInt(queueTargetAmount);
                 if (!bpId || !target || target <= 0) return alert('올바른 값을 입력하세요.');
                 
                 const newQueue = [...militaryQueue, { bpId, target, progress: 0, deliveries: [] }];
                 await upsertDataEntry('military_queue', countryId, { queue: newQueue });
                 setMilitaryQueue(newQueue);
-                document.getElementById('newQueueTarget').value = '';
+                setQueueBpId('');
+                setQueueTargetAmount('');
                 alert('대기열에 추가되었습니다.');
               }}>➕ 대기열 추가</button>
             </div>
+            
+            {queueBpId && (
+              <div style={{ background: 'var(--bg-glass)', padding: '12px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+                {(() => {
+                  const bp = weaponBlueprints.find(b => b.id === queueBpId);
+                  if (!bp) return null;
+                  const amt = parseInt(queueTargetAmount) || 1;
+                  const indCost = (bp.industryCost || 1) * amt;
+                  const resText = bp.resources?.map(r => {
+                    const label = resourceLabels[r.name]?.label || r.name;
+                    return `${label} ${r.amount * amt}`;
+                  }).join(', ') || '없음';
+                  
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ fontSize: '0.95rem' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>총 생산 자원 비용:</span> <strong>{resText}</strong>
+                      </div>
+                      <div style={{ fontSize: '0.95rem', color: 'var(--primary)' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>필요 총 공업력:</span> <strong>{bp.facility === 'heavy' ? '중공업단지' : '조선소'} {indCost}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {militaryQueue.length === 0 ? (
               <p style={{ color: 'var(--text-muted)' }}>대기열이 비어 있습니다.</p>
