@@ -55,6 +55,14 @@ export default function Home() {
       badge: '전체 공개',
       badgeClass: 'badge-teal',
     },
+    {
+      href: '/unit-tree',
+      icon: '⚔️',
+      title: '유닛 트리',
+      desc: '모든 군수 장비와 유닛 편제표',
+      badge: '전체 공개',
+      badgeClass: 'badge-teal',
+    },
   ];
 
   return (
