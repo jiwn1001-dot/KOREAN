@@ -45,10 +45,13 @@ export default function TechTreePage() {
       if (lvl.era) allEras.add(lvl.era);
     });
   });
+  const erasOrder = ['선사시대', '고대시대', '중세시대', '근세시대', '대혁명기', '빅토리안시대', '1차대전기', '2차대전기', '냉전기', '현대', '근미래'];
   const sortedEras = Array.from(allEras).sort((a, b) => {
-    const numA = parseInt(a);
-    const numB = parseInt(b);
-    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    const idxA = erasOrder.indexOf(a);
+    const idxB = erasOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
     return a.localeCompare(b);
   });
 
