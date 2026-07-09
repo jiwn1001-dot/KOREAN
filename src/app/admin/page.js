@@ -29,12 +29,79 @@ import {
   getUsers, updateUserRole, assignCountryToUser,
   getGameState, advanceGameState,
   getResearches, createResearch, updateResearch, deleteResearch,
-  getResources, upsertResource
+  getResources, upsertResource,
+  saveAerialCombatSession, getAerialCombatSession
 } from '@/lib/store';
 import { processTurnEnd, rollbackTurn, resetToTurnOne, transferTech } from '@/lib/gameLogic';
+import { 
+  createAerialCombatSession, 
+  resolveAerialRound,
+  aiChooseCard,
+  aiRespondToBattle,
+  aiShouldSurrender
+} from '@/lib/aerialCombat';
 import LoginModal from '@/components/LoginModal';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
+
+const AerialCardUI = ({ card }) => {
+  if (!card) return null;
+  const isAA = card.canBlock;
+  const isAce = card.isAce;
+
+  // 대공포 디자인
+  if (isAA) {
+    return (
+      <div style={{
+        minWidth: '100px', height: '140px', background: '#333', color: '#ff4d4f', border: '2px solid #ff4d4f',
+        borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 8px rgba(255, 77, 79, 0.3)', padding: '8px', textAlign: 'center', flexShrink: 0
+      }}>
+        <div style={{ fontSize: '24px' }}>🎯</div>
+        <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginTop: '8px' }}>대공포</div>
+        <div style={{ fontSize: '0.7rem', color: '#ccc', marginTop: '4px' }}>무조건 요격</div>
+      </div>
+    );
+  }
+
+  // 에이스 디자인
+  if (isAce) {
+    return (
+      <div style={{
+        minWidth: '100px', height: '140px', background: 'linear-gradient(135deg, #FFD700 0%, #B8860B 100%)', 
+        border: '2px solid #FFF8DC', borderRadius: '8px', position: 'relative', overflow: 'hidden',
+        boxShadow: '0 4px 12px rgba(218, 165, 32, 0.5)', display: 'flex', flexDirection: 'column', flexShrink: 0
+      }}>
+        <div style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,0.6)', color: '#FFD700', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', zIndex: 10 }}>ACE</div>
+        {card.unitImage ? (
+          <img src={card.unitImage} alt="unit" style={{ width: '100%', height: '70px', objectFit: 'cover', borderBottom: '1px solid #FFF8DC' }} />
+        ) : (
+          <div style={{ width: '100%', height: '70px', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
+        )}
+        <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ color: '#fff', textShadow: '1px 1px 2px #000', fontWeight: 'bold' }}>전투력: {card.speed * 5}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 일반 카드 디자인
+  return (
+    <div style={{
+      minWidth: '100px', height: '140px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+      borderRadius: '8px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0
+    }}>
+      {card.unitImage ? (
+        <img src={card.unitImage} alt="unit" style={{ width: '100%', height: '70px', objectFit: 'cover', borderBottom: '1px solid var(--border-color)' }} />
+      ) : (
+        <div style={{ width: '100%', height: '70px', background: 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
+      )}
+      <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.9rem' }}>속도: {card.speed}</div>
+      </div>
+    </div>
+  );
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -54,6 +121,9 @@ export default function AdminPage() {
   const [weaponBlueprints, setWeaponBlueprints] = useState([]);
   const [unitTemplates, setUnitTemplates] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
+  const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
+  const [testAerialGame, setTestAerialGame] = useState(null); // 테스트 게임 상태
+  const [testGameLog, setTestGameLog] = useState([]); // 라운드 로그
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -254,7 +324,7 @@ export default function AdminPage() {
       loadCountries();
       if (selectedCountryId) loadCountryData(selectedCountryId);
     }
-    else if (activeSection === 'research' || activeSection === 'blueprints' || activeSection === 'formations') {
+    else if (activeSection === 'research' || activeSection === 'blueprints' || activeSection === 'formations' || activeSection === 'aerial') {
       loadCountries();
       
       loadGameSettings();
@@ -1703,6 +1773,236 @@ export default function AdminPage() {
     );
   };
 
+  const renderAerialSession = () => {
+    if (!selectedCountryId) {
+      return <p style={{color: 'var(--text-muted)'}}>국가를 선택해주세요.</p>;
+    }
+
+    return (
+      <div className="fade-in">
+        <h2>✈️ 공중전 세션 설정</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
+          각 국가별 공중전에서 사용할 전투기 유닛과 보급 한계를 설정합니다.
+        </p>
+
+        <div className="card" style={{ padding: '20px', marginBottom: '24px', border: '1px solid var(--border-color)' }}>
+          <h4 style={{ marginBottom: '16px' }}>🛩️ 공중전 세션 초기화</h4>
+          
+          <div className="form-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>보급 한계 (총 보급량)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={aerialSessionForm.supplyLimit}
+                onChange={(e) => setAerialSessionForm(p => ({...p, supplyLimit: parseInt(e.target.value) || 0}))}
+                placeholder="예: 1000"
+              />
+              <small style={{ color: 'var(--text-muted)' }}>
+                이 수치를 초과하면 모든 전투기 능력치가 50%로 감소합니다.
+              </small>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{ marginTop: '12px' }} onClick={async () => {
+            if (!selectedCountryId) {
+              showToast('국가를 선택해주세요.', 'error');
+              return;
+            }
+
+            try {
+              // 현재 국가의 전투기 유닛 정보 가져오기 (economy에서)
+              const ecoEntry = await getDataEntry('economy', selectedCountryId);
+              const aircraftUnits = []; // TODO: unitTemplates 중 공군 전투기만 선택
+
+              const session = createAerialCombatSession(
+                selectedCountryId,
+                aircraftUnits,
+                aerialSessionForm.supplyLimit
+              );
+
+              await saveAerialCombatSession(selectedCountryId, session);
+              showToast('공중전 세션이 초기화되었습니다.', 'success');
+            } catch (err) {
+              console.error(err);
+              showToast('공중전 세션 초기화 실패', 'error');
+            }
+          }}>초기화</button>
+        </div>
+
+        {/* 테스트 플레이 UI */}
+        <div style={{ marginTop: '32px', borderTop: '2px solid var(--border-color)', paddingTop: '24px' }}>
+          <h3>🎮 테스트 플레이 (AI 상대)</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>
+            AI 상대와 공중전을 테스트할 수 있습니다.
+          </p>
+
+          {!testAerialGame ? (
+            <button 
+              className="btn btn-success"
+              onClick={async () => {
+                try {
+                  // 전투기 유닛 더미 생성 (테스트용)
+                  const testUnits = [
+                    { id: 'fighter1', speed: 3, quantity: 5, supplyConsumption: 10, image: 'https://images.unsplash.com/photo-1542382257-80da358a9c39?w=300' },
+                    { id: 'fighter2', speed: 2, quantity: 15, supplyConsumption: 15, image: 'https://images.unsplash.com/photo-1629838031359-577ba613b5fb?w=300' },
+                    { id: 'fighter3', speed: 4, quantity: 5, supplyConsumption: 12, image: 'https://images.unsplash.com/photo-1559160581-4471b87a8bba?w=300' }
+                  ];
+
+                  const playerSession = createAerialCombatSession(selectedCountryId, testUnits, aerialSessionForm.supplyLimit);
+                  const aiSession = createAerialCombatSession('ai_opponent', testUnits, aerialSessionForm.supplyLimit);
+
+                  setTestAerialGame({
+                    player: playerSession,
+                    ai: aiSession,
+                    round: 0,
+                    gameStatus: 'playing' // 'playing', 'finished'
+                  });
+                  setTestGameLog([{ type: 'start', message: '공중전 시작!' }]);
+                  showToast('테스트 게임이 시작되었습니다.', 'success');
+                } catch (err) {
+                  console.error(err);
+                  showToast('테스트 게임 시작 실패', 'error');
+                }
+              }}
+            >
+              🎮 테스트 게임 시작
+            </button>
+          ) : (
+            <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                {/* 플레이어 상태 */}
+                <div style={{ border: '1px solid var(--border-color)', padding: '12px', borderRadius: '4px' }}>
+                  <h4>👤 플레이어</h4>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                    <div>패 남음: {testAerialGame.player?.hand?.length || 0}</div>
+                    <div>손실: {testAerialGame.player?.lost?.length || 0}</div>
+                    <div>에이스: {testAerialGame.player?.aceCount || 0}</div>
+                    <div>대공포: {testAerialGame.player?.antiAircraft?.length || 0}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '10px 0', marginTop: '10px' }}>
+                    {testAerialGame.player?.hand?.map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                    {testAerialGame.player?.antiAircraft?.filter(c => c.status === 'hand').map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                  </div>
+                </div>
+
+                {/* AI 상태 */}
+                <div style={{ border: '1px solid var(--primary)', padding: '12px', borderRadius: '4px', backgroundColor: 'rgba(124, 107, 240, 0.1)' }}>
+                  <h4>🤖 AI</h4>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                    <div>패 남음: {testAerialGame.ai?.hand?.length || 0}</div>
+                    <div>손실: {testAerialGame.ai?.lost?.length || 0}</div>
+                    <div>에이스: {testAerialGame.ai?.aceCount || 0}</div>
+                    <div>대공포: {testAerialGame.ai?.antiAircraft?.length || 0}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 카드 선택 UI */}
+              <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
+                <p style={{ marginBottom: '12px' }}>플레이어 선택:</p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className="btn btn-sm btn-primary"
+                    onClick={async () => {
+                      const playerCard = testAerialGame.player.hand[Math.floor(Math.random() * testAerialGame.player.hand.length)];
+                      const aiCard = aiChooseCard(testAerialGame.ai, testAerialGame.player);
+                      
+                      const result = resolveAerialRound(playerCard, aiCard);
+                      
+                      // 카드 상태 업데이트 (간단한 버전)
+                      if (result.attackerLost && playerCard) {
+                        testAerialGame.player.hand = testAerialGame.player.hand.filter(c => c.cardId !== playerCard.cardId);
+                        testAerialGame.player.lost.push(playerCard);
+                      }
+                      if (result.defenderLost && aiCard) {
+                        testAerialGame.ai.hand = testAerialGame.ai.hand.filter(c => c.cardId !== aiCard.cardId);
+                        testAerialGame.ai.lost.push(aiCard);
+                      }
+
+                      const log = {
+                        type: 'round',
+                        round: testAerialGame.round + 1,
+                        playerCard: playerCard?.cardId,
+                        aiCard: aiCard?.cardId,
+                        result: result.description
+                      };
+
+                      setTestGameLog([...testGameLog, log]);
+                      setTestAerialGame({
+                        ...testAerialGame,
+                        round: testAerialGame.round + 1,
+                        gameStatus: testAerialGame.player.hand.length === 0 || testAerialGame.ai.hand.length === 0 ? 'finished' : 'playing'
+                      });
+                      showToast(`라운드 ${testAerialGame.round + 1}: ${result.description}`, 'info');
+                    }}
+                  >
+                    🃏 카드 낸다
+                  </button>
+                  <button 
+                    className="btn btn-sm"
+                    onClick={() => {
+                      const aiCard = aiChooseCard(testAerialGame.ai, testAerialGame.player);
+                      const result = { winner: 'defense', reason: 'player_passed', description: '플레이어가 카드를 아껴 AI가 자동 승리합니다.' };
+                      
+                      const log = {
+                        type: 'round',
+                        round: testAerialGame.round + 1,
+                        playerCard: null,
+                        aiCard: aiCard?.cardId,
+                        result: result.description
+                      };
+
+                      setTestGameLog([...testGameLog, log]);
+                      setTestAerialGame({
+                        ...testAerialGame,
+                        round: testAerialGame.round + 1
+                      });
+                      showToast(`라운드 ${testAerialGame.round + 1}: ${result.description}`, 'info');
+                    }}
+                  >
+                    💤 아낀다
+                  </button>
+                </div>
+              </div>
+
+              {/* 게임 로그 */}
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
+                {testGameLog.map((log, idx) => (
+                  <div key={idx} style={{ fontSize: '0.85rem', marginBottom: '4px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                    {log.type === 'start' && <span style={{ color: 'var(--success)' }}>✅ {log.message}</span>}
+                    {log.type === 'round' && <span>라운드 {log.round}: {log.result}</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* 게임 상태 */}
+              {testAerialGame.gameStatus === 'finished' && (
+                <div style={{ padding: '12px', backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: '4px', marginBottom: '16px' }}>
+                  <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+                    🏁 게임 종료: {testAerialGame.player.hand.length > 0 ? '👤 플레이어 승리!' : '🤖 AI 승리!'}
+                  </p>
+                </div>
+              )}
+
+              {/* 종료 버튼 */}
+              <button 
+                className="btn btn-danger"
+                onClick={() => {
+                  setTestAerialGame(null);
+                  setTestGameLog([]);
+                  showToast('테스트 게임이 종료되었습니다.', 'info');
+                }}
+              >
+                🛑 게임 종료
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderDashboard = () => (
     <div className="slide-up">
       <h2 style={{ marginBottom: '24px' }}>메인 대시보드</h2>
@@ -2238,6 +2538,7 @@ export default function AdminPage() {
     { id: 'research', label: '🔬 연구 관리' },
     { id: 'blueprints', label: '🛠️ 무기 청사진' },
     { id: 'formations', label: '🎖️ 편제 관리' },
+    { id: 'aerial', label: '✈️ 공중전 설정' },
     { id: 'resources', label: '📦 자원 관리' },
     { id: 'map', label: '🗺️ 지도 색칠' },
   ];
@@ -2268,6 +2569,7 @@ export default function AdminPage() {
           {activeSection === 'research' && renderResearch()}
           {activeSection === 'blueprints' && renderBlueprints()}
           {activeSection === 'formations' && renderUnitTemplates()}
+          {activeSection === 'aerial' && renderAerialSession()}
           {activeSection === 'resources' && renderResources()}
           {activeSection === 'map' && renderMapEditor()}
         </div>

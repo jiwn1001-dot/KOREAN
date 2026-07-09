@@ -390,3 +390,82 @@ export async function getTransfers() {
   if (error) throw error;
   return data || [];
 }
+
+// ==================== AERIAL COMBAT ====================
+
+/**
+ * 공중전 세션 저장 (각 국가별)
+ * @param {string} countryId - 국가 ID
+ * @param {Object} sessionData - 공중전 세션 정보
+ */
+export async function saveAerialCombatSession(countryId, sessionData) {
+  try {
+    const { data, error } = await upsertDataEntry(
+      'aerial_combat_session',
+      countryId,
+      sessionData
+    );
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error('Failed to save aerial combat session:', err);
+    return null;
+  }
+}
+
+/**
+ * 공중전 세션 로드
+ * @param {string} countryId - 국가 ID
+ */
+export async function getAerialCombatSession(countryId) {
+  try {
+    const entry = await getDataEntry('aerial_combat_session', countryId);
+    return entry?.data || null;
+  } catch (err) {
+    console.error('Failed to load aerial combat session:', err);
+    return null;
+  }
+}
+
+/**
+ * 모든 국가의 제공권 상태 조회
+ */
+export async function getAllAirSupremacyStatus() {
+  try {
+    const { data, error } = await supabase
+      .from('data_entries')
+      .select('country_id, data')
+      .eq('category', 'aerial_combat_session');
+    if (error) throw error;
+
+    const statuses = {};
+    (data || []).forEach(entry => {
+      if (entry.country_id && entry.data) {
+        statuses[entry.country_id] = entry.data.airSupremacy || null;
+      }
+    });
+    return statuses;
+  } catch (err) {
+    console.error('Failed to get air supremacy statuses:', err);
+    return {};
+  }
+}
+
+/**
+ * 국가별 보급 상태 및 제공권 손실 확인
+ * @param {string} countryId - 국가 ID
+ */
+export async function getCountrySupplyAndAirStatus(countryId) {
+  try {
+    const ecoEntry = await getDataEntry('economy', countryId);
+    const aerialEntry = await getDataEntry('aerial_combat_session', countryId);
+
+    return {
+      economy: ecoEntry?.data || {},
+      aerial: aerialEntry?.data || null
+    };
+  } catch (err) {
+    console.error('Failed to get supply and air status:', err);
+    return { economy: {}, aerial: null };
+  }
+}
