@@ -586,6 +586,61 @@ export async function transferItem(senderId, receiverId, category, itemKey, amou
 export async function transferItems(fromCountryId, toCountryId, itemType, itemKey, amount) {
   if (amount <= 0) return { success: false, message: '수량은 1 이상이어야 합니다.' };
   
+  // 1. Check if sender currently has enough before even creating the request
+  if (itemType === 'resource' || itemType === 'weapon') {
+    let query = supabase.from('resources').select('*').eq('country_id', fromCountryId);
+    if (itemType === 'weapon') query = query.eq('resource_type', 'weapon').eq('name', itemKey);
+    else query = query.eq('resource_type', itemKey);
+    const { data: senderRes } = await query.single();
+    if (!senderRes || senderRes.amount < amount) {
+      return { success: false, message: '보낼 물자가 부족합니다.' };
+    }
+  } else if (itemType === 'coin') {
+    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', fromCountryId).single();
+    if (!senderData || !senderData.data[itemKey] || senderData.data[itemKey] < amount) {
+      return { success: false, message: '보낼 코인이 부족합니다.' };
+    }
+  }
+
+  // 2. Add to receiver's pending_transfers
+  let { data: ptEntry } = await supabase.from('data_entries').select('*').eq('category', 'pending_transfers').eq('country_id', toCountryId).single();
+  
+  const newTransfer = {
+    id: crypto.randomUUID(),
+    from: fromCountryId,
+    type: itemType,
+    key: itemKey,
+    amount: amount,
+    timestamp: new Date().toISOString()
+  };
+
+  if (ptEntry) {
+    const transfers = ptEntry.data?.transfers || [];
+    transfers.push(newTransfer);
+    await supabase.from('data_entries').update({ data: { transfers } }).eq('id', ptEntry.id);
+  } else {
+    await supabase.from('data_entries').insert({
+      country_id: toCountryId,
+      category: 'pending_transfers',
+      data: { transfers: [newTransfer] }
+    });
+  }
+  
+  return { success: true, message: '상대방에게 전송(수락 대기)을 요청했습니다.' };
+}
+
+export async function acceptTransfer(transferId, receiverCountryId) {
+  const { data: ptEntry } = await supabase.from('data_entries').select('*').eq('category', 'pending_transfers').eq('country_id', receiverCountryId).single();
+  if (!ptEntry) return { success: false, message: '대기 중인 요청이 없습니다.' };
+
+  const transfers = ptEntry.data?.transfers || [];
+  const transferIndex = transfers.findIndex(t => t.id === transferId);
+  if (transferIndex === -1) return { success: false, message: '해당 요청을 찾을 수 없습니다.' };
+
+  const transfer = transfers[transferIndex];
+  const { from: fromCountryId, type: itemType, key: itemKey, amount } = transfer;
+
+  // 1. Perform the actual transfer
   if (itemType === 'resource' || itemType === 'weapon') {
     let query = supabase.from('resources').select('*').eq('country_id', fromCountryId);
     if (itemType === 'weapon') query = query.eq('resource_type', 'weapon').eq('name', itemKey);
@@ -593,12 +648,12 @@ export async function transferItems(fromCountryId, toCountryId, itemType, itemKe
     const { data: senderRes } = await query.single();
     
     if (!senderRes || senderRes.amount < amount) {
-      return { success: false, message: '보낼 물자가 부족합니다.' };
+      return { success: false, message: '상대방의 잔여 물자가 부족하여 수락할 수 없습니다.' };
     }
     
     await supabase.from('resources').update({ amount: senderRes.amount - amount }).eq('id', senderRes.id);
     
-    let rQuery = supabase.from('resources').select('*').eq('country_id', toCountryId);
+    let rQuery = supabase.from('resources').select('*').eq('country_id', receiverCountryId);
     if (itemType === 'weapon') rQuery = rQuery.eq('resource_type', 'weapon').eq('name', itemKey);
     else rQuery = rQuery.eq('resource_type', itemKey);
     const { data: receiverRes } = await rQuery.single();
@@ -607,7 +662,7 @@ export async function transferItems(fromCountryId, toCountryId, itemType, itemKe
       await supabase.from('resources').update({ amount: receiverRes.amount + amount }).eq('id', receiverRes.id);
     } else {
       await supabase.from('resources').insert({
-        country_id: toCountryId,
+        country_id: receiverCountryId,
         resource_type: itemType === 'weapon' ? 'weapon' : itemKey,
         amount: amount,
         production_per_turn: 0,
@@ -617,10 +672,10 @@ export async function transferItems(fromCountryId, toCountryId, itemType, itemKe
   } else if (itemType === 'coin') {
     const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', fromCountryId).single();
     if (!senderData || !senderData.data[itemKey] || senderData.data[itemKey] < amount) {
-      return { success: false, message: '보낼 코인이 부족합니다.' };
+      return { success: false, message: '상대방의 잔여 코인이 부족하여 수락할 수 없습니다.' };
     }
     
-    const { data: receiverData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', toCountryId).single();
+    const { data: receiverData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', receiverCountryId).single();
     if (!receiverData) return { success: false, message: '수신국 데이터를 찾을 수 없습니다.' };
     
     senderData.data[itemKey] -= amount;
@@ -629,6 +684,29 @@ export async function transferItems(fromCountryId, toCountryId, itemType, itemKe
     await supabase.from('data_entries').update({ data: senderData.data }).eq('id', senderData.id);
     await supabase.from('data_entries').update({ data: receiverData.data }).eq('id', receiverData.id);
   }
-  
-  return { success: true, message: '성공적으로 전송되었습니다.' };
+
+  // 2. Remove from pending list
+  transfers.splice(transferIndex, 1);
+  await supabase.from('data_entries').update({ data: { transfers } }).eq('id', ptEntry.id);
+
+  return { success: true, message: '전송을 수락하여 인벤토리에 추가되었습니다.' };
+}
+
+export async function rejectTransfer(transferId, receiverCountryId) {
+  const { data: ptEntry } = await supabase.from('data_entries').select('*').eq('category', 'pending_transfers').eq('country_id', receiverCountryId).single();
+  if (!ptEntry) return { success: false, message: '대기 중인 요청이 없습니다.' };
+
+  const transfers = ptEntry.data?.transfers || [];
+  const transferIndex = transfers.findIndex(t => t.id === transferId);
+  if (transferIndex === -1) return { success: false, message: '해당 요청을 찾을 수 없습니다.' };
+
+  transfers.splice(transferIndex, 1);
+  await supabase.from('data_entries').update({ data: { transfers } }).eq('id', ptEntry.id);
+
+  return { success: true, message: '전송 요청을 거절했습니다.' };
+}
+
+export async function getPendingTransfers(countryId) {
+  const { data } = await supabase.from('data_entries').select('*').eq('category', 'pending_transfers').eq('country_id', countryId).single();
+  return data?.data?.transfers || [];
 }

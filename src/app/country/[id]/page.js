@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource, updateResearch } from '@/lib/store';
-import { transferTech, transferItems } from '@/lib/gameLogic';
+import { transferTech, transferItems, acceptTransfer, rejectTransfer, getPendingTransfers } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
@@ -34,6 +34,7 @@ export default function CountryPage() {
   const [createUnitTemplateId, setCreateUnitTemplateId] = useState('');
   const [createUnitCount, setCreateUnitCount] = useState(1);
   const [globalEra, setGlobalEra] = useState('선사시대');
+  const [pendingTransfers, setPendingTransfers] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -118,6 +119,14 @@ export default function CountryPage() {
     } catch(err) {
       console.error('Failed to load military units', err);
     }
+
+    // Load pending transfers
+    try {
+      const pt = await getPendingTransfers(countryId);
+      setPendingTransfers(pt || []);
+    } catch(err) {
+      console.error('Failed to load pending transfers', err);
+    }
   };
 
   const tabs = [
@@ -129,6 +138,7 @@ export default function CountryPage() {
     { id: 'resource', label: '자원', icon: '📦' },
     { id: 'military', label: '군수', icon: '⚔️' },
     { id: 'formation', label: '편제', icon: '🎖️' },
+    { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
   ];
 
   if (loading) {
@@ -754,62 +764,6 @@ export default function CountryPage() {
 
     return (
       <div className="slide-up">
-        <div className="content-section" style={{ marginBottom: '30px' }}>
-          <h3 className="content-section-title">🚚 송금 및 물자 지원</h3>
-          <div className="card" style={{ padding: '20px' }}>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>다른 국가로 무기, 자원, 코인을 전송할 수 있습니다. 무기는 종류(이름)가 일치하는 항목끼리 합산되어 전송됩니다.</p>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <select id="transferTarget" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
-                <option value="">-- 받을 국가 선택 --</option>
-                {countries.filter(c => c.id !== countryId).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select id="transferItem" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
-                <option value="">-- 보낼 물자 선택 --</option>
-                <optgroup label="코인">
-                  <option value="coin:agricultureCoins">농업 코인</option>
-                  <option value="coin:heavyIndustryCoins">중공업 코인</option>
-                  <option value="coin:lightIndustryCoins">경공업 코인</option>
-                </optgroup>
-                <optgroup label="자원">
-                  {resources.filter(r => r.resource_type !== 'weapon' && r.amount > 0).map(r => (
-                    <option key={r.id} value={`resource:${r.resource_type}`}>
-                      {resourceLabels[r.resource_type]?.label || r.resource_type} (보유: {r.amount})
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="무기">
-                  {weaponResources.filter(w => w.amount > 0).map(w => (
-                    <option key={w.id} value={`weapon:${w.name}`}>
-                      {w.name} (보유: {w.amount})
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <input type="number" id="transferAmount" className="form-input" placeholder="수량" style={{ width: '100px' }} />
-              <button className="btn btn-primary" onClick={async () => {
-                const toId = document.getElementById('transferTarget').value;
-                const itemRaw = document.getElementById('transferItem').value;
-                const amount = parseInt(document.getElementById('transferAmount').value);
-                
-                if (!toId) return alert('국가를 선택하세요.');
-                if (!itemRaw) return alert('보낼 물자를 선택하세요.');
-                if (!amount || amount <= 0) return alert('수량을 올바르게 입력하세요.');
-                
-                const [type, key] = itemRaw.split(':');
-                const res = await transferItems(countryId, toId, type, key, amount);
-                if (res.success) {
-                  alert(res.message);
-                  loadAllData();
-                } else {
-                  alert(res.message);
-                }
-              }}>보내기</button>
-            </div>
-          </div>
-        </div>
-
         <div className="content-section">
           <h3 className="content-section-title">⚔️ 군수 장비 인벤토리</h3>
           {weaponResources.length === 0 ? (
@@ -1118,6 +1072,133 @@ export default function CountryPage() {
     );
   };
 
+  const renderTransfers = () => {
+    const resourceLabels = {
+      wood: { label: '목재', icon: '🪵' },
+      steel: { label: '강철', icon: '🔩' },
+      coal: { label: '석탄', icon: '🪨' },
+      oil: { label: '석유', icon: '🛢️' },
+      chromium: { label: '크롬', icon: '💎' },
+      tungsten: { label: '텅스텐', icon: '⚡' },
+      aluminum: { label: '알루미늄', icon: '⚙️' },
+      food: { label: '식료품', icon: '🍞' },
+      consumer_goods: { label: '소비재', icon: '🛍️' }
+    };
+    const weaponResources = resources.filter(r => r.resource_type === 'weapon');
+
+    return (
+      <div className="slide-up">
+        {/* Incoming Pending Transfers */}
+        <div className="content-section" style={{ marginBottom: '30px' }}>
+          <h3 className="content-section-title">📥 수신 대기 중인 물자</h3>
+          <div className="card" style={{ padding: '20px' }}>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>다른 국가가 보낸 물자를 수락해야 인벤토리에 들어옵니다.</p>
+            {pendingTransfers.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>수신 대기 중인 항목이 없습니다.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0 }}>
+                {pendingTransfers.map((t) => {
+                  const senderName = countries.find(c => c.id === t.from)?.name || '알 수 없는 국가';
+                  let itemName = t.key;
+                  if (t.type === 'coin') {
+                    itemName = t.key === 'agricultureCoins' ? '농업 코인' : t.key === 'heavyIndustryCoins' ? '중공업 코인' : '경공업 코인';
+                  } else if (t.type === 'resource') {
+                    itemName = resourceLabels[t.key]?.label || t.key;
+                  }
+                  
+                  return (
+                    <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-glass)', padding: '12px', borderRadius: '8px', marginBottom: '8px', border: '1px solid var(--border-color)' }}>
+                      <div>
+                        <strong>{senderName}</strong> 국가에서 <strong>{itemName}</strong> {Number(t.amount).toLocaleString()}개를 보냈습니다.
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-sm btn-primary" onClick={async () => {
+                          const res = await acceptTransfer(t.id, countryId);
+                          if (res.success) {
+                            alert(res.message);
+                            loadAllData();
+                          } else {
+                            alert(res.message);
+                          }
+                        }}>✅ 수락</button>
+                        <button className="btn btn-sm btn-danger" onClick={async () => {
+                          const res = await rejectTransfer(t.id, countryId);
+                          if (res.success) {
+                            alert(res.message);
+                            loadAllData();
+                          } else {
+                            alert(res.message);
+                          }
+                        }}>❌ 거절</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Send Transfer UI */}
+        <div className="content-section" style={{ marginBottom: '30px' }}>
+          <h3 className="content-section-title">🚚 송금 및 물자 지원</h3>
+          <div className="card" style={{ padding: '20px' }}>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>다른 국가로 무기, 자원, 코인을 전송할 수 있습니다. (상대방이 수락해야 전송이 완료됩니다)</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <select id="transferTarget" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
+                <option value="">-- 받을 국가 선택 --</option>
+                {countries.filter(c => c.id !== countryId).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <select id="transferItem" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
+                <option value="">-- 보낼 물자 선택 --</option>
+                <optgroup label="코인">
+                  <option value="coin:agricultureCoins">농업 코인</option>
+                  <option value="coin:heavyIndustryCoins">중공업 코인</option>
+                  <option value="coin:lightIndustryCoins">경공업 코인</option>
+                </optgroup>
+                <optgroup label="자원">
+                  {resources.filter(r => r.resource_type !== 'weapon' && r.amount > 0).map(r => (
+                    <option key={r.id} value={`resource:${r.resource_type}`}>
+                      {resourceLabels[r.resource_type]?.label || r.resource_type} (보유: {r.amount})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="무기">
+                  {weaponResources.filter(w => w.amount > 0).map(w => (
+                    <option key={w.id} value={`weapon:${w.name}`}>
+                      {w.name} (보유: {w.amount})
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input type="number" id="transferAmount" className="form-input" placeholder="수량" style={{ width: '100px' }} />
+              <button className="btn btn-primary" onClick={async () => {
+                const toId = document.getElementById('transferTarget').value;
+                const itemRaw = document.getElementById('transferItem').value;
+                const amount = parseInt(document.getElementById('transferAmount').value);
+                
+                if (!toId) return alert('국가를 선택하세요.');
+                if (!itemRaw) return alert('보낼 물자를 선택하세요.');
+                if (!amount || amount <= 0) return alert('수량을 올바르게 입력하세요.');
+                
+                const [type, key] = itemRaw.split(':');
+                const res = await transferItems(countryId, toId, type, key, amount);
+                if (res.success) {
+                  alert(res.message);
+                  loadAllData();
+                } else {
+                  alert(res.message);
+                }
+              }}>요청 보내기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTab = () => {
     switch (activeTab) {
       case 'politics':
@@ -1136,6 +1217,8 @@ export default function CountryPage() {
         return renderMilitary();
       case 'formation':
         return renderFormation();
+      case 'transfers':
+        return renderTransfers();
       default:
         return null;
     }
@@ -1170,8 +1253,18 @@ export default function CountryPage() {
             key={tab.id}
             className={`tab ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
+            style={{ position: 'relative' }}
           >
             <span>{tab.icon}</span> {tab.label}
+            {tab.id === 'transfers' && pendingTransfers.length > 0 && (
+              <span style={{
+                position: 'absolute', top: '-5px', right: '-5px', 
+                background: 'red', color: 'white', borderRadius: '50%', 
+                padding: '2px 6px', fontSize: '0.7rem', fontWeight: 'bold'
+              }}>
+                {pendingTransfers.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
