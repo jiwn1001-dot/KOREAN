@@ -158,6 +158,7 @@ export default function AdminPage() {
     customFields: [],
   });
   const [economyImages, setEconomyImages] = useState([]);
+  const [mgmtData, setMgmtData] = useState(null);
   const [socialEntry, setSocialEntry] = useState(null);
   const [socialData, setSocialData] = useState({ content: '', customFields: [] });
   const [socialImages, setSocialImages] = useState([]);
@@ -589,6 +590,91 @@ export default function AdminPage() {
   };
 
   // ==================== RENDER SECTIONS ====================
+
+  const loadMgmtData = async () => {
+    try {
+      const { data: entries } = await supabase.from('data_entries')
+        .select('country_id, category, data')
+        .in('category', ['economy', 'military_units']);
+        
+      const results = countries.map(c => {
+        const eco = entries?.find(e => e.country_id === c.id && e.category === 'economy')?.data || {};
+        const mil = entries?.find(e => e.country_id === c.id && e.category === 'military_units')?.data || {};
+        
+        const taxRate = eco.taxRate || 0;
+        const totalPop = eco.population?.total || 0;
+        
+        const units = mil.units || [];
+        let activePop = 0;
+        units.forEach(u => {
+          const tmpl = unitTemplates.find(t => t.id === u.templateId);
+          if (tmpl) activePop += (tmpl.manpowerCost || 0) * (u.count || 0);
+        });
+        
+        const ratio = totalPop > 0 ? ((activePop / totalPop) * 100).toFixed(2) : 0;
+        
+        return {
+          id: c.id,
+          name: c.name,
+          color: c.color,
+          taxRate,
+          totalPop,
+          activePop,
+          ratio
+        };
+      });
+      setMgmtData(results);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const renderManagement = () => (
+    <div className="slide-up">
+      <h2 style={{ marginBottom: '24px' }}>🎛️ 관리 패널</h2>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>모든 국가의 경제 지표(세율)와 징병율(전체 인구 대비 복무 중인 인구)을 한눈에 조회합니다.</p>
+      
+      <button className="btn btn-primary" onClick={loadMgmtData} style={{ marginBottom: '16px' }}>🔄 데이터 갱신</button>
+      
+      {mgmtData ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>국가</th>
+                <th>세율</th>
+                <th>전체 인구</th>
+                <th>복무 중인 인구 (편제 완료)</th>
+                <th>전체 인구 대비 복무 비율</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mgmtData.map(d => (
+                <tr key={d.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                      <div className="color-indicator" style={{ backgroundColor: d.color, width: '12px', height: '12px', borderRadius: '50%' }}></div>
+                      {d.name}
+                    </div>
+                  </td>
+                  <td>{d.taxRate}%</td>
+                  <td>{d.totalPop.toLocaleString()}명</td>
+                  <td>{d.activePop.toLocaleString()}명</td>
+                  <td>
+                    <span className={`badge ${d.ratio >= 10 ? 'badge-danger' : 'badge-primary'}`}>
+                      {d.ratio}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p style={{ color: 'var(--text-muted)' }}>데이터 갱신 버튼을 눌러주세요.</p>
+      )}
+    </div>
+  );
 
   const renderCountries = () => (
     <div className="slide-up">
@@ -2340,24 +2426,25 @@ export default function AdminPage() {
 
                           {/* 단계 목록 (Table) */}
                           {tree.levels && tree.levels.length > 0 ? (
-                            <table className="data-table" style={{ marginTop: '10px', marginBottom: '16px', fontSize: '0.9rem' }}>
-                              <thead>
-                                <tr>
-                                  <th>단계</th>
-                                  <th>이름(소분류)</th>
-                                  <th>시대</th>
-                                  <th>소모 턴</th>
-                                  <th>특수효과</th>
-                                  <th>관리</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tree.levels.map((lvl, lIdx) => (
-                                  <tr key={lIdx}>
-                                    <td>{lvl.level}단계</td>
-                                    {editingTechLevelId === `${tree.id}_${lIdx}` ? (
-                                      <td colSpan="4">
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <div style={{ overflowX: 'auto' }}>
+                              <table className="data-table" style={{ marginTop: '10px', marginBottom: '16px', fontSize: '0.9rem' }}>
+                                <thead>
+                                  <tr>
+                                    <th>단계</th>
+                                    <th>이름(소분류)</th>
+                                    <th>시대</th>
+                                    <th>소모 턴</th>
+                                    <th>특수효과</th>
+                                    <th>관리</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {tree.levels.map((lvl, lIdx) => (
+                                    <tr key={lIdx}>
+                                      <td>{lvl.level}단계</td>
+                                      {editingTechLevelId === `${tree.id}_${lIdx}` ? (
+                                        <td colSpan="4">
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                                           <input id={`editLvlName_${tree.id}_${lIdx}`} className="form-input" defaultValue={lvl.name} placeholder="이름" style={{ width: '150px' }} />
                                           <select id={`editLvlEra_${tree.id}_${lIdx}`} className="form-select" defaultValue={lvl.era || eras[0]} style={{ width: '120px' }}>
                                             {eras.map(e => <option key={e} value={e}>{e}</option>)}
@@ -2431,12 +2518,13 @@ export default function AdminPage() {
                                 ))}
                               </tbody>
                             </table>
+                            </div>
                           ) : (
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>아직 등록된 단계가 없습니다.</p>
                           )}
 
                           {/* 새 단계 추가 폼 */}
-                          <div className="form-inline" style={{ padding: '12px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+                          <div className="form-inline" style={{ padding: '12px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px dashed var(--border-color)', flexWrap: 'wrap' }}>
                             <input id={`levelName_${tree.id}`} type="text" className="form-input" placeholder="새 소분류 이름" style={{ width: '150px' }} />
                             <select id={`levelEra_${tree.id}`} className="form-select" style={{ width: '120px' }}>
                               {eras.map(e => <option key={e} value={e}>{e}</option>)}
@@ -2788,6 +2876,7 @@ export default function AdminPage() {
   }
 
   const sidebarItems = [
+    { id: 'management', label: '🎛️ 관리 패널' },
     { id: 'dashboard', label: '📊 대시보드 (턴)' },
     { id: 'users', label: '👥 유저 관리' },
     { id: 'countries', label: '🏴 국가 관리' },
@@ -2819,6 +2908,7 @@ export default function AdminPage() {
         </div>
 
         <div className="admin-content">
+          {activeSection === 'management' && renderManagement()}
           {activeSection === 'dashboard' && renderDashboard()}
           {activeSection === 'users' && renderUsers()}
           {activeSection === 'countries' && renderCountries()}
