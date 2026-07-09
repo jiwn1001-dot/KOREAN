@@ -55,7 +55,10 @@ export async function processTurnEnd(newTurn) {
       light_boost: new Set(),
       mining_boost: new Set(),
       radar_tech: new Set(),
-      rocket_tech: new Set()
+      rocket_tech: new Set(),
+      penetration_boost: new Set(),
+      antiair_boost: new Set(),
+      observation_boost: new Set()
     };
     
     techTrees.forEach(tree => {
@@ -335,6 +338,70 @@ export async function processTurnEnd(newTurn) {
           .from('data_entries')
           .update({ data })
           .eq('id', entry.id);
+      }
+    }
+
+    // 4. 편제 유닛 연료 소모 처리
+    const { data: unitEntries } = await supabase.from('data_entries').select('id, country_id, data').eq('category', 'military_units');
+    if (unitEntries) {
+      for (const uEntry of unitEntries) {
+        if (!uEntry.country_id || !uEntry.data?.units || uEntry.data.units.length === 0) continue;
+
+        // 해당 국가의 유닛 템플릿 정보 가져오기
+        const unitTemplates = settingEntry?.data?.unitTemplates || [];
+        
+        // 해당 국가 자원 조회
+        const { data: countryResources } = await supabase.from('resources').select('*').eq('country_id', uEntry.country_id);
+        const resMap = {};
+        if (countryResources) {
+          countryResources.forEach(r => { resMap[r.resource_type] = r; });
+        }
+
+        let units = [...uEntry.data.units];
+        let updated = false;
+
+        for (let i = 0; i < units.length; i++) {
+          const unit = units[i];
+          const template = unitTemplates.find(t => t.id === unit.templateId);
+          if (!template) continue;
+
+          // 연료 불필요 유닛은 항상 전체 가동
+          if (!template.fuelType || template.fuelType === 'none' || template.fuelPerTurn <= 0) {
+            if (unit.operational !== unit.count) {
+              units[i] = { ...unit, operational: unit.count };
+              updated = true;
+            }
+            continue;
+          }
+
+          const totalFuelNeeded = template.fuelPerTurn * unit.count;
+          const fuelRes = resMap[template.fuelType];
+          const currentFuel = fuelRes ? Number(fuelRes.amount) : 0;
+
+          if (currentFuel >= totalFuelNeeded) {
+            // 충분 → 전체 가동, 연료 차감
+            if (fuelRes) {
+              fuelRes.amount = currentFuel - totalFuelNeeded;
+              await supabase.from('resources').update({ amount: fuelRes.amount }).eq('id', fuelRes.id);
+            }
+            units[i] = { ...unit, operational: unit.count };
+            updated = true;
+          } else {
+            // 부족 → 가능한 만큼만 가동
+            const canOperate = Math.floor(currentFuel / template.fuelPerTurn);
+            const fuelUsed = canOperate * template.fuelPerTurn;
+            if (fuelRes && fuelUsed > 0) {
+              fuelRes.amount = currentFuel - fuelUsed;
+              await supabase.from('resources').update({ amount: fuelRes.amount }).eq('id', fuelRes.id);
+            }
+            units[i] = { ...unit, operational: canOperate };
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          await supabase.from('data_entries').update({ data: { units } }).eq('id', uEntry.id);
+        }
       }
     }
 

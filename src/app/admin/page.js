@@ -52,6 +52,7 @@ export default function AdminPage() {
   const [resources, setResources] = useState([]);
   const [techTrees, setTechTrees] = useState([]);
   const [weaponBlueprints, setWeaponBlueprints] = useState([]);
+  const [unitTemplates, setUnitTemplates] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
 
   // Forms
@@ -253,7 +254,7 @@ export default function AdminPage() {
       loadCountries();
       if (selectedCountryId) loadCountryData(selectedCountryId);
     }
-    else if (activeSection === 'research' || activeSection === 'blueprints') {
+    else if (activeSection === 'research' || activeSection === 'blueprints' || activeSection === 'formations') {
       loadCountries();
       
       loadGameSettings();
@@ -284,6 +285,7 @@ export default function AdminPage() {
       if (entry && entry.data) {
         setTechTrees(entry.data.techTrees || []);
         setWeaponBlueprints(entry.data.weaponBlueprints || []);
+        setUnitTemplates(entry.data.unitTemplates || []);
       }
     } catch (err) {
       console.error(err);
@@ -1502,6 +1504,178 @@ export default function AdminPage() {
       </div>
     </div>
   );
+  const renderUnitTemplates = () => {
+    const majorCategories = ['육군', '해군', '공군', '특수'];
+    const minorCategoryMap = {
+      '육군': ['기계화', '보병', '포병', '특전사', '산악부대', '해병대', '공수부대'],
+      '해군': ['항공모함', '전함', '어뢰정', '기뢰함', '잠수함'],
+      '공군': ['전투기', '뇌격기', '근접항공지원기', '폭격기'],
+      '특수': ['미사일', '핵무기', '독가스', 'EMP']
+    };
+    const fuelTypes = [
+      { value: 'none', label: '없음' },
+      { value: 'oil', label: '석유' },
+      { value: 'coal', label: '석탄' },
+      { value: 'wood', label: '목재' }
+    ];
+
+    // 무기 이름 목록 (기존 청사진에서 추출)
+    const availableWeapons = (Array.isArray(weaponBlueprints) ? weaponBlueprints : []).map(bp => bp.name).filter(Boolean);
+
+    return (
+      <div className="fade-in">
+        <h2>🎖️ 편제 유닛 템플릿 관리</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>유저가 무기와 인력을 소모하여 편성할 수 있는 유닛(부대)의 종류를 정의합니다.</p>
+
+        {/* 새 템플릿 생성 폼 */}
+        <div className="card" style={{ padding: '20px', marginBottom: '24px', border: '1px solid var(--border-color)' }}>
+          <h4 style={{ marginBottom: '16px' }}>➕ 새 유닛 템플릿 추가</h4>
+          
+          <div className="form-row">
+            <div className="form-group">
+              <label>부대 이름 (소분류)</label>
+              <input type="text" id="newUnitName" className="form-input" placeholder="예: 1936년형 보병사단" />
+            </div>
+            <div className="form-group">
+              <label>대분류</label>
+              <select id="newUnitMajor" className="form-select" onChange={() => {
+                const val = document.getElementById('newUnitMajor').value;
+                const minorSel = document.getElementById('newUnitMinor');
+                minorSel.innerHTML = '';
+                (minorCategoryMap[val] || []).forEach(m => {
+                  const opt = document.createElement('option');
+                  opt.value = m; opt.textContent = m;
+                  minorSel.appendChild(opt);
+                });
+              }}>
+                {majorCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>중분류</label>
+              <select id="newUnitMinor" className="form-select">
+                {minorCategoryMap['육군'].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group"><label>방어력</label><input type="number" id="newUnitDef" className="form-input" defaultValue="0" /></div>
+            <div className="form-group"><label>속도</label><input type="number" id="newUnitSpd" className="form-input" defaultValue="0" /></div>
+            <div className="form-group"><label>공격력</label><input type="number" id="newUnitAtk" className="form-input" defaultValue="0" /></div>
+            <div className="form-group"><label>체력</label><input type="number" id="newUnitHp" className="form-input" defaultValue="100" /></div>
+            <div className="form-group"><label>전장너비</label><input type="number" id="newUnitWidth" className="form-input" defaultValue="1" /></div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group"><label>소모칸수 (해군)</label><input type="number" id="newUnitSlot" className="form-input" defaultValue="0" /></div>
+            <div className="form-group"><label>함재기수 (항모)</label><input type="number" id="newUnitCarrier" className="form-input" defaultValue="0" /></div>
+            <div className="form-group"><label>효과유효턴수 (특수)</label><input type="number" id="newUnitEffDur" className="form-input" defaultValue="0" /></div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>소모인력 (동원가능인구 차감)</label>
+              <input type="number" id="newUnitManpower" className="form-input" defaultValue="0" />
+            </div>
+            <div className="form-group">
+              <label>소모연료 종류</label>
+              <select id="newUnitFuelType" className="form-select">
+                {fuelTypes.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>턴당 연료소모량 (유닛 1개당)</label>
+              <input type="number" id="newUnitFuelAmt" className="form-input" defaultValue="0" />
+            </div>
+          </div>
+
+          <div className="form-row" style={{ alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ flex: 2 }}>
+              <label>소모군수품 (무기이름:수량, 콤마 구분)</label>
+              <input type="text" id="newUnitWeapons" className="form-input" placeholder="예: 소총:100,기관총:10" />
+              <small style={{ color: 'var(--text-muted)' }}>등록된 무기: {availableWeapons.join(', ') || '없음'}</small>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{ marginTop: '12px' }} onClick={() => {
+            const name = document.getElementById('newUnitName').value;
+            if (!name) return showToast('부대 이름을 입력하세요.', 'error');
+
+            // 소모군수품 파싱
+            const weaponsRaw = document.getElementById('newUnitWeapons').value;
+            const requiredWeapons = [];
+            if (weaponsRaw.trim()) {
+              weaponsRaw.split(',').forEach(pair => {
+                const [wName, wAmt] = pair.trim().split(':');
+                if (wName && wAmt) requiredWeapons.push({ weaponName: wName.trim(), amount: parseInt(wAmt) || 0 });
+              });
+            }
+
+            const newTemplate = {
+              id: Date.now().toString(),
+              name,
+              majorCategory: document.getElementById('newUnitMajor').value,
+              minorCategory: document.getElementById('newUnitMinor').value,
+              defense: parseInt(document.getElementById('newUnitDef').value) || 0,
+              speed: parseInt(document.getElementById('newUnitSpd').value) || 0,
+              attack: parseInt(document.getElementById('newUnitAtk').value) || 0,
+              hp: parseInt(document.getElementById('newUnitHp').value) || 100,
+              combatWidth: parseInt(document.getElementById('newUnitWidth').value) || 1,
+              slotSize: parseInt(document.getElementById('newUnitSlot').value) || 0,
+              carrierCapacity: parseInt(document.getElementById('newUnitCarrier').value) || 0,
+              effectDuration: parseInt(document.getElementById('newUnitEffDur').value) || 0,
+              requiredWeapons,
+              manpowerCost: parseInt(document.getElementById('newUnitManpower').value) || 0,
+              fuelType: document.getElementById('newUnitFuelType').value,
+              fuelPerTurn: parseInt(document.getElementById('newUnitFuelAmt').value) || 0,
+            };
+
+            saveGameSettings({ unitTemplates: [...unitTemplates, newTemplate] });
+            document.getElementById('newUnitName').value = '';
+            document.getElementById('newUnitWeapons').value = '';
+          }}>➕ 유닛 템플릿 추가</button>
+        </div>
+
+        {/* 등록된 템플릿 목록 */}
+        <div className="card-grid card-grid-2">
+          {unitTemplates.length === 0 && <p>등록된 유닛 템플릿이 없습니다.</p>}
+          {unitTemplates.map((tmpl, idx) => (
+            <div key={tmpl.id} className="card" style={{ padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                <div>
+                  <span className="badge badge-accent" style={{ marginRight: '6px' }}>{tmpl.majorCategory}</span>
+                  <span className="badge" style={{ marginRight: '6px' }}>{tmpl.minorCategory}</span>
+                  <h4 style={{ margin: '4px 0 0', color: 'var(--accent)' }}>{tmpl.name}</h4>
+                </div>
+                <button className="btn btn-sm btn-danger" onClick={() => {
+                  if (!confirm('이 유닛 템플릿을 삭제하시겠습니까?')) return;
+                  saveGameSettings({ unitTemplates: unitTemplates.filter((_, i) => i !== idx) });
+                }}>삭제</button>
+              </div>
+              <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                <div>⚔️ 공격력: {tmpl.attack}</div>
+                <div>🛡️ 방어력: {tmpl.defense}</div>
+                <div>💨 속도: {tmpl.speed}</div>
+                <div>❤️ 체력: {tmpl.hp}</div>
+                <div>📐 전장너비: {tmpl.combatWidth}</div>
+                <div>👥 소모인력: {tmpl.manpowerCost?.toLocaleString()}</div>
+                <div>⛽ 연료: {tmpl.fuelType === 'none' ? '없음' : `${tmpl.fuelType} (${tmpl.fuelPerTurn}/턴)`}</div>
+                {tmpl.slotSize > 0 && <div>🚢 소모칸수: {tmpl.slotSize}</div>}
+                {tmpl.carrierCapacity > 0 && <div>✈️ 함재기: {tmpl.carrierCapacity}</div>}
+                {tmpl.effectDuration > 0 && <div>⏱️ 효과턴수: {tmpl.effectDuration}</div>}
+              </div>
+              {tmpl.requiredWeapons?.length > 0 && (
+                <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  🔧 소모군수품: {tmpl.requiredWeapons.map(w => `${w.weaponName}×${w.amount}`).join(', ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const renderDashboard = () => (
     <div className="slide-up">
@@ -1672,21 +1846,27 @@ export default function AdminPage() {
                     <option value="light_boost">경공업 생산 10% 증가</option>
                     <option value="mining_boost">자원 생산 10% 증가</option>
                     <option value="radar_tech">레이더 기술 (전투)</option>
+                    <option value="penetration_boost">관통력 증가</option>
+                    <option value="antiair_boost">대공능력 증가</option>
+                    <option value="observation_boost">관측력 증가</option>
                   </select>
+                  <input id={`levelEffectValue_${tree.id || idx}`} type="number" className="form-input" placeholder="효과값" style={{ width: '70px' }} title="관통력/대공/관측력 증가량" />
                   <button className="btn btn-sm btn-secondary" onClick={() => {
                     const name = document.getElementById(`levelName_${tree.id || idx}`).value;
                     const turns = parseInt(document.getElementById(`levelTurn_${tree.id || idx}`).value);
                     const effect = document.getElementById(`levelEffect_${tree.id || idx}`).value;
                     const era = document.getElementById(`levelEra_${tree.id || idx}`).value;
+                    const effectValue = parseInt(document.getElementById(`levelEffectValue_${tree.id || idx}`).value) || 0;
                     if (turns > 0 && name) {
                       const newTrees = [...techTrees];
                       const newLevel = newTrees[idx].levels.length + 1;
-                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era });
+                      newTrees[idx].levels.push({ level: newLevel, name, turns, effect, era, effectValue });
                       saveTechTrees(newTrees);
                       document.getElementById(`levelName_${tree.id || idx}`).value = '';
                       document.getElementById(`levelTurn_${tree.id || idx}`).value = '';
                       document.getElementById(`levelEffect_${tree.id || idx}`).value = 'none';
                       document.getElementById(`levelEra_${tree.id || idx}`).value = eras[0];
+                      document.getElementById(`levelEffectValue_${tree.id || idx}`).value = '';
                     } else {
                       showToast('이름과 턴 수를 모두 입력하세요.', 'error');
                     }
@@ -2012,6 +2192,7 @@ export default function AdminPage() {
     { id: 'country-info', label: '📊 국가별 정보' },
     { id: 'research', label: '🔬 연구 관리' },
     { id: 'blueprints', label: '🛠️ 무기 청사진' },
+    { id: 'formations', label: '🎖️ 편제 관리' },
     { id: 'resources', label: '📦 자원 관리' },
     { id: 'map', label: '🗺️ 지도 색칠' },
   ];
@@ -2041,6 +2222,7 @@ export default function AdminPage() {
           {activeSection === 'country-info' && renderCountryInfo()}
           {activeSection === 'research' && renderResearch()}
           {activeSection === 'blueprints' && renderBlueprints()}
+          {activeSection === 'formations' && renderUnitTemplates()}
           {activeSection === 'resources' && renderResources()}
           {activeSection === 'map' && renderMapEditor()}
         </div>

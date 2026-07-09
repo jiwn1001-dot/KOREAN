@@ -29,6 +29,8 @@ export default function CountryPage() {
   const [admin, setAdmin] = useState(false);
   const [countries, setCountries] = useState([]);
   const [techTrees, setTechTrees] = useState([]);
+  const [unitTemplates, setUnitTemplates] = useState([]);
+  const [militaryUnits, setMilitaryUnits] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -97,9 +99,20 @@ export default function CountryPage() {
       const settings = await getDataEntry('game_settings', null);
       if (settings && settings.data?.techTrees) {
         setTechTrees(settings.data.techTrees);
+        setUnitTemplates(settings.data.unitTemplates || []);
       }
     } catch(err) {
       console.error('Failed to load game settings for tech trees', err);
+    }
+
+    // Load military units
+    try {
+      const unitsEntry = await getDataEntry('military_units', countryId);
+      if (unitsEntry && unitsEntry.data) {
+        setMilitaryUnits(unitsEntry.data.units || []);
+      }
+    } catch(err) {
+      console.error('Failed to load military units', err);
     }
   };
 
@@ -111,6 +124,7 @@ export default function CountryPage() {
     { id: 'research', label: '연구', icon: '🔬' },
     { id: 'resource', label: '자원', icon: '📦' },
     { id: 'military', label: '군수', icon: '⚔️' },
+    { id: 'formation', label: '편제', icon: '🎖️' },
   ];
 
   if (loading) {
@@ -890,6 +904,171 @@ export default function CountryPage() {
     );
   };
 
+  const renderFormation = () => {
+    // 1. Calculate research bonuses
+    const completedTechs = researches.filter(r => r.status === 'completed');
+    let penetrationBonus = 0;
+    let antiairBonus = 0;
+    let observationBonus = 0;
+
+    completedTechs.forEach(tech => {
+      const tree = techTrees.find(t => t.name === tech.name);
+      if (tree) {
+        for (let i = 0; i < tech.level; i++) {
+          const levelData = (Array.isArray(tree.levels) ? tree.levels : [])[i];
+          if (levelData) {
+            if (levelData.effect === 'penetration_boost') penetrationBonus += (levelData.effectValue || 0);
+            if (levelData.effect === 'antiair_boost') antiairBonus += (levelData.effectValue || 0);
+            if (levelData.effect === 'observation_boost') observationBonus += (levelData.effectValue || 0);
+          }
+        }
+      }
+    });
+
+    const economyEntry = data.economy || {};
+    const totalMobilizable = Number(economyEntry.population?.mobilizable || 0);
+
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h2 className="content-section-title">🎖️ 편제 부대 편성 및 현황</h2>
+          <p style={{ color: 'var(--text-muted)' }}>보유한 무기와 동원가능인구를 소모하여 부대를 편성합니다.</p>
+
+          {/* 연구 보너스 정보 */}
+          <div className="card" style={{ padding: '16px', marginBottom: '20px', background: 'var(--bg-glass)', border: '1px solid var(--accent)' }}>
+            <h4 style={{ marginBottom: '8px', color: 'var(--accent)' }}>🔬 국가 기술 보너스 (전 유닛 일괄 적용)</h4>
+            <div style={{ display: 'flex', gap: '20px' }}>
+              <div><strong>관통력:</strong> +{penetrationBonus}</div>
+              <div><strong>대공능력:</strong> +{antiairBonus}</div>
+              <div><strong>관측력:</strong> +{observationBonus}</div>
+            </div>
+          </div>
+
+          <div className="card-grid card-grid-2">
+            {/* 유닛 생성 */}
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{ marginBottom: '16px' }}>부대 창설</h3>
+              <div className="form-group">
+                <label className="form-label">유닛 종류 선택</label>
+                <select id="createUnitTemplate" className="form-select">
+                  <option value="">-- 템플릿 선택 --</option>
+                  {unitTemplates.map(tmpl => (
+                    <option key={tmpl.id} value={tmpl.id}>
+                      [{tmpl.majorCategory}/{tmpl.minorCategory}] {tmpl.name} (인력: {tmpl.manpowerCost})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">부대 이름 (커스텀)</label>
+                <input type="text" id="createUnitCustomName" className="form-input" placeholder="예: 제1보병사단 (공군은 무시됨)" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">생성 수량</label>
+                <input type="number" id="createUnitCount" className="form-input" defaultValue="1" min="1" />
+              </div>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={async () => {
+                const tmplId = document.getElementById('createUnitTemplate').value;
+                const customName = document.getElementById('createUnitCustomName').value;
+                const count = parseInt(document.getElementById('createUnitCount').value);
+                
+                if (!tmplId || !count || count <= 0) return alert('템플릿과 수량을 확인하세요.');
+                const template = unitTemplates.find(t => t.id === tmplId);
+                if (!template) return;
+
+                // 인력 확인
+                const totalManpowerCost = (template.manpowerCost || 0) * count;
+                if (totalMobilizable < totalManpowerCost) {
+                  return alert(`동원가능인구가 부족합니다. (필요: ${totalManpowerCost}, 현재: ${totalMobilizable})`);
+                }
+
+                // 무기 확인
+                const reqWeapons = template.requiredWeapons || [];
+                const weaponDeductions = [];
+                for (const rw of reqWeapons) {
+                  const needed = rw.amount * count;
+                  const res = resources.find(r => r.resource_type === rw.weaponName);
+                  if (!res || Number(res.amount) < needed) {
+                    return alert(`무기 [${rw.weaponName}]가 부족합니다. (필요: ${needed}, 현재: ${res ? res.amount : 0})`);
+                  }
+                  weaponDeductions.push({ name: rw.weaponName, newAmount: Number(res.amount) - needed, prod: res.production_per_turn });
+                }
+
+                if (!confirm(`부대를 창설하시겠습니까?\n소모 인력: ${totalManpowerCost}\n소모 무기: ${reqWeapons.map(w => `${w.weaponName} ${w.amount * count}개`).join(', ')}`)) return;
+
+                // 1. 무기 차감
+                for (const wd of weaponDeductions) {
+                  await upsertResource(countryId, wd.name, wd.newAmount, wd.prod);
+                }
+                
+                // 2. 동원가능인구 차감
+                const newEcoData = { ...economyEntry };
+                newEcoData.population = { ...newEcoData.population, mobilizable: totalMobilizable - totalManpowerCost };
+                await upsertDataEntry('economy', countryId, newEcoData);
+
+                // 3. 편제 유닛 추가
+                const newUnit = {
+                  id: Date.now().toString(),
+                  templateId: tmplId,
+                  customName: template.majorCategory === '공군' ? '' : customName,
+                  count,
+                  operational: count, // 초기엔 전체 가동
+                  createdAt: new Date().toISOString()
+                };
+
+                const newUnits = [...militaryUnits, newUnit];
+                await upsertDataEntry('military_units', countryId, { units: newUnits });
+                setMilitaryUnits(newUnits);
+                
+                alert('부대가 창설되었습니다.');
+                loadAllData();
+              }}>부대 창설하기</button>
+            </div>
+
+            {/* 현재 부대 목록 */}
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{ marginBottom: '16px' }}>현재 보유 부대</h3>
+              {militaryUnits.length === 0 ? <p style={{ color: 'var(--text-muted)' }}>편성된 부대가 없습니다.</p> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {militaryUnits.map(unit => {
+                    const tmpl = unitTemplates.find(t => t.id === unit.templateId) || {};
+                    const isAir = tmpl.majorCategory === '공군';
+                    const nameDisplay = isAir ? tmpl.name : (unit.customName || tmpl.name);
+                    const isFuelShortage = unit.operational < unit.count;
+                    return (
+                      <div key={unit.id} className="card" style={{ padding: '12px', background: 'var(--bg-glass)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div style={{ fontWeight: 'bold' }}>
+                            <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tmpl.majorCategory}</span>
+                            {nameDisplay} (x{unit.count})
+                          </div>
+                          <button className="btn btn-sm btn-ghost" onClick={async () => {
+                            if (!confirm('이 유닛을 해체하시겠습니까? (소모된 인력과 무기는 반환되지 않습니다.)')) return;
+                            const newUnits = militaryUnits.filter(u => u.id !== unit.id);
+                            await upsertDataEntry('military_units', countryId, { units: newUnits });
+                            setMilitaryUnits(newUnits);
+                          }}>해체</button>
+                        </div>
+                        <div style={{ fontSize: '0.85rem', marginTop: '8px', color: 'var(--text-muted)' }}>
+                          가동 상태: <span style={{ color: isFuelShortage ? 'var(--error)' : 'var(--primary)', fontWeight: 'bold' }}>{unit.operational}</span> / {unit.count}
+                          {isFuelShortage && <span style={{ marginLeft: '8px', color: 'var(--error)' }}>(연료 부족)</span>}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                          <div>⚔️ {tmpl.attack} | 🛡️ {tmpl.defense} | 💨 {tmpl.speed}</div>
+                          <div>❤️ {tmpl.hp} | 📐 {tmpl.combatWidth}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTab = () => {
     switch (activeTab) {
       case 'politics':
@@ -906,6 +1085,8 @@ export default function CountryPage() {
         return renderResource();
       case 'military':
         return renderMilitary();
+      case 'formation':
+        return renderFormation();
       default:
         return null;
     }
