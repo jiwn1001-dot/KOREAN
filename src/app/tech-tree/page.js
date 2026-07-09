@@ -101,29 +101,31 @@ export default function TechTreePage() {
                         
                         {/* Tree Nodes mapped to Era columns */}
                         {sortedEras.map((era, index) => {
-                          const levelData = (tree.levels || []).find(lvl => lvl.era === era);
+                          const eraLevels = (tree.levels || []).filter(lvl => lvl.era === era);
                           return (
-                            <div key={era} style={{ flex: 1, minWidth: '150px', padding: '0 10px', position: 'relative' }}>
+                            <div key={era} style={{ flex: 1, minWidth: '150px', padding: '0 10px', position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               {/* Horizontal Line connecting nodes */}
                               {index > 0 && <div style={{ position: 'absolute', left: '-50%', top: '50%', width: '100%', height: '2px', background: 'var(--border-color)', zIndex: 0 }}></div>}
                               
-                              {levelData ? (
-                                <div style={{ 
-                                  position: 'relative', zIndex: 1, 
-                                  background: 'var(--bg-glass)', border: '1px solid var(--accent)', 
-                                  padding: '10px', borderRadius: '6px', textAlign: 'center', 
-                                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)', fontSize: '0.85rem'
-                                }}>
-                                  <div style={{ fontWeight: 'bold' }}>{levelData.name}</div>
-                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>
-                                    Lv.{levelData.level} | {levelData.turns}턴
-                                  </div>
-                                  {levelData.effect !== 'none' && (
-                                    <div style={{ color: 'var(--teal)', fontSize: '0.7rem', marginTop: '4px' }}>
-                                      ✨ 효과: {levelData.effect} {levelData.effectValue > 0 ? `(+${levelData.effectValue})` : ''}
+                              {eraLevels.length > 0 ? (
+                                eraLevels.map((levelData, lIdx) => (
+                                  <div key={lIdx} style={{ 
+                                    position: 'relative', zIndex: 1, 
+                                    background: 'var(--bg-glass)', border: '1px solid var(--accent)', 
+                                    padding: '10px', borderRadius: '6px', textAlign: 'center', 
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)', fontSize: '0.85rem'
+                                  }}>
+                                    <div style={{ fontWeight: 'bold' }}>{levelData.name}</div>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>
+                                      Lv.{levelData.level} | {levelData.turns}턴
                                     </div>
-                                  )}
-                                </div>
+                                    {levelData.effect !== 'none' && (
+                                      <div style={{ color: 'var(--teal)', fontSize: '0.7rem', marginTop: '4px' }}>
+                                        ✨ 효과: {levelData.effect} {levelData.effectValue > 0 ? `(+${levelData.effectValue})` : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))
                               ) : (
                                 <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>-</span>
