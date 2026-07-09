@@ -1943,8 +1943,14 @@ export default function AdminPage() {
                     className="btn btn-sm"
                     onClick={() => {
                       const aiCard = aiChooseCard(testAerialGame.ai, testAerialGame.player);
-                      const result = { winner: 'defense', reason: 'player_passed', description: '플레이어가 카드를 아껴 AI가 자동 승리합니다.' };
+                      const result = resolveAerialRound(null, aiCard);
                       
+                      // AI 카드 소모 처리
+                      if (result.defenderLost && aiCard) {
+                        testAerialGame.ai.hand = testAerialGame.ai.hand.filter(c => c.cardId !== aiCard.cardId);
+                        testAerialGame.ai.lost.push(aiCard);
+                      }
+
                       const log = {
                         type: 'round',
                         round: testAerialGame.round + 1,

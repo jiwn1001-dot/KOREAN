@@ -289,7 +289,8 @@ export async function processTurnEnd(newTurn) {
           }
         }
         
-        // 3-4. 이전 턴에 지어둔 단지/조선소 초기화 (매년 새로 배정해야 하므로)
+        // 3-4. 이전 턴에 지어둔 단지/조선소 초기화 및 코인 환불 (매년 새로 배정해야 하므로)
+        data.heavyIndustryCoins = (data.heavyIndustryCoins || 0) + (data.heavyIndustryComplexes || 0) + (data.shipyards || 0);
         data.heavyIndustryComplexes = 0;
         data.shipyards = 0;
 
@@ -326,11 +327,11 @@ export async function processTurnEnd(newTurn) {
           }
         }
 
-        // 3-6. 인구 증가율 처리 (나눌 값으로 적용)
+        // 3-6. 인구 증가율 처리 (백분율 적용)
         if (data.population && data.population.growthRate > 0) {
           const gRate = data.population.growthRate;
-          data.population.total = Math.floor(data.population.total + (data.population.total / gRate));
-          data.population.mobilizable = Math.floor(data.population.mobilizable + (data.population.mobilizable / gRate));
+          data.population.total = Math.floor(data.population.total + (data.population.total * gRate / 100));
+          data.population.mobilizable = Math.floor(data.population.mobilizable + (data.population.mobilizable * gRate / 100));
         }
 
         // DB 업데이트

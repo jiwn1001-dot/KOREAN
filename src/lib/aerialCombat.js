@@ -277,8 +277,14 @@ export function aiChooseCard(aiSession, opponentSession) {
   const cardRatio = hand.length / (aiSession.cards?.length || 1);
   const opponentLostRatio = (opponentSession.lost?.length || 0) / (opponentSession.cards?.length || 1);
   
-  // 손실이 많으면 아낄 확률 증가 (보수적)
-  const passChance = Math.max(0.2, cardRatio - opponentLostRatio * 0.5);
+  // 카드가 적을수록 아낄 확률 증가 (cardRatio가 낮을수록 passChance 높음)
+  let passChance = 1.0 - cardRatio;
+  
+  // 상대방이 손실이 크면 더 적극적으로 싸우려 함
+  passChance -= opponentLostRatio * 0.5;
+
+  // 확률을 10% ~ 90% 사이로 제한
+  passChance = Math.max(0.1, Math.min(0.9, passChance));
 
   // 확률로 결정
   if (Math.random() < passChance) {
