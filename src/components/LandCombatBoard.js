@@ -19,6 +19,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   const [turn, setTurn] = useState(1);
   const [nukeUses, setNukeUses] = useState(0); // 핵무기/핵미사일 사용 횟수 (보유 수량만큼 제한)
   const [autoAirCombat, setAutoAirCombat] = useState(false); // 제공권 다이스 자동 위임
+  const [orderMode, setOrderMode] = useState('move'); // 'move' | 'attack'
 
   // 보유 특수 유닛 스캔 및 공격력 추출 (보드나 투입 대기 중인 상태 등 필드에 있는 자기 유닛 기준)
   const specialUnits = React.useMemo(() => {
@@ -66,8 +67,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       
       // 이미 유닛이 선택된 상태라면 명령(이동/공격) 예약
       if (selectedUnit) {
-        if (selectedUnit.subCategory === '포병' && clickedUnit && clickedUnit.owner !== countryId) {
-          // 포격 예약
+        if (orderMode === 'attack') {
+          // 공격 예약
           setOrders(prev => [...prev.filter(o => o.unitId !== selectedUnit.id), { unitId: selectedUnit.id, type: 'attack', target: {x, y} }]);
           setSelectedUnit(null);
         } else {
@@ -101,6 +102,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             }
           }
           setSelectedUnit(clickedUnit);
+          setOrderMode(clickedUnit.subCategory === '포병' ? 'attack' : 'move'); // 포병은 기본적으로 포격 모드로 시작
         }
       }
     } else if (targetingSkill) {
@@ -494,7 +496,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 )}
                 
                 {/* 오더(예약된 행동) 타겟 표시 */}
-                {isVisible && orders.find(o => o.target.x === x && o.target.y === y) && (
+                {isVisible && orders.find(o => o.target && o.target.x === x && o.target.y === y) && (
                   <div style={{ 
                     position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', 
                     width: '12px', height: '12px', border: `2px solid ${uiColors.neonYellow}`, borderRadius: '50%',
@@ -535,6 +537,11 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
+                  {selectedUnit.subCategory === '포병' && (
+                    <button className="cyber-btn" style={{ flex: 1, borderColor: uiColors.neonYellow, color: uiColors.neonYellow }} onClick={() => setOrderMode(orderMode === 'move' ? 'attack' : 'move')}>
+                      모드 전환: {orderMode === 'move' ? '이동' : '포격'}
+                    </button>
+                  )}
                   <button className="cyber-btn" style={{ flex: 1, borderColor: uiColors.neonRed, color: uiColors.neonRed }} onClick={() => {
                     setOrders(prev => [...prev.filter(o => o.unitId !== selectedUnit.id), { unitId: selectedUnit.id, type: 'retreat' }]);
                     setSelectedUnit(null);
