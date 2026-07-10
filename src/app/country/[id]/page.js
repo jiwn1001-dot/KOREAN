@@ -787,14 +787,18 @@ export default function CountryPage() {
               <select id="newQueueBp" className="form-select" style={{ flex: 1 }} value={queueBpId} onChange={e => setQueueBpId(e.target.value)}>
                 <option value="">-- 생산할 무기 선택 --</option>
                 {weaponBlueprints.filter(bp => {
-                  return researches.some(r => {
-                    if (r.status !== 'completed') return false;
-                    const tree = techTrees.find(t => t.name === r.name);
-                    if (!tree) return false;
-                    const levelData = tree.levels?.find(l => l.level === r.level);
-                    const techName = levelData ? (levelData.name || `${tree.name} ${r.level}단계`) : null;
-                    return techName === bp.name;
-                  });
+                  let requiredTreeName = null;
+                  let requiredLevel = null;
+                  for (const tree of techTrees) {
+                    const lData = tree.levels?.find(l => (l.name || `${tree.name} ${l.level}단계`) === bp.name);
+                    if (lData) {
+                      requiredTreeName = tree.name;
+                      requiredLevel = lData.level;
+                      break;
+                    }
+                  }
+                  if (!requiredTreeName) return false;
+                  return researches.some(r => r.status === 'completed' && r.name === requiredTreeName && r.level >= requiredLevel);
                 }).map(bp => (
                   <option key={bp.id} value={bp.id}>{bp.name} (요구: {bp.facility === 'heavy' ? '중공업단지' : '조선소'} {bp.industryCost})</option>
                 ))}
