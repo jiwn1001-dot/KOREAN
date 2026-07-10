@@ -341,6 +341,7 @@ export default function AdminPage() {
     else if (activeSection === 'geography') loadGeography();
     else if (activeSection === 'country-info') {
       loadCountries();
+      loadGameSettings();
       if (selectedCountryId) loadCountryData(selectedCountryId);
     }
     else if (activeSection === 'research' || activeSection === 'blueprints' || activeSection === 'formations' || activeSection === 'aerial') {
@@ -1776,6 +1777,7 @@ export default function AdminPage() {
       </div>
     );
   };
+  const renderBlueprints = () => <ErrorBoundary><RenderBlueprintsInner /></ErrorBoundary>;
   const RenderBlueprintsInner = () => (
     <div className="fade-in">
       <h2>🛠️ 무기 청사진(설계도) 관리</h2>
