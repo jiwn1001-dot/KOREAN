@@ -951,8 +951,7 @@ export default function CountryPage() {
       }
     });
 
-    const economyEntry = data.economy || {};
-    const totalMobilizable = Number(economyEntry.population?.mobilizable || 0);
+    const totalMobilizable = Number(economyData.population?.mobilizable || 0);
 
     return (
       <div className="slide-up">
@@ -1057,7 +1056,7 @@ export default function CountryPage() {
                 }
                 
                 // 2. 동원가능인구 차감
-                const newEcoData = { ...economyEntry };
+                const newEcoData = { ...economyData };
                 newEcoData.population = { ...newEcoData.population, mobilizable: totalMobilizable - totalManpowerCost };
                 await upsertDataEntry('economy', countryId, newEcoData);
 
@@ -1127,8 +1126,8 @@ export default function CountryPage() {
                               }
                               
                               // 2. Return manpower
-                              const newEcoData = { ...economyEntry };
-                              newEcoData.population = { ...newEcoData.population, mobilizable: Number(newEcoData.population.mobilizable || 0) + manpowerToReturn };
+                              const newEcoData = { ...economyData };
+                              newEcoData.population = { ...(newEcoData.population || {}), mobilizable: Number(newEcoData.population?.mobilizable || 0) + manpowerToReturn };
                               await upsertDataEntry('economy', countryId, newEcoData);
                               
                               // 3. Update unit count
