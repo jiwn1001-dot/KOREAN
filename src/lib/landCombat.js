@@ -361,15 +361,13 @@ export function resolveSimultaneousTurn(session) {
       if (u.originalAttack === undefined) u.originalAttack = u.attack;
       if (u.originalDefense === undefined) u.originalDefense = u.defense;
       if (u.originalSpeed === undefined) u.originalSpeed = u.speed;
+      if (u.originalMaxHp === undefined) u.originalMaxHp = (u.maxHp || 100);
 
       u.attack = Math.floor(u.originalAttack * supplyMultiplier);
       u.defense = Math.floor(u.originalDefense * supplyMultiplier);
       u.speed = Math.floor(u.originalSpeed * supplyMultiplier);
-      
-      // 기획자 피드백: 최대 체력이 아니라 "현재 체력"을 직접 반토막냄
-      if (!u.isHQ) {
-        u.hp = Math.max(1, Math.floor(u.hp * supplyMultiplier)); 
-      }
+      u.maxHp = Math.floor(u.originalMaxHp * supplyMultiplier);
+      if (u.hp > u.maxHp) u.hp = u.maxHp;
     });
   } else {
     // 페널티 해제 복구 (필요시)
@@ -377,6 +375,7 @@ export function resolveSimultaneousTurn(session) {
       if (u.originalAttack) u.attack = u.originalAttack;
       if (u.originalDefense) u.defense = u.originalDefense;
       if (u.originalSpeed) u.speed = u.originalSpeed;
+      if (u.originalMaxHp) u.maxHp = u.originalMaxHp;
     });
   }
 
@@ -402,47 +401,43 @@ export function resolveSimultaneousTurn(session) {
     });
   }
 
-  // 1. 후퇴(Retreat) 먼저 처리 (즉각 대기 및 체력 100% 회복 청구)
+  // 1. 후퇴(Retreat) 먼저 처리 (즉각 대기 및 체력 회복 검증)
   orders.filter(o => o.type === 'retreat').forEach(order => {
     const unit = units.find(u => u.id === order.unitId);
     if (unit) {
       unit.status = 'standby'; // 대기 상태로 전환
-      const hpDeficit = (unit.maxHp || 100) - unit.hp;
-      if (hpDeficit > 0) {
-        const healRatio = hpDeficit / (unit.maxHp || 100);
-        const manpowerCost = Math.floor((unit.manpowerCost || 10) * healRatio);
-        const equipCost = Math.floor((unit.equipmentCost || 50) * healRatio);
+      if (unit.hp < (unit.maxHp || 100)) {
+        const max = unit.maxHp || 100;
+        const missingRatio = (max - unit.hp) / max;
         
-        let canAfford = true;
+        const reqManpower = Math.floor((unit.manpowerCost || 0) * missingRatio);
+        const reqWeapons = (unit.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: Math.max(1, Math.floor(w.amount * missingRatio)) }));
+        
+        let canHeal = true;
         if (session.countryResources) {
-           const myRes = session.countryResources[unit.owner] || session.countryResources;
-           if (myRes.manpower < manpowerCost || myRes.equipment < equipCost) {
-              canAfford = false;
-           }
-        }
-
-        if (canAfford) {
-          if (session.countryResources) {
-             const myRes = session.countryResources[unit.owner] || session.countryResources;
-             myRes.manpower -= manpowerCost;
-             myRes.equipment -= equipCost;
+          const res = session.countryResources;
+          if ((res.manpower || 0) < reqManpower) canHeal = false;
+          reqWeapons.forEach(rw => {
+            if (!res.weapons || (res.weapons[rw.name] || 0) < rw.amount) canHeal = false;
+          });
+          
+          if (canHeal) {
+             res.manpower -= reqManpower;
+             reqWeapons.forEach(rw => {
+               res.weapons[rw.name] -= rw.amount;
+             });
           }
+        }
+        
+        if (canHeal) {
+          unit.hp = max; // 자원이 충분하므로 풀피 회복
           session.resourceDeductions.push({
-            unitId: unit.id,
-            name: unit.name,
-            manpower: manpowerCost,
-            equipment: equipCost,
-            reason: 'retreat_heal'
+            owner: unit.owner,
+            manpower: reqManpower,
+            weapons: reqWeapons
           });
-          unit.hp = unit.maxHp || 100;
         } else {
-          session.resourceDeductions.push({
-            unitId: unit.id,
-            name: unit.name,
-            manpower: 0,
-            equipment: 0,
-            reason: 'retreat_failed_insufficient_resources'
-          });
+          // 기획 의도: "부족하다면 회복 못해" - 체력 그대로 대기열 진입
         }
       }
     }
@@ -715,4 +710,32 @@ export function calculateAirInterception(antiAir, aircraftSpeed) {
     return false; // 요격 실패 (폭격기 승리)
   }
   return true; // 요격 성공 (수비 승리)
+}
+
+/**
+ * 게임 종료(항복, 사령부 파괴) 시 생존 유닛들의 남은 체력 비율을 기반으로 인력/무기 손실을 계산
+ */
+export function calculateCasualties(units) {
+  const casualties = {}; 
+  
+  units.forEach(u => {
+    if (u.isHQ) return; // 사령부는 비용 계산에서 제외 (일반 유닛만 계산)
+    if (!casualties[u.owner]) casualties[u.owner] = { manpower: 0, weapons: {} };
+    
+    // 사망한 유닛 또는 깎인 체력 비율 계산
+    const max = u.maxHp || 100;
+    const hp = u.status === 'destroyed' ? 0 : u.hp;
+    const lostRatio = Math.min(1, Math.max(0, (max - hp) / max));
+    
+    if (lostRatio > 0) {
+      casualties[u.owner].manpower += Math.floor((u.manpowerCost || 0) * lostRatio);
+      (u.requiredWeapons || []).forEach(w => {
+        const amt = Math.max(1, Math.floor(w.amount * lostRatio));
+        if (!casualties[u.owner].weapons[w.weaponName]) casualties[u.owner].weapons[w.weaponName] = 0;
+        casualties[u.owner].weapons[w.weaponName] += amt;
+      });
+    }
+  });
+  
+  return casualties;
 }

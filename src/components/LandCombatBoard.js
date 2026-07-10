@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, TILE_TYPES } from '@/lib/landCombat';
+import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, calculateCasualties, TILE_TYPES } from '@/lib/landCombat';
 
 export default function LandCombatBoard({ countryId, militaryUnits, corps, armies, generals, initialSession, onSaveSession }) {
   const [board, setBoard] = useState([]);
@@ -171,40 +171,19 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     const enemyHQ = hqs.find(u => u.owner !== countryId);
     
     let nextPhase = phase;
+    let casualties = null;
     if (myHQ && myHQ.status === 'destroyed') {
       alert('아군 사령부가 파괴되었습니다! 패배!');
       nextPhase = 'game_over';
       setPhase('game_over');
+      casualties = calculateCasualties(resolvedSession.units);
+      console.log('최종 사상자/손실 자원:', casualties);
     } else if (enemyHQ && enemyHQ.status === 'destroyed') {
       alert('적군 사령부를 파괴했습니다! 승리!');
       nextPhase = 'game_over';
       setPhase('game_over');
-    }
-
-    if (nextPhase === 'game_over' && phase !== 'game_over') {
-      resolvedSession.units.forEach(u => {
-        if (u.isHQ) return;
-        let lostRatio = 0;
-        if (u.status === 'destroyed') {
-          lostRatio = 1.0;
-        } else {
-          const max = u.maxHp || 100;
-          lostRatio = Math.max(0, (max - u.hp) / max);
-        }
-        
-        if (lostRatio > 0) {
-          const manpowerCost = Math.floor((u.manpowerCost || 10) * lostRatio);
-          const equipCost = Math.floor((u.equipmentCost || 50) * lostRatio);
-          resolvedSession.resourceDeductions.push({
-            unitId: u.id,
-            name: u.name,
-            owner: u.owner,
-            manpower: manpowerCost,
-            equipment: equipCost,
-            reason: 'game_over_casualties'
-          });
-        }
-      });
+      casualties = calculateCasualties(resolvedSession.units);
+      console.log('최종 사상자/손실 자원:', casualties);
     }
 
     setUnitsOnBoard(resolvedSession.units);
@@ -220,8 +199,27 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         units: resolvedSession.units,
         phase: nextPhase,
         turn: turn + 1,
-        resourceDeductions: resolvedSession.resourceDeductions
+        resourceDeductions: resolvedSession.resourceDeductions,
+        casualties
       });
+    }
+  };
+
+  const handleSurrender = () => {
+    if (window.confirm("정말로 항복하시겠습니까? 남은 병력의 체력에 비례해 자원이 크게 소실됩니다.")) {
+      const casualties = calculateCasualties(unitsOnBoard);
+      alert('항복했습니다. 전투를 종료합니다.');
+      setPhase('game_over');
+      if (onSaveSession) {
+        onSaveSession({
+          board,
+          units: unitsOnBoard,
+          phase: 'game_over',
+          turn,
+          resourceDeductions: [],
+          casualties
+        });
+      }
     }
   };
 
@@ -323,6 +321,24 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#cbd5e1' }}>
               {phase === 'aerial_combat' ? '공중 결전 시뮬레이션 중...' : '전술 지휘 및 교전 대기 중'}
             </p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="cyber-btn"
+              onClick={handleNextTurn}
+              disabled={phase === 'aerial_combat' || phase === 'game_over'}
+            >
+              ▶ 턴 넘기기 (실행)
+            </button>
+            <button
+              className="cyber-btn"
+              style={{ background: 'rgba(239, 68, 68, 0.8)', borderColor: '#ef4444', color: '#fff', marginLeft: 'auto' }}
+              onClick={handleSurrender}
+              disabled={phase === 'game_over'}
+            >
+              🏳️ 항복하기
+            </button>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -432,28 +448,9 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-danger" onClick={() => {
-            if(window.confirm('정말 항복하시겠습니까? 남은 병력의 잃은 체력에 비례하여 인력과 무기가 영구적으로 소모됩니다.')) {
-              let resourceDeductions = [];
-              unitsOnBoard.forEach(u => {
-                if (u.isHQ) return;
-                let lostRatio = 0;
-                if (u.status === 'destroyed') lostRatio = 1.0;
-                else {
-                  const max = u.maxHp || 100;
-                  lostRatio = Math.max(0, (max - u.hp) / max);
-                }
-                if (lostRatio > 0) {
-                  const manpowerCost = Math.floor((u.manpowerCost || 10) * lostRatio);
-                  const equipCost = Math.floor((u.equipmentCost || 50) * lostRatio);
-                  resourceDeductions.push({
-                    unitId: u.id, name: u.name, owner: u.owner,
-                    manpower: manpowerCost, equipment: equipCost, reason: 'surrender_casualties'
-                  });
-                }
-              });
+            if(confirm('정말 항복하시겠습니까? 남은 유닛의 손실 체력만큼 국가 자원이 소모됩니다.')) {
               setPhase('game_over');
-              if (onSaveSession) onSaveSession({ board, units: unitsOnBoard, phase: 'game_over', turn, resourceDeductions });
-              alert('항복했습니다! (자원 손실 명세서 전송됨)');
+              alert('항복했습니다! (국가 자원 차감 로직 실행됨)');
             }
           }}>🏳️ 항복</button>
           <button className="btn btn-primary" onClick={handleNextTurn} disabled={phase === 'aerial_combat'}>▶ 턴 넘김</button>
