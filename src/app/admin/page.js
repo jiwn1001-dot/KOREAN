@@ -2342,32 +2342,72 @@ export default function AdminPage() {
               {/* 카드 선택 UI */}
               {testAerialGame.status !== 'finished' && (
                 <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
+                  <p style={{ marginBottom: '12px', fontWeight: 'bold' }}>내 패 (유닛 선택하여 투입):</p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button 
-                      className="btn btn-sm btn-primary"
-                      onClick={() => {
-                        const battleClone = JSON.parse(JSON.stringify(testAerialGame));
-                        
-                        // 플레이어는 랜덤 일반 카드(또는 첫 번째 카드) 제출
-                        const pCard = battleClone.attackerState.hand[0];
-                        if (!pCard) return showToast('낼 카드가 없습니다.', 'error');
-                        
-                        battleClone.attackerChoice = { cardId: pCard.cardId, type: pCard.isAce ? 'ace' : 'normal' };
-                        
-                        // AI 선택
-                        const aiCard = aiChooseCard(battleClone.defenderState, battleClone.attackerState);
-                        battleClone.defenderChoice = aiCard ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
-                        
-                        // 라운드 처리
-                        processBattleRound(battleClone);
-                        
-                        const lastResult = battleClone.history[battleClone.history.length - 1];
-                        setTestGameLog([...testGameLog, { type: 'round', round: battleClone.round - 1, result: lastResult?.description }]);
-                        setTestAerialGame(battleClone);
-                      }}
-                    >
-                      🃏 카드 내기 (첫 번째 카드)
-                    </button>
+                    {/* 그룹화된 카드 버튼 생성 */}
+                    {(() => {
+                      const groups = {};
+                      testAerialGame.attackerState.hand.forEach(c => {
+                        const key = `${c.speed}_${c.isAce}_${c.canBlock}`;
+                        if (!groups[key]) {
+                          groups[key] = { ...c, count: 0, cardIds: [] };
+                        }
+                        groups[key].count++;
+                        groups[key].cardIds.push(c.cardId);
+                      });
+                      const groupedCards = Object.values(groups).sort((a,b) => b.speed - a.speed);
+                      
+                      return groupedCards.map(g => (
+                        <button 
+                          key={g.cardIds[0]}
+                          className={`btn btn-sm ${g.isAce ? 'btn-accent' : 'btn-primary'}`}
+                          onClick={() => {
+                            const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                            battleClone.attackerChoice = { cardId: g.cardIds[0], type: g.isAce ? 'ace' : 'normal' };
+                            
+                            // AI 선택
+                            const aiCard = aiChooseCard(battleClone.defenderState, battleClone.attackerState);
+                            battleClone.defenderChoice = aiCard ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
+                            
+                            // 라운드 처리
+                            processBattleRound(battleClone);
+                            
+                            const lastResult = battleClone.history[battleClone.history.length - 1];
+                            setTestGameLog([...testGameLog, { type: 'round', round: battleClone.round - 1, result: lastResult?.description }]);
+                            setTestAerialGame(battleClone);
+                          }}
+                        >
+                          {g.isAce ? '⭐ 에이스' : '전투기'} (속도 {g.speed}) x{g.count}장
+                        </button>
+                      ));
+                    })()}
+                    
+                    {(() => {
+                      const groupsAA = {};
+                      testAerialGame.attackerState.antiAircraft.forEach(c => {
+                        const key = `aa_${c.cardId}`; // 대공포는 다 같지만 일단 하나씩 낼수도 있고 묶을수도 있음
+                        if (!groupsAA['aa']) groupsAA['aa'] = { ...c, count: 0, cardIds: [] };
+                        groupsAA['aa'].count++;
+                        groupsAA['aa'].cardIds.push(c.cardId);
+                      });
+                      return groupsAA['aa'] ? (
+                        <button 
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                            battleClone.attackerChoice = { cardId: groupsAA['aa'].cardIds[0], type: 'aa' };
+                            const aiCard = aiChooseCard(battleClone.defenderState, battleClone.attackerState);
+                            battleClone.defenderChoice = aiCard ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
+                            processBattleRound(battleClone);
+                            const lastResult = battleClone.history[battleClone.history.length - 1];
+                            setTestGameLog([...testGameLog, { type: 'round', round: battleClone.round - 1, result: lastResult?.description }]);
+                            setTestAerialGame(battleClone);
+                          }}
+                        >
+                          🚀 대공포 x{groupsAA['aa'].count}장
+                        </button>
+                      ) : null;
+                    })()}
                     
                     <button 
                       className="btn btn-sm btn-warning"
@@ -2389,6 +2429,7 @@ export default function AdminPage() {
 
                     <button
                       className="btn btn-sm btn-success"
+                      style={{ marginLeft: 'auto' }}
                       onClick={() => {
                         const battleClone = JSON.parse(JSON.stringify(testAerialGame));
                         const newUnits = [{ id: 'test_reinforce', templateId: 't_air', speed: 2, quantity: 10, supplyConsumption: 1 }];
@@ -2398,7 +2439,7 @@ export default function AdminPage() {
                         showToast('병력이 10기 추가되었습니다.', 'success');
                       }}
                     >
-                      ➕ 추가 카드 투입
+                      ➕ 10기 추가 투입
                     </button>
 
                     <button
