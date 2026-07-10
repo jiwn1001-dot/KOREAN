@@ -451,6 +451,24 @@ export async function getAllAirSupremacyStatus() {
   }
 }
 
+export async function getAerialBattleSessionsForCountry(countryId) {
+  try {
+    const { data, error } = await supabase
+      .from('data_entries')
+      .select('id, country_id, data')
+      .eq('category', 'aerial_combat_session');
+    
+    if (error) throw error;
+    
+    // Filter manually since OR query with JSONB might be complex in Supabase JS v1 depending on setup
+    return data.filter(d => d.data?.attackerId === countryId || d.data?.defenderId === countryId)
+               .map(d => ({ entryId: d.id, battleId: d.country_id, ...d.data }));
+  } catch (err) {
+    console.error('Failed to get aerial battle sessions:', err);
+    return [];
+  }
+}
+
 /**
  * 국가별 보급 상태 및 제공권 손실 확인
  * @param {string} countryId - 국가 ID

@@ -35,11 +35,11 @@ import {
 import { supabase } from '@/lib/supabase';
 import { processTurnEnd, rollbackTurn, resetToTurnOne, transferTech } from '@/lib/gameLogic';
 import { 
-  createAerialCombatSession, 
-  resolveAerialRound,
-  aiChooseCard,
-  aiRespondToBattle,
-  aiShouldSurrender
+  createAerialBattle,
+  processBattleRound,
+  surrenderAerialBattle,
+  addReinforcements,
+  aiChooseCard
 } from '@/lib/aerialCombat';
 import LoginModal from '@/components/LoginModal';
 
@@ -2284,31 +2284,27 @@ export default function AdminPage() {
         <div style={{ marginTop: '32px', borderTop: '2px solid var(--border-color)', paddingTop: '24px' }}>
           <h3>🎮 테스트 플레이 (AI 상대)</h3>
           <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>
-            AI 상대와 공중전을 테스트할 수 있습니다.
+            AI 상대와 공중전 수동 배틀(PvP 방식)을 테스트할 수 있습니다.
           </p>
 
           {!testAerialGame ? (
             <button 
               className="btn btn-success"
               onClick={async () => {
+                if (!selectedCountryId) {
+                  showToast('먼저 국가를 선택해주세요.', 'error');
+                  return;
+                }
                 try {
-                  // 전투기 유닛 더미 생성 (테스트용)
+                  // 테스트 요구사항: 속도 2짜리 전투기 각 20장
                   const testUnits = [
-                    { id: 'fighter1', speed: 3, quantity: 5, supplyConsumption: 10, image: 'https://images.unsplash.com/photo-1542382257-80da358a9c39?w=300' },
-                    { id: 'fighter2', speed: 2, quantity: 15, supplyConsumption: 15, image: 'https://images.unsplash.com/photo-1629838031359-577ba613b5fb?w=300' },
-                    { id: 'fighter3', speed: 4, quantity: 5, supplyConsumption: 12, image: 'https://images.unsplash.com/photo-1559160581-4471b87a8bba?w=300' }
+                    { id: 'test_fighter', templateId: 't_air', speed: 2, quantity: 20, supplyConsumption: 1 }
                   ];
 
-                  const playerSession = createAerialCombatSession(selectedCountryId, testUnits, aerialSessionForm.supplyLimit);
-                  const aiSession = createAerialCombatSession('ai_opponent', testUnits, aerialSessionForm.supplyLimit);
+                  const battleSession = createAerialBattle(selectedCountryId, 'ai_opponent', testUnits, testUnits, aerialSessionForm.supplyLimit || 9999, aerialSessionForm.supplyLimit || 9999);
 
-                  setTestAerialGame({
-                    player: playerSession,
-                    ai: aiSession,
-                    round: 0,
-                    gameStatus: 'playing' // 'playing', 'finished'
-                  });
-                  setTestGameLog([{ type: 'start', message: '공중전 시작!' }]);
+                  setTestAerialGame(battleSession);
+                  setTestGameLog([{ type: 'start', message: '속도 2 전투기 20기로 공중전 테스트 시작!' }]);
                   showToast('테스트 게임이 시작되었습니다.', 'success');
                 } catch (err) {
                   console.error(err);
@@ -2316,7 +2312,7 @@ export default function AdminPage() {
                 }
               }}
             >
-              🎮 테스트 게임 시작
+              🎮 테스트 세션 열기
             </button>
           ) : (
             <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
@@ -2325,14 +2321,10 @@ export default function AdminPage() {
                 <div style={{ border: '1px solid var(--border-color)', padding: '12px', borderRadius: '4px' }}>
                   <h4>👤 플레이어</h4>
                   <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                    <div>패 남음: {testAerialGame.player?.hand?.length || 0}</div>
-                    <div>손실: {testAerialGame.player?.lost?.length || 0}</div>
-                    <div>에이스: {testAerialGame.player?.aceCount || 0}</div>
-                    <div>대공포: {testAerialGame.player?.antiAircraft?.length || 0}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '10px 0', marginTop: '10px' }}>
-                    {testAerialGame.player?.hand?.map(c => <AerialCardUI key={c.cardId} card={c} />)}
-                    {testAerialGame.player?.antiAircraft?.filter(c => c.status === 'hand').map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                    <div>패 남음: {testAerialGame.attackerState?.hand?.length || 0}</div>
+                    <div>손실: {testAerialGame.attackerState?.lost?.length || 0}</div>
+                    <div>에이스 누적: {testAerialGame.attackerState?.cumulativeAcesGenerated || 0}</div>
+                    <div>대공포: {testAerialGame.attackerState?.antiAircraft?.length || 0}</div>
                   </div>
                 </div>
 
@@ -2340,87 +2332,89 @@ export default function AdminPage() {
                 <div style={{ border: '1px solid var(--primary)', padding: '12px', borderRadius: '4px', backgroundColor: 'rgba(124, 107, 240, 0.1)' }}>
                   <h4>🤖 AI</h4>
                   <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                    <div>패 남음: {testAerialGame.ai?.hand?.length || 0}</div>
-                    <div>손실: {testAerialGame.ai?.lost?.length || 0}</div>
-                    <div>에이스: {testAerialGame.ai?.aceCount || 0}</div>
-                    <div>대공포: {testAerialGame.ai?.antiAircraft?.length || 0}</div>
+                    <div>패 남음: {testAerialGame.defenderState?.hand?.length || 0}</div>
+                    <div>손실: {testAerialGame.defenderState?.lost?.length || 0}</div>
+                    <div>대공포: {testAerialGame.defenderState?.antiAircraft?.length || 0}</div>
                   </div>
                 </div>
               </div>
 
               {/* 카드 선택 UI */}
-              <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
-                <p style={{ marginBottom: '12px' }}>플레이어 선택:</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button 
-                    className="btn btn-sm btn-primary"
-                    onClick={async () => {
-                      const playerCard = testAerialGame.player.hand[Math.floor(Math.random() * testAerialGame.player.hand.length)];
-                      const aiCard = aiChooseCard(testAerialGame.ai, testAerialGame.player);
-                      
-                      const result = resolveAerialRound(playerCard, aiCard);
-                      
-                      // 카드 상태 업데이트 (간단한 버전)
-                      if (result.attackerLost && playerCard) {
-                        testAerialGame.player.hand = testAerialGame.player.hand.filter(c => c.cardId !== playerCard.cardId);
-                        testAerialGame.player.lost.push(playerCard);
-                      }
-                      if (result.defenderLost && aiCard) {
-                        testAerialGame.ai.hand = testAerialGame.ai.hand.filter(c => c.cardId !== aiCard.cardId);
-                        testAerialGame.ai.lost.push(aiCard);
-                      }
+              {testAerialGame.status !== 'finished' && (
+                <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button 
+                      className="btn btn-sm btn-primary"
+                      onClick={() => {
+                        const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                        
+                        // 플레이어는 랜덤 일반 카드(또는 첫 번째 카드) 제출
+                        const pCard = battleClone.attackerState.hand[0];
+                        if (!pCard) return showToast('낼 카드가 없습니다.', 'error');
+                        
+                        battleClone.attackerChoice = { cardId: pCard.cardId, type: pCard.isAce ? 'ace' : 'normal' };
+                        
+                        // AI 선택
+                        const aiCard = aiChooseCard(battleClone.defenderState, battleClone.attackerState);
+                        battleClone.defenderChoice = aiCard ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
+                        
+                        // 라운드 처리
+                        processBattleRound(battleClone);
+                        
+                        const lastResult = battleClone.history[battleClone.history.length - 1];
+                        setTestGameLog([...testGameLog, { type: 'round', round: battleClone.round - 1, result: lastResult?.description }]);
+                        setTestAerialGame(battleClone);
+                      }}
+                    >
+                      🃏 카드 내기 (첫 번째 카드)
+                    </button>
+                    
+                    <button 
+                      className="btn btn-sm btn-warning"
+                      onClick={() => {
+                        const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                        battleClone.attackerChoice = { cardId: null, type: 'pass' };
+                        
+                        const aiCard = aiChooseCard(battleClone.defenderState, battleClone.attackerState);
+                        battleClone.defenderChoice = aiCard ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
+                        
+                        processBattleRound(battleClone);
+                        const lastResult = battleClone.history[battleClone.history.length - 1];
+                        setTestGameLog([...testGameLog, { type: 'round', round: battleClone.round - 1, result: lastResult?.description }]);
+                        setTestAerialGame(battleClone);
+                      }}
+                    >
+                      💤 아끼기 (Pass)
+                    </button>
 
-                      const log = {
-                        type: 'round',
-                        round: testAerialGame.round + 1,
-                        playerCard: playerCard?.cardId,
-                        aiCard: aiCard?.cardId,
-                        result: result.description
-                      };
+                    <button
+                      className="btn btn-sm btn-success"
+                      onClick={() => {
+                        const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                        const newUnits = [{ id: 'test_reinforce', templateId: 't_air', speed: 2, quantity: 10, supplyConsumption: 1 }];
+                        addReinforcements(battleClone, true, newUnits);
+                        setTestAerialGame(battleClone);
+                        setTestGameLog([...testGameLog, { type: 'start', message: '속도 2 전투기 10기 추가 투입!' }]);
+                        showToast('병력이 10기 추가되었습니다.', 'success');
+                      }}
+                    >
+                      ➕ 추가 카드 투입
+                    </button>
 
-                      setTestGameLog([...testGameLog, log]);
-                      setTestAerialGame({
-                        ...testAerialGame,
-                        round: testAerialGame.round + 1,
-                        gameStatus: testAerialGame.player.hand.length === 0 || testAerialGame.ai.hand.length === 0 ? 'finished' : 'playing'
-                      });
-                      showToast(`라운드 ${testAerialGame.round + 1}: ${result.description}`, 'info');
-                    }}
-                  >
-                    🃏 카드 낸다
-                  </button>
-                  <button 
-                    className="btn btn-sm"
-                    onClick={() => {
-                      const aiCard = aiChooseCard(testAerialGame.ai, testAerialGame.player);
-                      const result = resolveAerialRound(null, aiCard);
-                      
-                      // AI 카드 소모 처리
-                      if (result.defenderLost && aiCard) {
-                        testAerialGame.ai.hand = testAerialGame.ai.hand.filter(c => c.cardId !== aiCard.cardId);
-                        testAerialGame.ai.lost.push(aiCard);
-                      }
-
-                      const log = {
-                        type: 'round',
-                        round: testAerialGame.round + 1,
-                        playerCard: null,
-                        aiCard: aiCard?.cardId,
-                        result: result.description
-                      };
-
-                      setTestGameLog([...testGameLog, log]);
-                      setTestAerialGame({
-                        ...testAerialGame,
-                        round: testAerialGame.round + 1
-                      });
-                      showToast(`라운드 ${testAerialGame.round + 1}: ${result.description}`, 'info');
-                    }}
-                  >
-                    💤 아낀다
-                  </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => {
+                        const battleClone = JSON.parse(JSON.stringify(testAerialGame));
+                        surrenderAerialBattle(battleClone, selectedCountryId);
+                        setTestAerialGame(battleClone);
+                        setTestGameLog([...testGameLog, { type: 'start', message: '플레이어가 항복했습니다.' }]);
+                      }}
+                    >
+                      🏳️ 항복하기
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 게임 로그 */}
               <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px' }}>
@@ -2433,10 +2427,10 @@ export default function AdminPage() {
               </div>
 
               {/* 게임 상태 */}
-              {testAerialGame.gameStatus === 'finished' && (
+              {testAerialGame.status === 'finished' && (
                 <div style={{ padding: '12px', backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: '4px', marginBottom: '16px' }}>
                   <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-                    🏁 게임 종료: {testAerialGame.player.hand.length > 0 ? '👤 플레이어 승리!' : '🤖 AI 승리!'}
+                    🏁 게임 종료!
                   </p>
                 </div>
               )}

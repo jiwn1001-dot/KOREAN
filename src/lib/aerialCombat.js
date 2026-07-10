@@ -10,9 +10,9 @@ import { saveAerialCombatSession, getAerialCombatSession } from './store';
  * @param {Array} aircraftUnits - 전투기 유닛 배열 (각 유닛: {id, unitTemplateId, speed, quantity})
  * @returns {Array} 카드 배열 [{unitId, cardId, speed, isAce, canBlock}]
  */
-export function generateAerialCards(aircraftUnits) {
+export function generateAerialCards(aircraftUnits, cumulativeUnitsDeployed = 0, cumulativeAcesGenerated = 0) {
   const cards = [];
-  let totalQuantity = 0;
+  let addedQuantity = 0;
 
   // 1. 모든 카드 생성 (아직 에이스 미배정)
   aircraftUnits.forEach(unit => {
@@ -21,12 +21,12 @@ export function generateAerialCards(aircraftUnits) {
     const quantity = unit.quantity || 0;
     const unitImage = unit.image || null;
 
-    totalQuantity += quantity;
+    addedQuantity += quantity;
 
     for (let i = 0; i < quantity; i++) {
       cards.push({
         unitId,
-        cardId: `${unitId}_${i}`,
+        cardId: `${unitId}_${Date.now()}_${i}`, // Ensure unique ID for reinforcements
         speed,
         unitImage,
         isAce: false,
@@ -36,13 +36,15 @@ export function generateAerialCards(aircraftUnits) {
     }
   });
 
-  // 2. 전체 수량 기준으로 10장당 1장 에이스 산정
-  const aceCount = Math.floor(totalQuantity / 10);
+  // 2. 누적 수량 기준으로 에이스 산정
+  const newCumulativeUnits = cumulativeUnitsDeployed + addedQuantity;
+  const newCumulativeAces = Math.floor(newCumulativeUnits / 10);
+  const acesToAssign = newCumulativeAces - cumulativeAcesGenerated;
 
   // 3. 속도가 빠른 순으로 정렬하여 에이스 배정
   cards.sort((a, b) => b.speed - a.speed);
 
-  for (let i = 0; i < aceCount; i++) {
+  for (let i = 0; i < acesToAssign; i++) {
     if (cards[i]) {
       cards[i].isAce = true;
     }
@@ -51,7 +53,12 @@ export function generateAerialCards(aircraftUnits) {
   // 패를 섞어줌 (선택사항이나, 가장 빠른게 항상 먼저 나오면 안될 수 있으므로 무작위 섞기)
   cards.sort(() => Math.random() - 0.5);
 
-  return { cards, aceCount };
+  return { 
+    cards, 
+    newAces: acesToAssign,
+    cumulativeUnitsDeployed: newCumulativeUnits,
+    cumulativeAcesGenerated: newCumulativeAces
+  };
 }
 
 /**
@@ -176,32 +183,52 @@ export function resolveAerialRound(attackCard, defenseCard) {
  */
 
 /**
- * 공중전 세션 생성 (게임 시작 시)
- * @param {string} countryId - 국가 ID
- * @param {Array} aircraftUnits - 전투기 유닛 배열
- * @param {number} supplyLimit - 보급 한계
- * @returns {Object} 공중전 세션 정보
+ * 수동 PvP 공중결전 세션 생성 (글로벌 배틀 상태)
+ * @returns {Object} 공중결전 세션 정보
  */
-export function createAerialCombatSession(countryId, aircraftUnits, supplyLimit) {
-  const { cards, aceCount } = generateAerialCards(aircraftUnits);
-  const aaCards = generateAntiAircraftCards(aceCount);
+export function createAerialBattle(attackerId, defenderId, attackerUnits, defenderUnits, atkSupplyLimit, defSupplyLimit) {
+  const atkResult = generateAerialCards(attackerUnits, 0, 0);
+  const defResult = generateAerialCards(defenderUnits, 0, 0);
+  
+  // 대공포는 서로의 에이스 개수만큼 받음
+  const atkAA = generateAntiAircraftCards(defResult.newAces);
+  const defAA = generateAntiAircraftCards(atkResult.newAces);
 
   return {
-    countryId,
-    currentTurn: 1,
-    aceCount,
-    antiAircraftCountFixed: aceCount, // ⭐ 초기화 시점에 고정되며 변하지 않음
-    cards, // 모든 카드
-    hand: cards.filter(c => c.status === 'hand'), // 패
-    played: [], // 사용된 카드
-    lost: [], // 손실된 카드
-    antiAircraft: aaCards,
-    airSupremacy: null, // null | 'gained' | 'full'
-    supplyLimit,
-    totalSupplyUsed: 0,
-    roundHistory: [],
-    battleRequest: null, // {requesterId, status: 'pending'|'accepted'|'declined', timestamp}
-    status: 'active' // 'active', 'surrendered', 'defeated'
+    attackerId,
+    defenderId,
+    round: 1,
+    status: 'active', // 'active', 'finished'
+    
+    // 공격측 상태
+    attackerState: {
+      cards: atkResult.cards,
+      hand: atkResult.cards.filter(c => c.status === 'hand'),
+      antiAircraft: atkAA,
+      lost: [],
+      cumulativeUnitsDeployed: atkResult.cumulativeUnitsDeployed,
+      cumulativeAcesGenerated: atkResult.cumulativeAcesGenerated,
+      supplyLimit: atkSupplyLimit,
+      status: 'fighting' // 'fighting', 'surrendered'
+    },
+    
+    // 방어측 상태
+    defenderState: {
+      cards: defResult.cards,
+      hand: defResult.cards.filter(c => c.status === 'hand'),
+      antiAircraft: defAA,
+      lost: [],
+      cumulativeUnitsDeployed: defResult.cumulativeUnitsDeployed,
+      cumulativeAcesGenerated: defResult.cumulativeAcesGenerated,
+      supplyLimit: defSupplyLimit,
+      status: 'fighting'
+    },
+    
+    // 현재 라운드 선택
+    attackerChoice: null, // { cardId, type: 'normal'|'ace'|'aa'|'pass' }
+    defenderChoice: null,
+    
+    history: []
   };
 }
 
@@ -544,163 +571,144 @@ function applySupplyPenalty(card, adjustFactor) {
 }
 
 /**
- * 공중결전 라운드 (카드 1장씩 소모, 항복 불가)
- * @param {Object} atkSession - 공격국 세션
- * @param {Object} defSession - 방어국 세션
- * @param {number} atkAdjustFactor - 공격국 능력치 계수 (보급 한계 초과 시 0.5)
- * @param {number} defAdjustFactor - 방어국 능력치 계수 (보급 한계 초과 시 0.5)
- * @returns {Object} 이번 라운드 결과
+ * 수동 배틀 라운드 진행
+ * 양측이 카드를 모두 선택(또는 패스)했을 때 호출되어 1라운드를 진행합니다.
  */
-export function deathMatchRound(atkSession, defSession, atkAdjustFactor = 1.0, defAdjustFactor = 1.0) {
-  if (atkSession.hand.length === 0 || defSession.hand.length === 0) {
-    return { winner: null, reason: 'one_side_eliminated' };
-  }
+export function processBattleRound(battleSession, attackerUnits = [], defenderUnits = []) {
+  const atkChoice = battleSession.attackerChoice;
+  const defChoice = battleSession.defenderChoice;
+  
+  if (!atkChoice || !defChoice) return battleSession; // 아직 준비 안 됨
 
-  const atkCard = applySupplyPenalty(atkSession.hand[0], atkAdjustFactor);
-  const defCard = applySupplyPenalty(defSession.hand[0], defAdjustFactor);
-
-  const result = resolveAerialRound(atkCard, defCard);
-
-  // 카드 상태 업데이트 (승리한 카드는 패의 맨 뒤로 이동하여 계속 싸움)
-  if (result.attackerLost) {
-    atkSession.hand.shift();
-    atkSession.lost.push(atkCard);
-  } else {
-    // 공격 승리: 카드를 다시 패의 맨 뒤로
-    atkSession.hand.shift();
-    atkSession.hand.push(atkCard);
-  }
-
-  if (result.defenderLost) {
-    defSession.hand.shift();
-    defSession.lost.push(defCard);
-  } else {
-    // 방어 승리: 카드를 다시 패의 맨 뒤로
-    defSession.hand.shift();
-    defSession.hand.push(defCard);
-  }
-
-  return result;
-}
-
-/**
- * 공중결전 시뮬레이션 (모든 카드 전부 소모 또는 항복까지)
- * 규칙: 이미 시작되면 무조건 계속 진행 (항복 불가)
- * 손실된 카드 = 실제 유닛 손실 처리됨
- * 
- * @param {Object} attackerSession - 공격국 세션 (깊은 복사 필요)
- * @param {Object} defenderSession - 방어국 세션 (깊은 복사 필요)
- * @param {Array} attackerUnits - 공격국 전체 전투기 유닛
- * @param {Array} defenderUnits - 방어국 전체 전투기 유닛
- * @returns {Object} {
- *   winner: 'attacker'|'defender',
- *   totalRounds: number,
- *   reason: 'all_cards_exhausted'|'complete_elimination',
- *   attackerLostCount: number,
- *   defenderLostCount: number,
- *   supplyPenaltyApplied: {attacker: boolean, defender: boolean}
- * }
- */
-export function resolveMajorAerialBattle(
-  attackerSession,
-  defenderSession,
-  attackerUnits = [],
-  defenderUnits = [],
-  attackerIsAi = false,
-  defenderIsAi = false
-) {
-  // 깊은 복사 (원본 손상 방지)
-  const atkSess = JSON.parse(JSON.stringify(attackerSession));
-  const defSess = JSON.parse(JSON.stringify(defenderSession));
-
-  let round = 1;
-  const maxRounds = 10000; // 무한 루프 방지
-  const history = [];
+  const atkSess = battleSession.attackerState;
+  const defSess = battleSession.defenderState;
 
   // 보급 한계 초과 여부 계산
   const atkSupplyStatus = calculateSupplyUsage(atkSess, atkSess.cards, attackerUnits);
   const defSupplyStatus = calculateSupplyUsage(defSess, defSess.cards, defenderUnits);
 
-  while (
-    round <= maxRounds &&
-    atkSess.hand.length > 0 &&
-    defSess.hand.length > 0 &&
-    atkSess.status !== 'surrendered' &&
-    defSess.status !== 'surrendered'
-  ) {
-    // AI 항복 체크
-    if (attackerIsAi && aiShouldSurrender(atkSess)) {
-      history.push({ round, reason: 'attacker_surrendered', description: '공격측 AI가 항복했습니다.' });
-      atkSess.status = 'surrendered';
-      break;
+  // 카드 가져오기
+  const getCardFromChoice = (sess, choice) => {
+    if (choice.type === 'pass') return null;
+    if (choice.type === 'aa') {
+      const idx = sess.antiAircraft.findIndex(c => c.cardId === choice.cardId);
+      return idx >= 0 ? sess.antiAircraft[idx] : null;
     }
-    if (defenderIsAi && aiShouldSurrender(defSess)) {
-      history.push({ round, reason: 'defender_surrendered', description: '방어측 AI가 항복했습니다.' });
-      defSess.status = 'surrendered';
-      break;
+    const idx = sess.hand.findIndex(c => c.cardId === choice.cardId);
+    return idx >= 0 ? sess.hand[idx] : null;
+  };
+
+  const atkCardRaw = getCardFromChoice(atkSess, atkChoice);
+  const defCardRaw = getCardFromChoice(defSess, defChoice);
+
+  const atkCard = atkCardRaw ? applySupplyPenalty(atkCardRaw, atkSupplyStatus.adjustedStats) : null;
+  const defCard = defCardRaw ? applySupplyPenalty(defCardRaw, defSupplyStatus.adjustedStats) : null;
+
+  // 전투 판정
+  const result = resolveAerialRound(atkCard, defCard);
+
+  // 결과에 따라 카드 소모 또는 재배치
+  const applyLoss = (sess, choice, lost) => {
+    if (choice.type === 'pass') return;
+    
+    if (choice.type === 'aa') {
+      // 대공포는 사용 즉시 소모되거나, 졌을 때 소모됨 (resolveAerialRound에서 무조건 소모로 판정)
+      const idx = sess.antiAircraft.findIndex(c => c.cardId === choice.cardId);
+      if (idx >= 0) sess.antiAircraft.splice(idx, 1);
+      return;
     }
 
-    // 이번 라운드 전투
-    const roundResult = deathMatchRound(
-      atkSess,
-      defSess,
-      atkSupplyStatus.adjustedStats,
-      defSupplyStatus.adjustedStats
-    );
+    const idx = sess.hand.findIndex(c => c.cardId === choice.cardId);
+    if (idx >= 0) {
+      const card = sess.hand.splice(idx, 1)[0];
+      if (lost) {
+        sess.lost.push(card);
+      } else {
+        sess.hand.push(card); // 이겼거나 비겨서 살아남으면 다시 패로 돌아감
+      }
+    }
+  };
 
-    history.push({
-      round,
-      ...roundResult,
-      atkRemaining: atkSess.hand.length,
-      defRemaining: defSess.hand.length
-    });
+  applyLoss(atkSess, atkChoice, result.attackerLost);
+  applyLoss(defSess, defChoice, result.defenderLost);
 
-    round++;
+  // 히스토리 기록
+  battleSession.history.push({
+    round: battleSession.round,
+    ...result,
+    atkCard: atkCardRaw,
+    defCard: defCardRaw,
+    atkRemaining: atkSess.hand.length,
+    defRemaining: defSess.hand.length,
+    timestamp: new Date().toISOString()
+  });
+
+  // 라운드 종료 처리
+  battleSession.attackerChoice = null;
+  battleSession.defenderChoice = null;
+  battleSession.round += 1;
+
+  // 승패 판정 (전멸)
+  if (atkSess.hand.length === 0 || defSess.hand.length === 0) {
+    battleSession.status = 'finished';
   }
 
-  // 승자 결정
-  const atkWon = defSess.status === 'surrendered' || (atkSess.status !== 'surrendered' && atkSess.hand.length > 0);
-  const defWon = atkSess.status === 'surrendered' || (defSess.status !== 'surrendered' && defSess.hand.length > 0);
-  const winner = (atkWon && !defWon) ? 'attacker' : (defWon && !atkWon) ? 'defender' : 'draw';
+  return battleSession;
+}
 
-  let finalReason = 'all_cards_exhausted';
-  if (atkSess.status === 'surrendered') finalReason = 'attacker_surrendered';
-  else if (defSess.status === 'surrendered') finalReason = 'defender_surrendered';
-  else if (winner === 'draw') finalReason = 'simultaneous_elimination';
+/**
+ * 진행 중인 전투에 증원 병력(새 카드) 투입
+ */
+export function addReinforcements(battleSession, isAttacker, newAircraftUnits) {
+  const sess = isAttacker ? battleSession.attackerState : battleSession.defenderState;
+  
+  const result = generateAerialCards(
+    newAircraftUnits, 
+    sess.cumulativeUnitsDeployed, 
+    sess.cumulativeAcesGenerated
+  );
 
-  return {
-    winner,
-    totalRounds: round - 1,
-    reason: finalReason,
-    attackerLostCount: atkSess.lost.length,
-    defenderLostCount: defSess.lost.length,
-    attackerRemaining: atkSess.hand.length,
-    defenderRemaining: defSess.hand.length,
-    supplyPenaltyApplied: {
-      attacker: atkSupplyStatus.exceedsLimit,
-      defender: defSupplyStatus.exceedsLimit
-    },
-    battleHistory: history
-  };
+  // 패에 카드 추가
+  sess.cards.push(...result.cards);
+  sess.hand.push(...result.cards); // 증원된 카드는 바로 사용할 수 있게 손으로 들어감
+  
+  sess.cumulativeUnitsDeployed = result.cumulativeUnitsDeployed;
+  sess.cumulativeAcesGenerated = result.cumulativeAcesGenerated;
+
+  // 대공포는? 증원 시 상대방의 "새로 생성된 에이스 수"만큼 내가 대공포를 받아야 함.
+  // 이 부분 처리는 여기서는 일단 보류하거나, 호출하는 쪽에서 상대방 세션에 대공포를 추가해야 함.
+  // 간단히:
+  const opponentSess = isAttacker ? battleSession.defenderState : battleSession.attackerState;
+  if (result.newAces > 0) {
+    const aaCards = generateAntiAircraftCards(result.newAces);
+    opponentSess.antiAircraft.push(...aaCards);
+  }
+
+  return battleSession;
 }
 
 /**
  * 항복 처리
- * 공중결전 중에도 항복 가능 (항복하면 상대가 제공권 획득)
- * @param {Object} surrenderingSession - 항복하는 국가 세션
- * @returns {Object} {surrendered: true, opponentGetsSupremacy: ...}
+ * @param {Object} battleSession - 글로벌 배틀 세션
+ * @param {string} surrenderingId - 항복하는 국가 ID
+ * @returns {Object} 업데이트된 배틀 세션
  */
-export function surrenderAerialBattle(surrenderingSession) {
-  return {
-    surrendered: true,
-    timestamp: new Date().toISOString(),
-    
-    // 항복 시 상대가 얻는 제공권 타입
-    opponentAirSupremacy: surrenderingSession.battleRequest?.status === 'accepted'
-      ? 'gained'  // 공중결전 중 항복 → 라운드 승리 제공권
-      : 'gained', // 일반 라운드 중 항복 → 라운드 승리 제공권
-    
-    remainingCards: surrenderingSession.hand.length,
-    lostCards: surrenderingSession.lost.length
-  };
+export function surrenderAerialBattle(battleSession, surrenderingId) {
+  const isAttacker = battleSession.attackerId === surrenderingId;
+  
+  if (isAttacker) {
+    battleSession.attackerState.status = 'surrendered';
+  } else {
+    battleSession.defenderState.status = 'surrendered';
+  }
+  
+  battleSession.status = 'finished';
+  battleSession.history.push({
+    round: battleSession.round,
+    reason: 'surrender',
+    surrenderingId,
+    timestamp: new Date().toISOString()
+  });
+
+  return battleSession;
 }

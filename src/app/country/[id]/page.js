@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource, updateResearch } from '@/lib/store';
+import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource, updateResearch, getAerialBattleSessionsForCountry, saveAerialCombatSession } from '@/lib/store';
 import { transferTech, transferItems, acceptTransfer, rejectTransfer, getPendingTransfers } from '@/lib/gameLogic';
 import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
+import { createAerialBattle, processBattleRound, surrenderAerialBattle, addReinforcements } from '@/lib/aerialCombat';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -37,6 +38,7 @@ export default function CountryPage() {
   const [queueTargetAmount, setQueueTargetAmount] = useState('');
   const [globalEra, setGlobalEra] = useState('선사시대');
   const [pendingTransfers, setPendingTransfers] = useState([]);
+  const [aerialBattles, setAerialBattles] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -120,6 +122,14 @@ export default function CountryPage() {
       }
     } catch(err) {
       console.error('Failed to load military units', err);
+    }
+
+    // Load aerial battles
+    try {
+      const battles = await getAerialBattleSessionsForCountry(countryId);
+      setAerialBattles(battles || []);
+    } catch (err) {
+      console.error('Failed to load aerial battles', err);
     }
 
     // Load pending transfers
