@@ -142,24 +142,15 @@ export function resolveAerialRound(attackCard, defenseCard) {
   const attackSpeed = attackCard.isAce ? attackCard.speed * 5 : attackCard.speed;
   const defenseSpeed = defenseCard.isAce ? defenseCard.speed * 5 : defenseCard.speed;
 
-  // 대공포 카드 처리: 무조건 상대 손실, 무승부 처리
-  if (defenseCard.canBlock) {
+  // 대공포 카드 처리: 한쪽이라도 대공포를 냈다면 무조건 양측 카드 손실 및 무승부 처리
+  if (attackCard.canBlock || defenseCard.canBlock) {
     return {
       winner: 'draw',
       diceResult: null,
       reason: 'antiAircraft_used',
       attackerLost: true,
-      defenderLost: true, // 대공포도 소모됨
+      defenderLost: true, // 대공포 및 상대방 카드 모두 소모
       description: '대공포 카드가 사용되어 무승부처리되었습니다. 양측 모두 카드 손실.'
-    };
-  }
-
-  if (attackCard.canBlock) {
-    // 공격측이 대공포를 냈으면 불가능 (논리적으로 방어측만 낼 수 있음)
-    return {
-      winner: 'defense',
-      reason: 'invalid_attack',
-      description: '공격측에서 대공포를 낼 수 없습니다.'
     };
   }
 

@@ -2443,14 +2443,14 @@ export default function AdminPage() {
                       style={{ marginLeft: 'auto' }}
                       onClick={() => {
                         const battleClone = JSON.parse(JSON.stringify(testAerialGame));
-                        const newUnits = [{ id: 'test_reinforce', templateId: 't_air', speed: 2, quantity: 10, supplyConsumption: 1 }];
+                        const newUnits = [{ id: 'test_reinforce', templateId: 't_air', name: '테스트 지원기', speed: 2, quantity: 1, supplyConsumption: 1 }];
                         addReinforcements(battleClone, true, newUnits);
                         setTestAerialGame(battleClone);
-                        setTestGameLog([...testGameLog, { type: 'start', message: '속도 2 전투기 10기 추가 투입!' }]);
-                        showToast('병력이 10기 추가되었습니다.', 'success');
+                        setTestGameLog([...testGameLog, { type: 'start', message: '속도 2 전투기 1기 추가 투입!' }]);
+                        showToast('병력이 1기 추가되었습니다.', 'success');
                       }}
                     >
-                      ➕ 10기 추가 투입
+                      ➕ 1기 추가 투입
                     </button>
 
                     <button
