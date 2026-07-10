@@ -52,6 +52,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       setUnitsOnBoard(initialSession.units || []);
       setPhase(initialSession.phase || (initialSession.turn === 1 || !initialSession.turn ? 'deployment' : 'combat'));
       setTurn(initialSession.turn || 1);
+      setUsedSkills(initialSession.usedSkills || []);
+      setNukeUses(initialSession.nukeUses || 0);
     } else {
       setBoard(createLandBoard());
     }
@@ -329,6 +331,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         units: resolvedSession.units,
         phase: nextPhase,
         turn: turn + 1,
+        usedSkills,
+        nukeUses,
         resourceDeductions: resolvedSession.resourceDeductions,
         casualties
       });
@@ -497,11 +501,20 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 className="cyber-btn"
                 style={{ background: hasAirSupremacy ? uiColors.neonGreen : 'rgba(30,41,59,0.8)', borderColor: hasAirSupremacy ? uiColors.neonGreen : '#3b82f6', color: hasAirSupremacy ? '#fff' : '#60a5fa' }}
                 onClick={() => {
-                  if (autoAirCombat) {
-                    const win = Math.random() > 0.5;
-                    setHasAirSupremacy(win);
+                  const enemyAircrafts = unitsOnBoard.filter(u => u.owner !== countryId && u.status === 'field' && ['전투기', '요격기'].includes(u.subCategory));
+                  const enemyAttempted = enemyAircrafts.length > 0;
+                  
+                  if (!enemyAttempted) {
+                    alert('적군의 공중전 병력이나 시도가 감지되지 않았습니다. 무혈입성으로 제공권을 즉시 장악합니다!');
+                    setHasAirSupremacy(true);
                   } else {
-                    setPhase('aerial_combat');
+                    if (autoAirCombat) {
+                      const win = Math.random() > 0.5;
+                      setHasAirSupremacy(win);
+                      alert(win ? '자동 주사위 판정 승리! 제공권을 장악했습니다.' : '자동 주사위 판정 패배. 제공권 확보에 실패했습니다.');
+                    } else {
+                      setPhase('aerial_combat');
+                    }
                   }
                 }}
               >

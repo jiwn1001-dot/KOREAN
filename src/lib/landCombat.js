@@ -636,13 +636,17 @@ export function resolveSimultaneousTurn(session) {
       } else {
         let attackerDmg = winner.unit.attack;
         if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') attackerDmg = 0;
+        if (winner.unit.isHQ) attackerDmg = 0; // 사령부는 공격력 0
         const attackerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
         const dmgToOccupant = calculateDamage(Math.floor(attackerDmg * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
         occupant.hp -= dmgToOccupant;
       }
 
       if (winner.unit.isHQ || winner.unit.hp <= 0) {
-         // 사령부는 공격력이 없으므로 반격 피해 없음, 이미 즉사한 공수부대도 반격 없음
+         // winner가 사령부일 경우, 적(occupant)으로부터 반격을 받아 1피격 됨 (역돌격 무적 방지)
+         if (winner.unit.isHQ && occupant.status === 'field' && !occupant.isHQ) {
+            winner.unit.hqHitsRemaining = (winner.unit.hqHitsRemaining || 2) - 1;
+         }
       } else {
         let defenderDmg = occupant.attack;
         const occupantOrder = orders.find(o => o.unitId === occupant.id);
@@ -670,12 +674,17 @@ export function resolveSimultaneousTurn(session) {
         } else {
           let attackerDmg = loser.attack;
           if (loser.subCategory === '포병' && loserOrder && loserOrder.type === 'move') attackerDmg = 0;
+          if (loser.isHQ) attackerDmg = 0; // 사령부는 공격력 0
           const loserEffects = applyTileEffects(loser, board[loser.y]?.[loser.x]);
           const dmgToWinner = calculateDamage(Math.floor(attackerDmg * loserEffects.attackMultiplier), winner.unit.defense, session.penetration[loser.owner] || 0);
           winner.unit.hp -= dmgToWinner;
         }
 
         if (loser.isHQ || loser.hp <= 0) {
+           // loser가 사령부일 경우 winner로부터 반격 받음
+           if (loser.isHQ && winner.unit.status === 'field' && !winner.unit.isHQ) {
+              loser.hqHitsRemaining = (loser.hqHitsRemaining || 2) - 1;
+           }
         } else if (winner.unit.status === 'field' && !winner.unit.isHQ) {
           let defenderDmg = winner.unit.attack;
           if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') defenderDmg = 0;
