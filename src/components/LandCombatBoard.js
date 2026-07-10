@@ -360,18 +360,26 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             className={`cyber-btn ${targetingSkill === 'naval_bombardment' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('naval_bombardment')}
             disabled={usedSkills.includes('naval_bombardment') || activeSkills.length > 0}
+          >🚢 해안포격</button>
           
           <button 
-            className="btn btn-warning" 
+            className="cyber-btn"
+            style={{ borderColor: uiColors.neonYellow, color: uiColors.neonYellow }}
             onClick={() => {
               setActiveSkills(prev => [...prev, { type: 'emp' }]);
               setUsedSkills(prev => [...prev, 'emp']);
               alert('EMP가 예약되었습니다. 턴 넘김 시 기계화 부대가 정지합니다.');
             }}
             disabled={usedSkills.includes('emp') || activeSkills.length > 0}
-          >⚡ EMP (1회)</button>
+          >⚡ EMP</button>
           
-          <button className="btn btn-info" onClick={() => setHasRecon(!hasRecon)}>👁️ 정찰 활성화</button>
+          <button 
+            className="cyber-btn"
+            style={{ marginLeft: 'auto', borderColor: hasRecon ? uiColors.neonBlue : '#475569', background: hasRecon ? 'rgba(59,130,246,0.2)' : 'transparent' }}
+            onClick={() => setHasRecon(!hasRecon)}
+          >
+            👁️ 정찰위성 {hasRecon ? 'ON' : 'OFF'}
+          </button>
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>

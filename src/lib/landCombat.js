@@ -112,11 +112,6 @@ export function applyTileEffects(unit, tile, actionType) {
     effects.defenseDamageMultiplier = 0.8; 
   } else if (tile.type === TILE_TYPES.ULTIMATE_FORTRESS) {
     effects.defenseDamageMultiplier = 0.1; 
-    }
-  } else if (tile.type === TILE_TYPES.FORTRESS) {
-    effects.defenseDamageMultiplier = 0.8; 
-  } else if (tile.type === TILE_TYPES.ULTIMATE_FORTRESS) {
-    effects.defenseDamageMultiplier = 0.1; 
   }
 
   return effects;
