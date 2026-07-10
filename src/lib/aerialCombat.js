@@ -17,6 +17,7 @@ export function generateAerialCards(aircraftUnits, cumulativeUnitsDeployed = 0, 
   // 1. 모든 카드 생성 (아직 에이스 미배정)
   aircraftUnits.forEach(unit => {
     const unitId = unit.id;
+    const unitName = unit.name || '전투기';
     const speed = unit.speed || 1;
     const quantity = unit.quantity || 0;
     const unitImage = unit.image || null;
@@ -26,6 +27,7 @@ export function generateAerialCards(aircraftUnits, cumulativeUnitsDeployed = 0, 
     for (let i = 0; i < quantity; i++) {
       cards.push({
         unitId,
+        unitName,
         cardId: `${unitId}_${Date.now()}_${i}`, // Ensure unique ID for reinforcements
         speed,
         unitImage,
@@ -648,8 +650,11 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   battleSession.defenderChoice = null;
   battleSession.round += 1;
 
-  // 승패 판정 (전멸)
-  if (atkSess.hand.length === 0 || defSess.hand.length === 0) {
+  // 승패 판정 (전멸 - 패와 대공포 모두 소진 시)
+  const atkEmpty = atkSess.hand.length === 0 && atkSess.antiAircraft.length === 0;
+  const defEmpty = defSess.hand.length === 0 && defSess.antiAircraft.length === 0;
+
+  if (atkEmpty || defEmpty) {
     battleSession.status = 'finished';
   }
 

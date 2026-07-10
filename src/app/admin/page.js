@@ -80,6 +80,7 @@ const AerialCardUI = ({ card }) => {
           <div style={{ width: '100%', height: '70px', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
         )}
         <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ color: '#fff', fontSize: '0.75rem', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{card.unitName || '전투기'}</div>
           <div style={{ color: '#fff', textShadow: '1px 1px 2px #000', fontWeight: 'bold' }}>전투력: {card.speed * 5}</div>
         </div>
       </div>
@@ -98,6 +99,7 @@ const AerialCardUI = ({ card }) => {
         <div style={{ width: '100%', height: '70px', background: 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
       )}
       <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.75rem', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{card.unitName || '전투기'}</div>
         <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.9rem' }}>속도: {card.speed}</div>
       </div>
     </div>
@@ -2326,6 +2328,10 @@ export default function AdminPage() {
                     <div>에이스 누적: {testAerialGame.attackerState?.cumulativeAcesGenerated || 0}</div>
                     <div>대공포: {testAerialGame.attackerState?.antiAircraft?.length || 0}</div>
                   </div>
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '10px 0', marginTop: '10px' }}>
+                    {testAerialGame.attackerState?.hand?.map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                    {testAerialGame.attackerState?.antiAircraft?.filter(c => c.status === 'hand').map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                  </div>
                 </div>
 
                 {/* AI 상태 */}
@@ -2335,6 +2341,11 @@ export default function AdminPage() {
                     <div>패 남음: {testAerialGame.defenderState?.hand?.length || 0}</div>
                     <div>손실: {testAerialGame.defenderState?.lost?.length || 0}</div>
                     <div>대공포: {testAerialGame.defenderState?.antiAircraft?.length || 0}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '10px 0', marginTop: '10px', opacity: 0.7 }}>
+                    {/* AI의 카드는 뒷면으로 보여줄 수도 있지만 관리자 패널 테스트용이므로 앞면으로 노출 */}
+                    {testAerialGame.defenderState?.hand?.map(c => <AerialCardUI key={c.cardId} card={c} />)}
+                    {testAerialGame.defenderState?.antiAircraft?.filter(c => c.status === 'hand').map(c => <AerialCardUI key={c.cardId} card={c} />)}
                   </div>
                 </div>
               </div>
