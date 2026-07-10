@@ -11,6 +11,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ParliamentArch from '@/components/ParliamentArch';
 import SupportPieChart from '@/components/SupportPieChart';
+import CorpsFormation from '@/components/CorpsFormation';
+import LandCombatBoard from '@/components/LandCombatBoard';
 
 export default function CountryPage() {
   const params = useParams();
@@ -39,6 +41,9 @@ export default function CountryPage() {
   const [globalEra, setGlobalEra] = useState('선사시대');
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [aerialBattles, setAerialBattles] = useState([]);
+  const [corps, setCorps] = useState([]);
+  const [fieldArmies, setFieldArmies] = useState([]);
+  const [generals, setGenerals] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -114,14 +119,21 @@ export default function CountryPage() {
       console.error('Failed to load game settings for tech trees', err);
     }
 
-    // Load military units
+    // Load military units, corps, armies, and generals
     try {
       const unitsEntry = await getDataEntry('military_units', countryId);
-      if (unitsEntry && unitsEntry.data) {
-        setMilitaryUnits(unitsEntry.data.units || []);
-      }
+      if (unitsEntry && unitsEntry.data) setMilitaryUnits(unitsEntry.data.units || []);
+
+      const corpsEntry = await getDataEntry('corps', countryId);
+      if (corpsEntry && corpsEntry.data) setCorps(corpsEntry.data.corps || []);
+
+      const armiesEntry = await getDataEntry('field_armies', countryId);
+      if (armiesEntry && armiesEntry.data) setFieldArmies(armiesEntry.data.armies || []);
+
+      const genEntry = await getDataEntry('generals', countryId);
+      if (genEntry && genEntry.data) setGenerals(genEntry.data.generals || []);
     } catch(err) {
-      console.error('Failed to load military units', err);
+      console.error('Failed to load military units/corps', err);
     }
 
     // Load aerial battles
@@ -150,6 +162,8 @@ export default function CountryPage() {
     { id: 'resource', label: '자원', icon: '📦' },
     { id: 'military', label: '군수', icon: '⚔️' },
     { id: 'formation', label: '편제', icon: '🎖️' },
+    { id: 'corps', label: '작전/군단', icon: '🏕️' },
+    { id: 'land_combat', label: '지상전', icon: '🗺️' },
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
   ];
 
@@ -961,7 +975,8 @@ export default function CountryPage() {
       }
     });
 
-    const totalMobilizable = Number(economyData.population?.mobilizable || 0);
+    const mobilizableRaw = economyData.population?.mobilizable || 0;
+    const totalMobilizable = typeof mobilizableRaw === 'string' ? Number(mobilizableRaw.replace(/,/g, '')) : Number(mobilizableRaw);
 
     return (
       <div className="slide-up">
@@ -1098,7 +1113,9 @@ export default function CountryPage() {
                     const tmpl = unitTemplates.find(t => t.id === unit.templateId) || {};
                     const isAir = tmpl.majorCategory === '공군';
                     const nameDisplay = isAir ? tmpl.name : (unit.customName || tmpl.name);
-                    const isFuelShortage = unit.operational < unit.count;
+                    const safeCount = unit.count || 1;
+                    const safeOperational = unit.operational !== undefined ? unit.operational : 1;
+                    const isFuelShortage = safeOperational < safeCount;
                     return (
                       <div key={unit.id} className="card" style={{ padding: '12px', background: 'var(--bg-glass)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1108,14 +1125,14 @@ export default function CountryPage() {
                             )}
                             <div>
                               <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tmpl.majorCategory}</span>
-                              {nameDisplay} (x{unit.count})
+                              {nameDisplay} (x{safeCount})
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <input type="number" id={`disbandCount_${unit.id}`} className="form-input" defaultValue="1" min="1" max={unit.count} style={{ width: '60px', padding: '2px 4px' }} />
+                            <input type="number" id={`disbandCount_${unit.id}`} className="form-input" defaultValue="1" min="1" max={safeCount} style={{ width: '60px', padding: '2px 4px' }} />
                             <button className="btn btn-sm btn-ghost" onClick={async () => {
                               const disbandCount = parseInt(document.getElementById(`disbandCount_${unit.id}`).value) || 0;
-                              if (disbandCount <= 0 || disbandCount > unit.count) return alert('올바른 해체 수량을 입력하세요.');
+                              if (disbandCount <= 0 || disbandCount > safeCount) return alert('올바른 해체 수량을 입력하세요.');
                               
                               const manpowerToReturn = (tmpl.manpowerCost || 0) * disbandCount;
                               const weaponsToReturn = (tmpl.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: w.amount * disbandCount }));
@@ -1142,12 +1159,14 @@ export default function CountryPage() {
                               
                               // 3. Update unit count
                               let newUnits;
-                              if (disbandCount === unit.count) {
+                              if (disbandCount === safeCount) {
                                 newUnits = militaryUnits.filter(u => u.id !== unit.id);
                               } else {
                                 newUnits = militaryUnits.map(u => {
                                   if (u.id === unit.id) {
-                                    return { ...u, count: u.count - disbandCount, operational: Math.min(u.operational, u.count - disbandCount) };
+                                    const c = u.count || 1;
+                                    const op = u.operational !== undefined ? u.operational : 1;
+                                    return { ...u, count: c - disbandCount, operational: Math.min(op, c - disbandCount) };
                                   }
                                   return u;
                                 });
@@ -1161,7 +1180,7 @@ export default function CountryPage() {
                           </div>
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '8px', color: 'var(--text-muted)' }}>
-                          가동 상태: <span style={{ color: isFuelShortage ? 'var(--error)' : 'var(--primary)', fontWeight: 'bold' }}>{unit.operational}</span> / {unit.count}
+                          가동 상태: <span style={{ color: isFuelShortage ? 'var(--error)' : 'var(--primary)', fontWeight: 'bold' }}>{safeOperational}</span> / {safeCount}
                           {isFuelShortage && <span style={{ marginLeft: '8px', color: 'var(--error)' }}>(연료 부족)</span>}
                         </div>
                         <div style={{ fontSize: '0.8rem', marginTop: '4px', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
@@ -1328,6 +1347,34 @@ export default function CountryPage() {
         return renderMilitary();
       case 'formation':
         return renderFormation();
+      case 'land_combat':
+        return (
+          <LandCombatBoard 
+            countryId={countryId} 
+            militaryUnits={militaryUnits} 
+            corps={corps} 
+            armies={fieldArmies} 
+            generals={generals}
+          />
+        );
+      case 'corps':
+        return (
+          <CorpsFormation 
+            countryId={countryId} 
+            militaryUnits={militaryUnits} 
+            corps={corps} 
+            armies={fieldArmies} 
+            generals={generals}
+            onUpdateCorps={async (newCorps) => {
+              setCorps(newCorps);
+              await upsertDataEntry('corps', countryId, { corps: newCorps });
+            }}
+            onUpdateArmies={async (newArmies) => {
+              setFieldArmies(newArmies);
+              await upsertDataEntry('field_armies', countryId, { armies: newArmies });
+            }}
+          />
+        );
       case 'transfers':
         return renderTransfers();
       default:

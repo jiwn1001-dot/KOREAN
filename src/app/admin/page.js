@@ -2919,6 +2919,43 @@ export default function AdminPage() {
                         <span className="badge badge-accent" style={{ marginRight: '8px' }}>{tree.category}</span>
                         {tree.name}
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                        <span style={{ fontSize: '0.85rem' }}>연구 레벨 조작:</span>
+                        <input 
+                          type="number" 
+                          className="form-input" 
+                          defaultValue={highestCompletedLevel}
+                          min="0"
+                          max={(Array.isArray(tree.levels) ? tree.levels : []).length}
+                          style={{ width: '60px', padding: '2px 4px' }}
+                          id={`force_level_${tree.id}`}
+                        />
+                        <button className="btn btn-sm btn-primary" onClick={async () => {
+                          const newLevel = parseInt(document.getElementById(`force_level_${tree.id}`).value) || 0;
+                          const maxLevel = (Array.isArray(tree.levels) ? tree.levels : []).length;
+                          if (newLevel < 0 || newLevel > maxLevel) return alert(`0에서 ${maxLevel} 사이의 레벨을 입력하세요.`);
+                          if (!confirm(`${tree.name}의 연구 레벨을 ${newLevel}(으)로 강제 변경하시겠습니까? (기존 기록은 삭제됩니다)`)) return;
+                          
+                          // 1. 기존 연구 기록 삭제
+                          for (const r of countryResearches) {
+                            await deleteResearch(r.id);
+                          }
+                          
+                          // 2. 새 레벨 추가
+                          if (newLevel > 0) {
+                            await createResearch({
+                              country_id: selectedCountryId,
+                              name: tree.name,
+                              category: tree.category,
+                              level: newLevel,
+                              status: 'completed',
+                              remaining_turns: 0
+                            });
+                          }
+                          showToast('연구 레벨이 변경되었습니다.');
+                          loadResearches(selectedCountryId);
+                        }}>변경 적용</button>
+                      </div>
                       
                       <div style={{ marginBottom: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                         현재 완료된 단계: {highestCompletedLevel > 0 ? ((Array.isArray(tree.levels) ? tree.levels : [])[highestCompletedLevel - 1]?.name || `Lv.${highestCompletedLevel}`) : '없음'}
