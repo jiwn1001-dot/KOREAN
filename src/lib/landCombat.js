@@ -361,13 +361,15 @@ export function resolveSimultaneousTurn(session) {
       if (u.originalAttack === undefined) u.originalAttack = u.attack;
       if (u.originalDefense === undefined) u.originalDefense = u.defense;
       if (u.originalSpeed === undefined) u.originalSpeed = u.speed;
-      if (u.originalMaxHp === undefined) u.originalMaxHp = (u.maxHp || 100);
 
       u.attack = Math.floor(u.originalAttack * supplyMultiplier);
       u.defense = Math.floor(u.originalDefense * supplyMultiplier);
       u.speed = Math.floor(u.originalSpeed * supplyMultiplier);
-      u.maxHp = Math.floor(u.originalMaxHp * supplyMultiplier);
-      if (u.hp > u.maxHp) u.hp = u.maxHp;
+      
+      // 기획자 피드백: 최대 체력이 아니라 "현재 체력"을 직접 반토막냄
+      if (!u.isHQ) {
+        u.hp = Math.max(1, Math.floor(u.hp * supplyMultiplier)); 
+      }
     });
   } else {
     // 페널티 해제 복구 (필요시)
@@ -375,7 +377,6 @@ export function resolveSimultaneousTurn(session) {
       if (u.originalAttack) u.attack = u.originalAttack;
       if (u.originalDefense) u.defense = u.originalDefense;
       if (u.originalSpeed) u.speed = u.originalSpeed;
-      if (u.originalMaxHp) u.maxHp = u.originalMaxHp;
     });
   }
 
@@ -406,17 +407,43 @@ export function resolveSimultaneousTurn(session) {
     const unit = units.find(u => u.id === order.unitId);
     if (unit) {
       unit.status = 'standby'; // 대기 상태로 전환
-      if (unit.hp < (unit.maxHp || 100)) {
-        const max = unit.maxHp || 100;
-        const missingRatio = (max - unit.hp) / max;
-        unit.hp = max; // 일단 풀피 회복
+      const hpDeficit = (unit.maxHp || 100) - unit.hp;
+      if (hpDeficit > 0) {
+        const healRatio = hpDeficit / (unit.maxHp || 100);
+        const manpowerCost = Math.floor((unit.manpowerCost || 10) * healRatio);
+        const equipCost = Math.floor((unit.equipmentCost || 50) * healRatio);
         
-        // 회복 비용 청구서 (UI에 넘김 - UI에서 자원 부족시 취소 처리 로직 필요)
-        session.resourceDeductions.push({
-          owner: unit.owner,
-          manpower: Math.floor((unit.manpowerCost || 0) * missingRatio),
-          weapons: (unit.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: Math.max(1, Math.floor(w.amount * missingRatio)) }))
-        });
+        let canAfford = true;
+        if (session.countryResources) {
+           const myRes = session.countryResources[unit.owner] || session.countryResources;
+           if (myRes.manpower < manpowerCost || myRes.equipment < equipCost) {
+              canAfford = false;
+           }
+        }
+
+        if (canAfford) {
+          if (session.countryResources) {
+             const myRes = session.countryResources[unit.owner] || session.countryResources;
+             myRes.manpower -= manpowerCost;
+             myRes.equipment -= equipCost;
+          }
+          session.resourceDeductions.push({
+            unitId: unit.id,
+            name: unit.name,
+            manpower: manpowerCost,
+            equipment: equipCost,
+            reason: 'retreat_heal'
+          });
+          unit.hp = unit.maxHp || 100;
+        } else {
+          session.resourceDeductions.push({
+            unitId: unit.id,
+            name: unit.name,
+            manpower: 0,
+            equipment: 0,
+            reason: 'retreat_failed_insufficient_resources'
+          });
+        }
       }
     }
   });
