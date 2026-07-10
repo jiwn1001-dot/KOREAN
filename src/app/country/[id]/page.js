@@ -1098,12 +1098,54 @@ export default function CountryPage() {
                               {nameDisplay} (x{unit.count})
                             </div>
                           </div>
-                          <button className="btn btn-sm btn-ghost" onClick={async () => {
-                            if (!confirm('이 유닛을 해체하시겠습니까? (소모된 인력과 무기는 반환되지 않습니다.)')) return;
-                            const newUnits = militaryUnits.filter(u => u.id !== unit.id);
-                            await upsertDataEntry('military_units', countryId, { units: newUnits });
-                            setMilitaryUnits(newUnits);
-                          }}>해체</button>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input type="number" id={`disbandCount_${unit.id}`} className="form-input" defaultValue="1" min="1" max={unit.count} style={{ width: '60px', padding: '2px 4px' }} />
+                            <button className="btn btn-sm btn-ghost" onClick={async () => {
+                              const disbandCount = parseInt(document.getElementById(`disbandCount_${unit.id}`).value) || 0;
+                              if (disbandCount <= 0 || disbandCount > unit.count) return alert('올바른 해체 수량을 입력하세요.');
+                              
+                              const manpowerToReturn = (tmpl.manpowerCost || 0) * disbandCount;
+                              const weaponsToReturn = (tmpl.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: w.amount * disbandCount }));
+                              
+                              let msg = `${disbandCount}개의 부대를 해체하시겠습니까?\n`;
+                              msg += `반환 인력: ${manpowerToReturn.toLocaleString()}명\n`;
+                              if (weaponsToReturn.length > 0) {
+                                msg += `반환 무기: ${weaponsToReturn.map(w => `${w.name} ${w.amount.toLocaleString()}개`).join(', ')}`;
+                              }
+                              if (!confirm(msg)) return;
+                              
+                              // 1. Return weapons
+                              for (const w of weaponsToReturn) {
+                                const res = resources.find(r => r.resource_type === `weapon:${w.name}`);
+                                const currentAmount = res ? Number(res.amount) : 0;
+                                const currentProd = res ? res.production_per_turn : 0;
+                                await upsertResource(countryId, `weapon:${w.name}`, currentAmount + w.amount, currentProd);
+                              }
+                              
+                              // 2. Return manpower
+                              const newEcoData = { ...economyEntry };
+                              newEcoData.population = { ...newEcoData.population, mobilizable: Number(newEcoData.population.mobilizable || 0) + manpowerToReturn };
+                              await upsertDataEntry('economy', countryId, newEcoData);
+                              
+                              // 3. Update unit count
+                              let newUnits;
+                              if (disbandCount === unit.count) {
+                                newUnits = militaryUnits.filter(u => u.id !== unit.id);
+                              } else {
+                                newUnits = militaryUnits.map(u => {
+                                  if (u.id === unit.id) {
+                                    return { ...u, count: u.count - disbandCount, operational: Math.min(u.operational, u.count - disbandCount) };
+                                  }
+                                  return u;
+                                });
+                              }
+                              
+                              await upsertDataEntry('military_units', countryId, { units: newUnits });
+                              setMilitaryUnits(newUnits);
+                              alert('부대가 해체되었습니다.');
+                              loadAllData();
+                            }}>해체</button>
+                          </div>
                         </div>
                         <div style={{ fontSize: '0.85rem', marginTop: '8px', color: 'var(--text-muted)' }}>
                           가동 상태: <span style={{ color: isFuelShortage ? 'var(--error)' : 'var(--primary)', fontWeight: 'bold' }}>{unit.operational}</span> / {unit.count}

@@ -125,6 +125,7 @@ export default function AdminPage() {
   const [editingTechTreeId, setEditingTechTreeId] = useState(null);
   const [editingTechLevelId, setEditingTechLevelId] = useState(null);
   const [unitTemplates, setUnitTemplates] = useState([]);
+  const [militaryUnits, setMilitaryUnits] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
   const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
   const [testAerialGame, setTestAerialGame] = useState(null); // 테스트 게임 상태
@@ -283,6 +284,18 @@ export default function AdminPage() {
       setDiplomacyData(dip?.data || { content: '', customFields: [] });
       if (dip) setDiplomacyImages(await getAllImages(dip.id));
       else setDiplomacyImages([]);
+
+      // Researches, Resources, Military Units (for new admin tabs)
+      try {
+        const resData = await getResearches(cId);
+        setResearches(resData || []);
+        
+        const rscData = await getResources(cId);
+        setResources(rscData || []);
+        
+        const milData = await getDataEntry('military_units', cId);
+        setMilitaryUnits(milData?.data?.units || []);
+      } catch(e) {}
     } catch (err) {
       console.error(err);
     }
@@ -859,6 +872,8 @@ export default function AdminPage() {
       { id: 'economy', label: '💰 경제' },
       { id: 'social', label: '📢 사회문제' },
       { id: 'diplomacy', label: '🤝 외교관계' },
+      { id: 'admin-research', label: '🔬 연구 관리' },
+      { id: 'admin-military', label: '⚔️ 군사/무기 관리' },
     ];
 
     return (
@@ -901,6 +916,8 @@ export default function AdminPage() {
                 {countryTab === 'economy' && renderEconomyEditor()}
                 {countryTab === 'social' && renderTextEditor('social', socialData, setSocialData, socialEntry, socialImages)}
                 {countryTab === 'diplomacy' && renderTextEditor('diplomacy', diplomacyData, setDiplomacyData, diplomacyEntry, diplomacyImages)}
+                {countryTab === 'admin-research' && renderAdminResearchEditor()}
+                {countryTab === 'admin-military' && renderAdminMilitaryEditor()}
               </>
             )}
           </>
@@ -1542,7 +1559,223 @@ export default function AdminPage() {
     </div>
   );
 
-  const renderBlueprints = () => <ErrorBoundary><RenderBlueprintsInner /></ErrorBoundary>;
+  const renderAdminResearchEditor = () => {
+    return (
+      <div className="slide-up">
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">🔬 국가별 연구 직접 관리</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>기술(중분류) 이름을 검색/선택하고 해당 연구의 완료 단계를 직접 설정합니다.</p>
+          
+          <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+            <div className="form-row">
+              <div className="form-group" style={{ flex: 2 }}>
+                <label className="form-label">기술 검색 (중분류명)</label>
+                <input type="text" id="adminTechName" className="form-input" list="adminTechList" placeholder="기술 이름 입력" />
+                <datalist id="adminTechList">
+                  {(techTrees || []).map(t => (
+                    <option key={t.id} value={t.name}>{t.category} - {t.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">단계 (Level)</label>
+                <input type="number" id="adminTechLevel" className="form-input" placeholder="예: 3" min="0" />
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button className="btn btn-primary" onClick={async () => {
+                  const techName = document.getElementById('adminTechName').value;
+                  const level = parseInt(document.getElementById('adminTechLevel').value);
+                  if (!techName || isNaN(level) || level < 0) return alert('올바른 기술명과 단계를 입력하세요.');
+                  
+                  const tree = (techTrees || []).find(t => t.name === techName);
+                  if (!tree) return alert('존재하지 않는 기술 이름입니다.');
+                  
+                  if (!confirm(`'${techName}' 기술을 ${level}단계로 설정하시겠습니까?`)) return;
+                  
+                  const existingRes = researches.find(r => r.name === techName);
+                  if (level === 0) {
+                    if (existingRes) await deleteResearch(existingRes.id);
+                  } else {
+                    if (existingRes) {
+                      await updateResearch(existingRes.id, { level, status: 'completed', remaining_turns: 0 });
+                    } else {
+                      await createResearch({
+                        country_id: selectedCountryId,
+                        category: tree.category,
+                        name: techName,
+                        level,
+                        required_turns: 0,
+                        remaining_turns: 0,
+                        status: 'completed'
+                      });
+                    }
+                  }
+                  
+                  alert('연구가 업데이트되었습니다.');
+                  loadCountryData(selectedCountryId); // reload
+                }}>💾 연구 적용</button>
+              </div>
+            </div>
+          </div>
+          
+          <h4 style={{ marginBottom: '12px' }}>현재 완료된 연구 목록</h4>
+          {researches.filter(r => r.status === 'completed').length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>완료된 연구가 없습니다.</p>
+          ) : (
+            <div className="card-grid card-grid-3">
+              {researches.filter(r => r.status === 'completed').map(r => (
+                <div key={r.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span className="badge badge-accent" style={{ marginRight: '8px' }}>{r.category || '기타'}</span>
+                    <strong>{r.name}</strong> (Lv.{r.level})
+                  </div>
+                  <button className="btn btn-sm btn-ghost" onClick={() => {
+                    document.getElementById('adminTechName').value = r.name;
+                    document.getElementById('adminTechLevel').value = r.level;
+                  }}>수정</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAdminMilitaryEditor = () => {
+    return (
+      <div className="slide-up">
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">⚔️ 국가별 무기/유닛 직접 관리</h3>
+          
+          <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
+            <h4 style={{ marginBottom: '16px' }}>🔫 무기 보유량 조절</h4>
+            <div className="form-row">
+              <div className="form-group" style={{ flex: 2 }}>
+                <label className="form-label">무기 검색 (청사진 이름)</label>
+                <input type="text" id="adminWeaponName" className="form-input" list="adminWeaponList" placeholder="무기 이름 입력" />
+                <datalist id="adminWeaponList">
+                  {(Array.isArray(weaponBlueprints) ? weaponBlueprints : []).map(bp => (
+                    <option key={bp.id} value={bp.name}>{bp.techCategory} - {bp.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">수량 직접입력</label>
+                <input type="number" id="adminWeaponAmount" className="form-input" placeholder="예: 10000" min="0" />
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button className="btn btn-primary" onClick={async () => {
+                  const name = document.getElementById('adminWeaponName').value;
+                  const amount = parseInt(document.getElementById('adminWeaponAmount').value);
+                  if (!name || isNaN(amount) || amount < 0) return alert('올바른 무기명과 수량을 입력하세요.');
+                  
+                  if (!confirm(`'${name}' 무기의 보유량을 ${amount.toLocaleString()}개로 설정하시겠습니까? (기존 수량은 덮어씌워집니다.)`)) return;
+                  
+                  const resourceType = `weapon:${name}`;
+                  const existingRes = resources.find(r => r.resource_type === resourceType);
+                  const prod = existingRes ? Number(existingRes.production_per_turn) : 0;
+                  
+                  await upsertResource(selectedCountryId, resourceType, amount, prod);
+                  alert('무기 수량이 업데이트되었습니다.');
+                  loadCountryData(selectedCountryId);
+                }}>💾 무기 적용</button>
+              </div>
+            </div>
+            <div style={{ marginTop: '16px' }}>
+              <h5 style={{ marginBottom: '8px' }}>현재 보유 무기</h5>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {resources.filter(r => r.resource_type.startsWith('weapon:')).map(r => {
+                  const wName = r.resource_type.replace('weapon:', '');
+                  return (
+                    <span key={r.id} className="badge" style={{ padding: '8px', cursor: 'pointer' }} onClick={() => {
+                      document.getElementById('adminWeaponName').value = wName;
+                      document.getElementById('adminWeaponAmount').value = r.amount;
+                    }}>
+                      {wName}: {Number(r.amount).toLocaleString()}개
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '20px' }}>
+            <h4 style={{ marginBottom: '16px' }}>🎖️ 유닛(부대) 보유량 조절</h4>
+            <div className="form-row">
+              <div className="form-group" style={{ flex: 2 }}>
+                <label className="form-label">유닛 템플릿 검색</label>
+                <input type="text" id="adminUnitName" className="form-input" list="adminUnitList" placeholder="유닛 이름 입력" />
+                <datalist id="adminUnitList">
+                  {unitTemplates.map(t => (
+                    <option key={t.id} value={t.name}>{t.majorCategory} - {t.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">총 부대 수</label>
+                <input type="number" id="adminUnitAmount" className="form-input" placeholder="예: 10" min="0" />
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button className="btn btn-primary" onClick={async () => {
+                  const name = document.getElementById('adminUnitName').value;
+                  const count = parseInt(document.getElementById('adminUnitAmount').value);
+                  if (!name || isNaN(count) || count < 0) return alert('올바른 유닛명과 수량을 입력하세요.');
+                  
+                  const tmpl = unitTemplates.find(t => t.name === name);
+                  if (!tmpl) return alert('존재하지 않는 템플릿입니다.');
+                  
+                  if (!confirm(`'${name}' 유닛의 총 개수를 ${count}개로 설정하시겠습니까? (기존 데이터 덮어쓰기)`)) return;
+                  
+                  let newUnits = [...militaryUnits];
+                  const existingIdx = newUnits.findIndex(u => u.templateId === tmpl.id || u.name === name);
+                  
+                  if (count === 0) {
+                    if (existingIdx !== -1) newUnits.splice(existingIdx, 1);
+                  } else {
+                    if (existingIdx !== -1) {
+                      newUnits[existingIdx].count = count;
+                      newUnits[existingIdx].operational = Math.min(newUnits[existingIdx].operational, count);
+                    } else {
+                      newUnits.push({
+                        id: Date.now().toString(),
+                        templateId: tmpl.id,
+                        name: tmpl.name,
+                        count: count,
+                        operational: count
+                      });
+                    }
+                  }
+                  
+                  await upsertDataEntry('military_units', selectedCountryId, { units: newUnits });
+                  alert('유닛 수량이 업데이트되었습니다.');
+                  loadCountryData(selectedCountryId);
+                }}>💾 유닛 적용</button>
+              </div>
+            </div>
+            
+            <div style={{ marginTop: '16px' }}>
+              <h5 style={{ marginBottom: '8px' }}>현재 보유 부대</h5>
+              <div className="card-grid card-grid-3">
+                {militaryUnits.map(u => (
+                  <div key={u.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong>{u.name}</strong> 
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>가동: {u.operational} / 총: {u.count}</div>
+                    </div>
+                    <button className="btn btn-sm btn-ghost" onClick={() => {
+                      document.getElementById('adminUnitName').value = u.name;
+                      document.getElementById('adminUnitAmount').value = u.count;
+                    }}>수정</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
   const RenderBlueprintsInner = () => (
     <div className="fade-in">
       <h2>🛠️ 무기 청사진(설계도) 관리</h2>
