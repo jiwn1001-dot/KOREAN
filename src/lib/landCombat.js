@@ -151,68 +151,60 @@ export function applyTerrainMovementLock(unit, tile) {
  * 경로(Path)상 장애물이나 적을 만났을 때 실제 최종 도착지 반환 (Bresenham 알고리즘 기반)
  */
 function calculateActualPath(unit, targetX, targetY, board, allUnits) {
-  let x0 = unit.x;
-  let y0 = unit.y;
-  let x1 = targetX;
-  let y1 = targetY;
+  let currentX = unit.x;
+  let currentY = unit.y;
+  let lastValidX = unit.x;
+  let lastValidY = unit.y;
 
+  const maxSteps = unit.speed || 1;
   const isMechanized = unit.subCategory === '기계화' || unit.subCategory === '전차';
-  let currentX = x0;
-  let currentY = y0;
-  let lastValidX = x0;
-  let lastValidY = y0;
-
-  // Bresenham for 8-way, Manhattan stepping for 4-way
-  let dx = Math.abs(x1 - x0);
-  let dy = Math.abs(y1 - y0);
-  let sx = (x0 < x1) ? 1 : -1;
-  let sy = (y0 < y1) ? 1 : -1;
+  
+  let dx = Math.abs(targetX - currentX);
+  let dy = Math.abs(targetY - currentY);
+  let sx = (currentX < targetX) ? 1 : -1;
+  let sy = (currentY < targetY) ? 1 : -1;
   let err = dx - dy;
 
-  while (true) {
+  for (let step = 0; step < maxSteps; step++) {
+    if (currentX === targetX && currentY === targetY) break;
+
+    // 1칸 이동 계산
+    if (isMechanized) {
+      // 기계화: 십자 이동 (거리가 먼 축부터 먼저 이동)
+      if (dx > dy) { currentX += sx; dx--; }
+      else { currentY += sy; dy--; }
+    } else {
+      // 보병: 8방향 대각선 이동 허용 (Bresenham)
+      let e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; currentX += sx; }
+      if (e2 < dx) { err += dx; currentY += sy; }
+    }
+
+    // 이동한 칸이 보드 밖이면 직전 유효 좌표 반환
     if (currentY < 0 || currentY >= 20 || currentX < 0 || currentX >= 20) {
       return { x: lastValidX, y: lastValidY };
     }
 
     const tile = board[currentY][currentX];
     if (tile.type === TILE_TYPES.PEAK) return { x: lastValidX, y: lastValidY };
-    if (tile.type === TILE_TYPES.WATER && !['해병대', '공수부대', '특전사'].includes(unit.subCategory)) {
+    if (tile.type === TILE_TYPES.WATER && !['해병대', '공수부대', '특전사'].includes(unit.subCategory || '보병')) {
       return { x: lastValidX, y: lastValidY };
     }
 
-    if (currentX !== x0 || currentY !== y0) {
-      const occupant = allUnits.find(u => u.x === currentX && u.y === currentY && u.status === 'field');
-      if (occupant) {
-        if (occupant.owner === unit.owner) {
-          // 아군을 넘을 수 없으므로 직전 타일에서 멈춤
-          return { x: lastValidX, y: lastValidY };
-        } else {
-          // 적을 만나면 충돌/교전을 위해 해당 타일까지만 진입
-          return { x: currentX, y: currentY };
-        }
+    // 유닛 충돌(아군/적군) 체크
+    const occupant = allUnits.find(u => u.x === currentX && u.y === currentY && u.status === 'field');
+    if (occupant) {
+      if (occupant.owner === unit.owner) {
+        // 아군은 뚫고 지나갈 수 없음 (직전 타일에서 멈춤)
+        return { x: lastValidX, y: lastValidY };
+      } else {
+        // 적군을 만나면 해당 칸까지만 진입하여 교전(Melee) 유발
+        return { x: currentX, y: currentY };
       }
     }
 
     lastValidX = currentX;
     lastValidY = currentY;
-
-    if (currentX === x1 && currentY === y1) break;
-
-    if (isMechanized) {
-      // 기계화는 십자 이동 (대각선 불가)
-      if (dx > dy) {
-        currentX += sx;
-        dx--;
-      } else {
-        currentY += sy;
-        dy--;
-      }
-    } else {
-      // 보병 등은 8방향 이동 (Bresenham)
-      let e2 = 2 * err;
-      if (e2 > -dy) { err -= dy; currentX += sx; }
-      if (e2 < dx) { err += dx; currentY += sy; }
-    }
   }
 
   return { x: lastValidX, y: lastValidY };

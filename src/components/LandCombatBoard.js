@@ -164,6 +164,22 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     // 3. 턴 종료 스킬 후처리
     resolvedSession = resolveCommanderSkills(resolvedSession);
     
+    // 승패(사령부 파괴) 판정
+    const hqs = resolvedSession.units.filter(u => u.isHQ);
+    const myHQ = hqs.find(u => u.owner === countryId);
+    const enemyHQ = hqs.find(u => u.owner !== countryId);
+    
+    let nextPhase = phase;
+    if (myHQ && myHQ.status === 'destroyed') {
+      alert('아군 사령부가 파괴되었습니다! 패배!');
+      nextPhase = 'game_over';
+      setPhase('game_over');
+    } else if (enemyHQ && enemyHQ.status === 'destroyed') {
+      alert('적군 사령부를 파괴했습니다! 승리!');
+      nextPhase = 'game_over';
+      setPhase('game_over');
+    }
+
     setUnitsOnBoard(resolvedSession.units);
     setBoard(resolvedSession.board);
     setOrders([]);
@@ -175,7 +191,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       onSaveSession({
         board: resolvedSession.board,
         units: resolvedSession.units,
-        phase,
+        phase: nextPhase,
         turn: turn + 1,
         resourceDeductions: resolvedSession.resourceDeductions
       });
@@ -378,9 +394,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           <button 
             className="cyber-btn"
             style={{ marginLeft: 'auto', borderColor: hasRecon ? uiColors.neonBlue : '#475569', background: hasRecon ? 'rgba(59,130,246,0.2)' : 'transparent' }}
-            onClick={() => setHasRecon(!hasRecon)}
+            onClick={() => {
+               setHasRecon(!hasRecon);
+               if(!hasRecon) alert('정찰 스킬 발동! 맵 전체의 시야가 밝혀집니다.');
+            }}
           >
-            👁️ 정찰위성 {hasRecon ? 'ON' : 'OFF'}
+            👁️ 정찰 {hasRecon ? 'ON' : 'OFF'}
           </button>
         </div>
         
