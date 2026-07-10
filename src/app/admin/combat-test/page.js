@@ -50,8 +50,12 @@ export default function CombatTestPage() {
     <div style={{ backgroundColor: '#000', minHeight: '100vh', padding: '20px' }}>
       <h1 style={{ color: '#fff', textAlign: 'center', marginBottom: '20px' }}>지상전 엔진 관리자 테스트 세션</h1>
       <LandCombatBoard 
-        board={board}
-        units={initialUnits}
+        initialSession={{
+          board: board,
+          units: initialUnits,
+          phase: 'combat',
+          turn: 1
+        }}
         countryId={countryId}
         corps={corps}
         generals={generals}
