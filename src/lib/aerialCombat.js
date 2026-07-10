@@ -283,45 +283,60 @@ export function calculateSupplyUsage(session, cardsInUse, aircraftUnits) {
  * ===== AI 플레이어 =====
  */
 
-/**
- * AI가 카드를 선택 (낸다 또는 아낀다)
- * 전략: 손실 상황, 에이스 카드 보존 등을 고려
- * @param {Object} aiSession - AI 세션
- * @param {Object} opponentSession - 상대 세션 (정보 제공)
- * @returns {Object|null} 선택된 카드 (null = 아낀다)
- */
 export function aiChooseCard(aiSession, opponentSession) {
   const hand = aiSession.hand || [];
-  if (hand.length === 0) return null;
+  const aa = aiSession.antiAircraft || [];
+  const availableCards = [...hand, ...aa];
+  
+  if (availableCards.length === 0) return null;
 
+  const aiAces = hand.filter(c => c.isAce);
+  const aiNormals = hand.filter(c => !c.isAce);
+  const oppHand = opponentSession.hand || [];
+  const oppAces = oppHand.filter(c => c.isAce).length;
+  const oppAA = opponentSession.antiAircraft?.length || 0;
+  
+  // 1. 상대방이 에이스가 많고 내가 대공포(AA)가 있다면, 일정 확률로 대공포 투척 (에이스 저격)
+  if (aa.length > 0 && oppAces > 0 && oppHand.length > 0) {
+     const aaChance = (oppAces / oppHand.length) * 0.8; // 상대 에이스 비율에 비례
+     if (Math.random() < aaChance) {
+       return aa[0];
+     }
+  }
+  
+  // 2. 상대방이 대공포가 많다면 에이스를 내는 것을 꺼림 (일반 카드를 미끼로 던져 대공포 소진 유도)
+  if (oppAA > 0 && aiNormals.length > 0) {
+     if (Math.random() < 0.7) { 
+        // 가장 속도가 낮은 미끼 투척
+        const sortedNormals = [...aiNormals].sort((a,b) => a.speed - b.speed);
+        return sortedNormals[0];
+     }
+  }
+
+  // 3. 카드를 아낄 확률 계산
   const cardRatio = hand.length / (aiSession.cards?.length || 1);
-  const opponentLostRatio = (opponentSession.lost?.length || 0) / (opponentSession.cards?.length || 1);
-  
-  // 카드가 적을수록 아낄 확률 증가 (cardRatio가 낮을수록 passChance 높음)
-  let passChance = 1.0 - cardRatio;
-  
-  // 상대방이 손실이 크면 더 적극적으로 싸우려 함
-  passChance -= opponentLostRatio * 0.5;
+  let passChance = 0.5 - (cardRatio * 0.4); // 카드가 적으면 최대 50% 패스 확률
+  if (oppHand.length === 0 && oppAA === 0) passChance = 0; // 상대 카드가 없으면 무조건 공격
 
-  // 확률을 10% ~ 90% 사이로 제한
-  passChance = Math.max(0.1, Math.min(0.9, passChance));
+  if (Math.random() < passChance) return null; // 아낀다
 
-  // 확률로 결정
-  if (Math.random() < passChance) {
-    return null; // 아낀다
+  if (hand.length === 0) {
+    return aa.length > 0 ? aa[0] : null;
   }
 
-  // 카드를 낼 것으로 결정한 경우
-  let selectedIndex = 0;
+  // 4. 일반적인 교전: 상대 평균 스피드 기반으로 효율적인 카드 선택
+  let avgOppSpeed = oppHand.reduce((acc, c) => acc + (c.isAce ? c.speed * 5 : c.speed), 0) / (oppHand.length || 1);
+  if (isNaN(avgOppSpeed)) avgOppSpeed = 1;
 
-  // 전략: 에이스는 아끼고, 일반 카드를 먼저 사용
-  const normalCards = hand.map((c, i) => ({ card: c, index: i })).filter(x => !x.card.isAce);
+  // 내 카드를 위력순 정렬
+  const sortedHand = [...hand].sort((a,b) => (a.isAce ? a.speed * 5 : a.speed) - (b.isAce ? b.speed * 5 : b.speed));
+  
+  // 상대 평균 스피드의 80% 이상인 것 중 가장 약한(가성비) 카드를 낸다
+  const efficientCard = sortedHand.find(c => (c.isAce ? c.speed * 5 : c.speed) > avgOppSpeed * 0.8);
+  if (efficientCard) return efficientCard;
 
-  if (normalCards.length > 0) {
-    selectedIndex = normalCards[0].index;
-  }
-
-  return hand[selectedIndex];
+  // 마땅한게 없으면 그냥 제일 쎈 카드
+  return sortedHand[sortedHand.length - 1];
 }
 
 /**

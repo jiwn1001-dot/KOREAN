@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, calculateCasualties, TILE_TYPES } from '@/lib/landCombat';
+import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, calculateCasualties, TILE_TYPES, deployAIUnits } from '@/lib/landCombat';
+import AerialMinigame from '@/components/AerialMinigame';
+import { applyCombatCasualties } from '@/lib/store';
 
 export default function LandCombatBoard({ countryId, militaryUnits, corps, armies, generals, initialSession, onSaveSession }) {
   const [board, setBoard] = useState([]);
@@ -19,7 +21,9 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   const [turn, setTurn] = useState(1);
   const [nukeUses, setNukeUses] = useState(0); // 핵무기/핵미사일 사용 횟수 (보유 수량만큼 제한)
   const [autoAirCombat, setAutoAirCombat] = useState(false); // 제공권 다이스 자동 위임
+  const [autoMode, setAutoMode] = useState(false); // 전투 AI 위임 (Auto)
   const [orderMode, setOrderMode] = useState('move'); // 'move' | 'attack'
+  const [selectedStandbyUnitId, setSelectedStandbyUnitId] = useState(null);
 
   // 보유 특수 유닛 스캔 및 공격력 추출 (보드나 투입 대기 중인 상태 등 필드에 있는 자기 유닛 기준)
   const specialUnits = React.useMemo(() => {
@@ -28,8 +32,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     // 공격력 계산 로직 (동일 병과가 여러개면 최대 공격력 사용)
     const getMaxAttack = (subCat) => {
       const units = myUnits.filter(u => u.subCategory === subCat);
-      if (units.length === 0) return { count: 0, damage: 0 };
-      return { count: units.length, damage: Math.max(...units.map(u => u.attack || 0)) };
+      if (units.length === 0) return { count: 0, damage: 0, units: [] };
+      return { count: units.length, damage: Math.max(...units.map(u => u.attack || 0)), units: units };
     };
 
     return {
@@ -46,7 +50,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     if (initialSession && initialSession.board) {
       setBoard(initialSession.board);
       setUnitsOnBoard(initialSession.units || []);
-      setPhase(initialSession.phase || 'combat');
+      setPhase(initialSession.phase || (initialSession.turn === 1 || !initialSession.turn ? 'deployment' : 'combat'));
       setTurn(initialSession.turn || 1);
     } else {
       setBoard(createLandBoard());
@@ -62,7 +66,64 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   }, [board, unitsOnBoard, hasRecon, countryId]);
 
   const handleTileClick = (x, y) => {
-    if (phase === 'combat') {
+    if (phase === 'deployment') {
+      if (!selectedStandbyUnitId) {
+        alert('배치할 대기 사단을 먼저 선택해주세요.');
+        return;
+      }
+      
+      // Check deployment zone
+      const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+      if (isTeam1 && x > 9) return alert('배치 구역을 벗어났습니다. (x <= 9)');
+      if (!isTeam1 && x < 10) return alert('배치 구역을 벗어났습니다. (x >= 10)');
+
+      // Check if tile is empty
+      if (unitsOnBoard.some(u => u.x === x && u.y === y && u.status === 'field')) {
+        return alert('이미 유닛이 있는 자리입니다.');
+      }
+
+      const unitToDeploy = unitsOnBoard.find(u => u.id === selectedStandbyUnitId);
+      if (!unitToDeploy) return;
+
+      // Check supply limit (HQ is 0)
+      const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
+      if (currentSupply + (unitToDeploy.supplyConsumption || 0) > (initialSession?.supplyLimit || 10)) {
+        return alert('보급 한계를 초과하여 배치할 수 없습니다.');
+      }
+
+      const updatedUnits = unitsOnBoard.map(u => {
+        if (u.id === selectedStandbyUnitId) {
+          return { ...u, x, y, status: 'field' };
+        }
+        return u;
+      });
+      
+      setUnitsOnBoard(updatedUnits);
+      setSelectedStandbyUnitId(null);
+    } else if (phase === 'combat') {
+      if (selectedStandbyUnitId) {
+        const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+        const validX = isTeam1 ? 0 : 19;
+        
+        if (x !== validX) return alert('전투 중 예비대 투입은 아군 진영의 맨 끝 줄에만 가능합니다.');
+        if (unitsOnBoard.some(u => u.x === x && u.y === y && u.status === 'field')) return alert('이미 유닛이 있는 자리입니다.');
+
+        const unitToDeploy = unitsOnBoard.find(u => u.id === selectedStandbyUnitId);
+        const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
+        const queuedSpawns = orders.filter(o => o.type === 'spawn').reduce((acc, o) => {
+          const su = unitsOnBoard.find(u => u.id === o.unitId);
+          return acc + (su?.supplyConsumption || 0);
+        }, 0);
+
+        if (currentSupply + queuedSpawns + (unitToDeploy?.supplyConsumption || 0) > (initialSession?.supplyLimit || 10)) {
+          return alert('보급 한계를 초과하여 투입할 수 없습니다.');
+        }
+
+        setOrders(prev => [...prev.filter(o => o.unitId !== selectedStandbyUnitId), { unitId: selectedStandbyUnitId, type: 'spawn', target: {x, y} }]);
+        setSelectedStandbyUnitId(null);
+        return;
+      }
+      
       const clickedUnit = unitsOnBoard.find(u => u.x === x && u.y === y && u.status === 'field');
       
       // 이미 유닛이 선택된 상태라면 명령(이동/공격) 예약
@@ -108,13 +169,17 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       }
     } else if (targetingSkill) {
        // 스킬 타겟팅 처리 (데미지도 함께 넘김)
-       let skillDamage = 0;
+       let consumerId = null;
        if (targetingSkill === 'bombing') skillDamage = specialUnits.bomber.damage;
        if (targetingSkill === 'cas') skillDamage = specialUnits.cas.damage;
-       if (targetingSkill === 'missile') skillDamage = specialUnits.missile.damage;
-       // 핵, 핵미사일, 해안포격, 독가스는 엔진에서 퍼센트/즉사 처리하므로 데미지 전달 생략 가능
+       if (targetingSkill === 'missile') {
+         skillDamage = specialUnits.missile.damage;
+         consumerId = specialUnits.missile.units[0]?.id; // 소비할 미사일
+       }
+       if (targetingSkill === 'nuke') consumerId = specialUnits.nuke.units[nukeUses]?.id;
+       if (targetingSkill === 'nuke_missile') consumerId = specialUnits.nukeMissile.units[nukeUses]?.id;
        
-       setActiveSkills(prev => [...prev, { type: targetingSkill, target: {x, y}, damage: skillDamage }]);
+       setActiveSkills(prev => [...prev, { type: targetingSkill, target: {x, y}, damage: skillDamage, consumerId }]);
        
        if (['poison', 'naval_bombardment'].includes(targetingSkill)) {
          setUsedSkills(prev => [...prev, targetingSkill]); // 1회용 스킬 제한
@@ -128,35 +193,97 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
   };
 
-  const handleNextTurn = () => {
+  const handleDeployComplete = () => {
+    let updatedUnits = [...unitsOnBoard];
+    const myHQ = updatedUnits.find(u => u.owner === countryId && u.isHQ);
+    const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+
+    // HQ 강제 배치 로직
+    if (myHQ && myHQ.status === 'standby') {
+      let hqPlaced = false;
+      const xRange = isTeam1 ? [0, 9] : [10, 19];
+      // 빈 자리 찾기
+      for (let x = xRange[0]; x <= xRange[1] && !hqPlaced; x++) {
+        for (let y = 0; y < 20 && !hqPlaced; y++) {
+          if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+            myHQ.x = x;
+            myHQ.y = y;
+            myHQ.status = 'field';
+            hqPlaced = true;
+          }
+        }
+      }
+      
+      // 구역 내 빈 자리가 전혀 없다면, 랜덤하게 유닛 하나를 대기로 돌리고 강제 스폰
+      if (!hqPlaced) {
+        const myDeployedUnits = updatedUnits.filter(u => u.owner === countryId && u.status === 'field' && !u.isHQ);
+        if (myDeployedUnits.length > 0) {
+          const victim = myDeployedUnits[Math.floor(Math.random() * myDeployedUnits.length)];
+          victim.status = 'standby';
+          myHQ.x = victim.x;
+          myHQ.y = victim.y;
+          myHQ.status = 'field';
+          alert(`사령부 배치를 위해 ${victim.name} 유닛이 대기 상태로 강제 전환되었습니다.`);
+        }
+      } else {
+        alert('사령부를 배치하지 않아 시스템이 무작위 빈 공간에 사령부를 강제 배치했습니다.');
+      }
+    }
+
+    // AI 자동 배치 호출 (적군 및 아군 AI)
+    // AI의 배치를 위해 업데이트된 unitsOnBoard를 넘김
+    updatedUnits = deployAIUnits(updatedUnits, initialSession, countryId);
+
+    setUnitsOnBoard(updatedUnits);
+    setPhase('combat');
+    setSelectedStandbyUnitId(null);
+  };
+
+  const handleNextTurn = async () => {
     let currentOrders = [...orders];
     
     // 1. AI 명령 산출 (현재 플레이어 소유가 아닌 유닛들, 그리고 유저가 조작하지 않는 아군 유닛들)
+    let aiSkillsCombined = [];
     const opponentIds = [...new Set(unitsOnBoard.map(u => u.owner).filter(o => o !== countryId))];
     opponentIds.forEach(oppId => {
       // AI에게 유저의 이동 명령을 전달하여 경로 양보(우회)를 계산하게 함
-      const aiOrders = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals }, oppId);
+      const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, oppId);
       currentOrders = currentOrders.concat(aiOrders);
+      aiSkillsCombined = aiSkillsCombined.concat(aiSkills);
     });
 
-    // 아군이지만 유저가 직접 조작하지 않는 군단 유닛들도 AI가 조작
-    const alliedAIOrders = calculateAIOrders({ 
+    // 아군이지만 유저가 직접 조작하지 않는 군단 유닛들도 AI가 조작 (autoMode면 전체 아군 AI 조작)
+    const excludeCorps = autoMode ? null : activeCorpsId;
+    const { orders: alliedAIOrders, skills: alliedAISkills } = calculateAIOrders({ 
       units: unitsOnBoard, 
       userOrders: currentOrders,
       corps,
-      generals
-    }, countryId, activeCorpsId); // activeCorpsId를 넘겨 해당 군단과 사령부는 AI에서 제외
+      generals,
+      armies
+    }, countryId, excludeCorps); // excludeCorpsId를 넘겨 해당 군단과 사령부는 AI에서 제외
     currentOrders = currentOrders.concat(alliedAIOrders);
+    aiSkillsCombined = aiSkillsCombined.concat(alliedAISkills);
+
+    // Extract stats for combat logic
+    const countryStatsMap = {};
+    if (initialSession && initialSession.players) {
+      Object.keys(initialSession.players).forEach(pId => {
+        countryStatsMap[pId] = initialSession.players[pId].stats || { penetration: 0, antiAir: 0, vision: 0 };
+      });
+    }
+    // Set fallback for enemies if not present (AI without stats)
+    if (!countryStatsMap['enemy']) countryStatsMap['enemy'] = { penetration: 0, antiAir: 0, vision: 0 };
 
     // 임시 세션 객체 구성
     const session = {
       board,
       units: JSON.parse(JSON.stringify(unitsOnBoard)), // 딥카피
       orders: currentOrders,
-      skillsQueue: activeSkills,
-      supplyLimit: 10,
-      penetration: { [countryId]: 2, 'enemy': 2 }, // TODO: 실제 국가 스탯 연동
-      antiAir: { [countryId]: 3, 'enemy': 3 }, // TODO: 실제 국가 스탯 연동
+      skillsQueue: [...activeSkills, ...aiSkillsCombined],
+      supplyLimit: initialSession?.supplyLimit || 10,
+      penetration: { [countryId]: countryStatsMap[countryId]?.penetration || 0, 'enemy': countryStatsMap['enemy']?.penetration || 0 }, 
+      antiAir: { [countryId]: countryStatsMap[countryId]?.antiAir || 0, 'enemy': countryStatsMap['enemy']?.antiAir || 0 }, 
+      vision: { [countryId]: countryStatsMap[countryId]?.vision || 0, 'enemy': countryStatsMap['enemy']?.vision || 0 },
       resourceDeductions: [] // 이번 턴의 자원 소모 기록
     };
     
@@ -178,12 +305,14 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       setPhase('game_over');
       casualties = calculateCasualties(resolvedSession.units);
       console.log('최종 사상자/손실 자원:', casualties);
+      await applyCombatCasualties(casualties);
     } else if (enemyHQ && enemyHQ.status === 'destroyed') {
       alert('적군 사령부를 파괴했습니다! 승리!');
       nextPhase = 'game_over';
       setPhase('game_over');
       casualties = calculateCasualties(resolvedSession.units);
       console.log('최종 사상자/손실 자원:', casualties);
+      await applyCombatCasualties(casualties);
     }
 
     setUnitsOnBoard(resolvedSession.units);
@@ -191,6 +320,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     setOrders([]);
     setActiveSkills([]);
     setHasAirSupremacy(false); // 매 턴 시작 시 제공권 초기화 (매 턴 시도 가능)
+    setHasRecon(false); // 정찰 스킬도 초기화
     setTurn(t => t + 1);
     
     if (onSaveSession) {
@@ -205,9 +335,10 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
   };
 
-  const handleSurrender = () => {
+  const handleSurrender = async () => {
     if (window.confirm("정말로 항복하시겠습니까? 남은 병력의 체력에 비례해 자원이 크게 소실됩니다.")) {
       const casualties = calculateCasualties(unitsOnBoard);
+      await applyCombatCasualties(casualties);
       alert('항복했습니다. 전투를 종료합니다.');
       setPhase('game_over');
       if (onSaveSession) {
@@ -350,8 +481,15 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
               value={activeCorpsId || ''} 
               onChange={(e) => setActiveCorpsId(e.target.value)}
             >
-              <option value="">-- 작전 통제 군단 지정 (직속 5기) --</option>
-              {corps && corps.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">-- 작전 통제 군단 지정 (직속 5기 이하) --</option>
+              {corps && corps.map(c => {
+                const overLimit = unitsOnBoard.filter(u => u.corpsId === c.id && !u.isHQ).length > 5;
+                return (
+                  <option key={c.id} value={c.id} disabled={overLimit}>
+                    {c.name} {overLimit ? '(6개 이상 불가)' : ''}
+                  </option>
+                );
+              })}
             </select>
             
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
@@ -369,10 +507,17 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
               >
                 {hasAirSupremacy ? '☁️ 제공권 장악' : '✈️ 제공권 시도'}
               </button>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <input type="checkbox" checked={autoAirCombat} onChange={(e) => setAutoAirCombat(e.target.checked)} />
-                AUTO 판정
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" id="autoAirToggle" checked={autoAirCombat} onChange={e => setAutoAirCombat(e.target.checked)} />
+              <label htmlFor="autoAirToggle" style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>공중전 자동 결전</label>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+              <input type="checkbox" id="autoModeToggle" checked={autoMode} onChange={e => {
+                setAutoMode(e.target.checked);
+                if (e.target.checked) setOrders([]); // 위임 시 유저가 내린 명령 취소
+              }} />
+              <label htmlFor="autoModeToggle" style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>전투 AI 위임 (Auto)</label>
+            </div>
             </div>
           </div>
         </div>
@@ -384,43 +529,43 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           <button 
             className={`cyber-btn ${targetingSkill === 'bombing' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('bombing')}
-            disabled={!hasAirSupremacy || specialUnits.bomber.count === 0 || activeSkills.length > 0}
+            disabled={!hasAirSupremacy || specialUnits.bomber.count === 0 || activeSkills.length > 0 || hasRecon}
             title={`보유: ${specialUnits.bomber.count}`}
           >🛩️ 폭격</button>
           
           <button 
             className={`cyber-btn ${targetingSkill === 'cas' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('cas')}
-            disabled={specialUnits.cas.count === 0 || activeSkills.length > 0}
+            disabled={!hasAirSupremacy || specialUnits.cas.count === 0 || activeSkills.length > 0 || hasRecon}
           >🛩️ CAS</button>
           
           <button 
             className={`cyber-btn ${targetingSkill === 'nuke' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('nuke')}
-            disabled={!hasAirSupremacy || specialUnits.nuke.count <= nukeUses || activeSkills.length > 0}
+            disabled={!hasAirSupremacy || specialUnits.nuke.count <= nukeUses || activeSkills.length > 0 || hasRecon}
           >☢️ 핵투발</button>
 
           <button 
             className={`cyber-btn ${targetingSkill === 'missile' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('missile')}
-            disabled={specialUnits.missile.count === 0 || activeSkills.length > 0}
+            disabled={specialUnits.missile.count === 0 || activeSkills.length > 0 || hasRecon}
           >🚀 미사일</button>
 
           <button 
             className={`cyber-btn ${targetingSkill === 'nuke_missile' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('nuke_missile')}
-            disabled={specialUnits.nukeMissile.count <= nukeUses || activeSkills.length > 0} 
+            disabled={specialUnits.nukeMissile.count <= nukeUses || activeSkills.length > 0 || hasRecon} 
           >☢️🚀 핵미사일</button>
           
           <button 
             className={`cyber-btn ${targetingSkill === 'poison' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('poison')}
-            disabled={usedSkills.includes('poison') || activeSkills.length > 0}
+            disabled={usedSkills.includes('poison') || activeSkills.length > 0 || hasRecon}
           >🧪 독가스</button>
           <button 
             className={`cyber-btn ${targetingSkill === 'naval_bombardment' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('naval_bombardment')}
-            disabled={usedSkills.includes('naval_bombardment') || activeSkills.length > 0}
+            disabled={usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
           >🚢 해안포격</button>
           
           <button 
@@ -429,18 +574,19 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             onClick={() => {
               setActiveSkills(prev => [...prev, { type: 'emp' }]);
               setUsedSkills(prev => [...prev, 'emp']);
-              alert('EMP가 예약되었습니다. 턴 넘김 시 기계화 부대가 정지합니다.');
+              alert('EMP가 예약되었습니다. 턴 넘김 시 양측 기계화 부대 정지 및 상대방의 스킬이 모두 무력화됩니다.');
             }}
-            disabled={usedSkills.includes('emp') || activeSkills.length > 0}
+            disabled={usedSkills.includes('emp') || activeSkills.length > 0 || hasRecon}
           >⚡ EMP</button>
           
           <button 
             className="cyber-btn"
             style={{ marginLeft: 'auto', borderColor: hasRecon ? uiColors.neonBlue : '#475569', background: hasRecon ? 'rgba(59,130,246,0.2)' : 'transparent' }}
             onClick={() => {
-               setHasRecon(!hasRecon);
-               if(!hasRecon) alert('정찰 스킬 발동! 맵 전체의 시야가 밝혀집니다.');
+               setHasRecon(true);
+               alert('정찰 스킬 발동! 이번 턴 동안 맵 전체의 시야가 밝혀집니다.');
             }}
+            disabled={!hasAirSupremacy || activeSkills.length > 0 || hasRecon}
           >
             👁️ 정찰 {hasRecon ? 'ON' : 'OFF'}
           </button>
@@ -573,8 +719,59 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         {/* 사이드바 HUD */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="cyber-panel" style={{ flex: 1 }}>
-            <h4 style={{ color: uiColors.neonBlue, marginTop: 0, borderBottom: `1px solid ${uiColors.glassBorder}`, paddingBottom: '8px' }}>📡 텔레메트리 (선택된 유닛)</h4>
-            {selectedUnit ? (
+            {phase === 'deployment' ? (
+              <>
+                <h4 style={{ color: uiColors.neonBlue, marginTop: 0, borderBottom: `1px solid ${uiColors.glassBorder}`, paddingBottom: '8px' }}>🛠️ 부대 배치 (대기 사단)</h4>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '8px' }}>
+                    보급 사용량: 
+                    <span style={{ color: unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0) >= (initialSession?.supplyLimit || 10) ? uiColors.neonRed : '#fff', fontWeight: 'bold', marginLeft: '8px' }}>
+                      {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0)} / {initialSession?.supplyLimit || 10}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    내 진영 반경에 유닛을 배치하세요. 사령부(HQ) 배치는 필수입니다 (미배치 시 강제 배치됨).
+                  </p>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
+                  {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby').map(u => (
+                    <div 
+                      key={u.id}
+                      onClick={() => setSelectedStandbyUnitId(u.id)}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: selectedStandbyUnitId === u.id ? 'rgba(59, 130, 246, 0.4)' : 'rgba(0,0,0,0.4)',
+                        border: `1px solid ${selectedStandbyUnitId === u.id ? uiColors.neonBlue : '#334155'}`,
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: 'bold' }}>{u.isHQ ? '⭐ 야전사령부 (HQ)' : u.name}</div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급 소모: {u.supplyConsumption || 0}</div>
+                      </div>
+                      <div style={{ color: uiColors.neonYellow, fontSize: '0.8rem' }}>대기 중</div>
+                    </div>
+                  ))}
+                  {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby').length === 0 && (
+                    <div style={{ color: '#64748b', textAlign: 'center', padding: '20px 0' }}>대기 중인 유닛이 없습니다.</div>
+                  )}
+                </div>
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', marginTop: '20px' }}
+                  onClick={handleDeployComplete}
+                >
+                  배치 완료 (전투 시작)
+                </button>
+              </>
+            ) : (
+              <>
+                <h4 style={{ color: uiColors.neonBlue, marginTop: 0, borderBottom: `1px solid ${uiColors.glassBorder}`, paddingBottom: '8px' }}>📡 텔레메트리 (선택된 유닛)</h4>
+                {selectedUnit ? (
               <div>
                 <h3 style={{ color: '#fff', margin: '12px 0 4px 0' }}>{selectedUnit.name} <span style={{ fontSize: '0.8rem', color: uiColors.neonYellow }}>[{selectedUnit.subCategory}]</span></h3>
                 <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: '0 0 16px 0' }}>{selectedUnit.isHQ ? '전략 지휘 사령부' : '지상 교전 유닛'} | 좌표: ({selectedUnit.x}, {selectedUnit.y})</p>
@@ -615,9 +812,50 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 </div>
               </div>
             ) : (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontStyle: 'italic' }}>
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontStyle: 'italic', paddingBottom: '20px' }}>
                 전술 지도에서 유닛을 선택하여 상세 정보를 확인하십시오.
               </div>
+            )}
+
+            {/* 대기 유닛 리스트 (전투 중 재투입) */}
+            <h4 style={{ color: uiColors.neonGreen, marginTop: '20px', borderBottom: `1px solid ${uiColors.glassBorder}`, paddingBottom: '8px' }}>🔄 예비대 투입 대기열</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '8px' }}>
+              {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby' && !u.isHQ).map(u => {
+                const isQueued = orders.some(o => o.type === 'spawn' && o.unitId === u.id);
+                return (
+                <div 
+                  key={u.id}
+                  onClick={() => {
+                    if (!isQueued) {
+                      setSelectedStandbyUnitId(selectedStandbyUnitId === u.id ? null : u.id);
+                      setSelectedUnit(null);
+                    }
+                  }}
+                  style={{
+                    padding: '8px',
+                    backgroundColor: selectedStandbyUnitId === u.id ? 'rgba(59, 130, 246, 0.4)' : isQueued ? 'rgba(16, 185, 129, 0.2)' : 'rgba(0,0,0,0.4)',
+                    border: `1px solid ${selectedStandbyUnitId === u.id ? uiColors.neonBlue : isQueued ? uiColors.neonGreen : '#334155'}`,
+                    borderRadius: '6px',
+                    cursor: isQueued ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <div>
+                    <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>{u.name}</div>
+                    <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급: {u.supplyConsumption || 0} | 체력: {u.hp}/{u.maxHp || 100}</div>
+                  </div>
+                  <div style={{ color: isQueued ? uiColors.neonGreen : uiColors.neonYellow, fontSize: '0.8rem' }}>
+                    {isQueued ? '투입 대기' : '대기 중'}
+                  </div>
+                </div>
+              )})}
+              {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby' && !u.isHQ).length === 0 && (
+                <div style={{ color: '#64748b', textAlign: 'center', padding: '10px 0', fontSize: '0.9rem' }}>대기 중인 유닛이 없습니다.</div>
+              )}
+            </div>
+            </>
             )}
           </div>
 
@@ -630,16 +868,30 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 return (
                   <li key={idx} style={{ background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '4px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#e2e8f0' }}>{u?.name}</span>
-                    <span style={{ color: o.type === 'attack' ? uiColors.neonRed : o.type === 'move' ? uiColors.neonBlue : uiColors.neonYellow }}>
-                      {o.type === 'move' ? `➡️ 이동 (${o.target.x}, ${o.target.y})` : o.type === 'attack' ? `💥 포격 (${o.target.x}, ${o.target.y})` : '🔙 후퇴'}
+                    <span style={{ color: o.type === 'attack' ? uiColors.neonRed : o.type === 'move' ? uiColors.neonBlue : o.type === 'spawn' ? uiColors.neonGreen : uiColors.neonYellow }}>
+                      {o.type === 'move' ? `➡️ 이동 (${o.target.x}, ${o.target.y})` : o.type === 'attack' ? `💥 포격 (${o.target.x}, ${o.target.y})` : o.type === 'spawn' ? `✨ 증원 스폰` : '🔙 후퇴'}
                     </span>
                   </li>
                 );
               })}
             </ul>
+            </ul>
           </div>
         </div>
       </div>
+      )}
+      {/* 공중전 미니게임 */}
+      {phase === 'aerial_combat' && (
+        <AerialMinigame 
+          countryId={countryId} 
+          myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.category === 'air')} 
+          enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.category === 'air')} 
+          autoMode={autoAirCombat} 
+          onComplete={(isWin) => {
+            setHasAirSupremacy(isWin);
+            setPhase('combat');
+          }}
+        />
       )}
     </div>
   );

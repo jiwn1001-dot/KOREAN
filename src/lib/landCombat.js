@@ -90,7 +90,7 @@ export function applyTileEffects(unit, tile, actionType) {
     if (sub === '산악부대') {
       effects.defenseDamageMultiplier = 0.5;
     } else if (['해병대', '공수부대', '특전사'].includes(sub)) {
-      effects.hpDrainPct = (1 / 20) / 2;
+      effects.hpDrainPct = 1 / 40;
       effects.movementPenalty = 1;
       effects.defenseDamageMultiplier = 0.5;
     } else {
@@ -121,29 +121,9 @@ export function applyTileEffects(unit, tile, actionType) {
  * 턴 정지(속박) 패널티 부여 함수
  */
 export function applyTerrainMovementLock(unit, tile) {
-  const sub = unit.subCategory || '보병';
-  if (!tile || tile.type === TILE_TYPES.NORMAL || tile.type === TILE_TYPES.PEAK || tile.type === TILE_TYPES.FORTRESS || tile.type === TILE_TYPES.ULTIMATE_FORTRESS) return;
-
-  if (tile.type === TILE_TYPES.ROUGH) {
-    if (!['해병대', '산악부대', '공수부대', '특전사'].includes(sub)) {
-      unit.movementLock = 1;
-    }
-  } else if (tile.type === TILE_TYPES.MOUNTAIN) {
-    if (sub === '산악부대') {
-      // 면역
-    } else if (['해병대', '공수부대', '특전사'].includes(sub)) {
-      unit.movementLock = 1;
-    } else {
-      unit.movementLock = 2;
-    }
-  } else if (tile.type === TILE_TYPES.WATER) {
-    if (sub === '해병대') {
-      // 면역
-    } else if (['산악부대', '특전사', '공수부대'].includes(sub)) {
-      unit.movementLock = 1;
-    } else {
-      unit.movementLock = 2;
-    }
+  const effects = applyTileEffects(unit, tile);
+  if (effects.movementPenalty > 0) {
+    unit.movementLock = effects.movementPenalty;
   }
 }
 
@@ -190,8 +170,7 @@ function calculateActualPath(unit, targetX, targetY, board, allUnits, isAirdrop 
     }
 
     const tile = board[currentY][currentX];
-    if (tile.type === TILE_TYPES.PEAK) return { x: lastValidX, y: lastValidY };
-    if (tile.type === TILE_TYPES.WATER && !['해병대', '공수부대', '특전사'].includes(unit.subCategory || '보병')) {
+    if (tile.type === TILE_TYPES.PEAK) {
       return { x: lastValidX, y: lastValidY };
     }
 
@@ -207,6 +186,12 @@ function calculateActualPath(unit, targetX, targetY, board, allUnits, isAirdrop 
       }
     }
 
+    const effects = applyTileEffects(unit, tile);
+    if (effects.movementPenalty > 0) {
+      // 험지, 산, 물 등 이동 페널티가 있는 타일에 진입하면 즉시 이동 중지
+      return { x: currentX, y: currentY };
+    }
+
     lastValidX = currentX;
     lastValidY = currentY;
   }
@@ -215,26 +200,167 @@ function calculateActualPath(unit, targetX, targetY, board, allUnits, isAirdrop 
 }
 
 /**
+ * AI 자동 배치 (배치 페이즈 종료 후 호출)
+ * 주어진 units(유저의 수정사항 반영본) 중, 유저 소유가 아닌(또는 아직 배치되지 않은) AI 유닛들을 보급 한계 내에서 자동 배치합니다.
+ */
+export function deployAIUnits(units, initialSession, userCountryId) {
+  let updatedUnits = [...units];
+  const supplyLimit = initialSession?.supplyLimit || 10;
+  
+  // 모든 참전국 ID 추출
+  const allCountries = [...new Set(updatedUnits.map(u => u.owner))];
+
+  for (const countryId of allCountries) {
+    if (countryId === userCountryId) continue; // 유저는 직접 배치함
+
+    const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+    const xRange = isTeam1 ? [0, 9] : [10, 19];
+    
+    // 이 국가의 스탠바이 유닛들 가져오기
+    const standbyUnits = updatedUnits.filter(u => u.owner === countryId && u.status === 'standby');
+    let currentSupply = updatedUnits.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0);
+
+    // 먼저 사령부(HQ)부터 배치 (필드에 없다면)
+    const hq = standbyUnits.find(u => u.isHQ);
+    if (hq) {
+      // 빈 자리 찾기
+      let placed = false;
+      for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
+        for (let y = 0; y < 20 && !placed; y++) {
+          if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+            hq.x = x;
+            hq.y = y;
+            hq.status = 'field';
+            placed = true;
+          }
+        }
+      }
+    }
+
+    // 나머지 유닛들 보급 한계 내에서 무작위 배치
+    const nonHqStandby = standbyUnits.filter(u => !u.isHQ);
+    // 무작위로 섞음 (다양한 유닛이 배치되도록)
+    nonHqStandby.sort(() => Math.random() - 0.5);
+
+    for (const unit of nonHqStandby) {
+      if (currentSupply + (unit.supplyConsumption || 1) <= supplyLimit) {
+        let placed = false;
+        // AI는 무작위로 타일을 골라 배치 시도 (단순화를 위해 순차적 탐색)
+        for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
+          for (let y = 0; y < 20 && !placed; y++) {
+            // 난수 개입으로 약간의 흩어짐 유도
+            if (Math.random() < 0.2 && !updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+              unit.x = x;
+              unit.y = y;
+              unit.status = 'field';
+              currentSupply += (unit.supplyConsumption || 1);
+              placed = true;
+            }
+          }
+        }
+        // 난수로 인해 못 찾았다면 순차 탐색으로 다시 시도
+        if (!placed) {
+          for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
+            for (let y = 0; y < 20 && !placed; y++) {
+              if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+                unit.x = x;
+                unit.y = y;
+                unit.status = 'field';
+                currentSupply += (unit.supplyConsumption || 1);
+                placed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return updatedUnits;
+}
+
+/**
  * AI 군단의 턴 자동 명령 생성 (매 턴 시작 시 호출)
  */
 export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
-  const { units, userOrders = [], corps = [], generals = [] } = session;
+  const { units, userOrders = [], corps = [], generals = [], armies = [] } = session;
   
   // excludeCorpsId가 있으면 (유저가 직접 조작하는 주 군단 및 사령부는 제외)
   // 추가로: 유저가 다른 군단 유닛에 개입하여 이미 명령을 내린 경우(userOrders 존재) AI 조작에서 제외
   const aiUnits = units.filter(u => 
     u.owner === aiCountryId && 
     u.status === 'field' && 
-    (!excludeCorpsId || (u.corpsId !== excludeCorpsId && !u.isHQ)) &&
+    (!excludeCorpsId || (u.corpsId !== excludeCorpsId)) &&
     !userOrders.some(o => o.unitId === u.id)
   );
+  
   const enemies = units.filter(u => u.owner !== aiCountryId && u.status === 'field');
 
   const orders = [];
+  const skills = [];
   const reservedTiles = userOrders.filter(o => o.type === 'move').map(o => `${o.target.x},${o.target.y}`);
+
+  // 야전군 사령관 지능 추출
+  let armyAiLevel = 1;
+  const army = armies.find(a => a.corpsIds.some(cid => units.some(u => u.owner === aiCountryId && u.corpsId === cid)));
+  if (army && army.commanderId) {
+    const armyGen = generals.find(g => g.id === army.commanderId);
+    if (armyGen) armyAiLevel = parseInt(armyGen.aiLevel, 10);
+  }
+
+  // AI 스킬 사용 로직 (사령관 지능 레벨 2 이상일 때)
+  if (armyAiLevel >= 2 && enemies.length > 0) {
+    const myUnits = units.filter(u => u.owner === aiCountryId && u.status === 'field');
+    const myMissiles = myUnits.filter(u => u.subCategory === '미사일');
+    const myCas = myUnits.filter(u => u.subCategory === '근접항공지원기');
+    
+    // 무작위 적 하나 타겟팅
+    const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+
+    if (myCas.length > 0 && Math.random() < 0.3) {
+      // 30% 확률로 CAS 사용
+      const maxAttackCas = myCas.reduce((prev, curr) => (prev.attack > curr.attack) ? prev : curr);
+      skills.push({ type: 'cas', target: { x: targetEnemy.x, y: targetEnemy.y }, damage: maxAttackCas.attack || 10, consumerId: null });
+    } else if (myMissiles.length > 0 && Math.random() < 0.3) {
+      // 30% 확률로 미사일 사용
+      const missile = myMissiles[0];
+      skills.push({ type: 'missile', target: { x: targetEnemy.x, y: targetEnemy.y }, damage: missile.attack || 50, consumerId: missile.id });
+    }
+  }
 
   aiUnits.forEach(aiUnit => {
     if (enemies.length === 0) return;
+
+    // 사령부(HQ) 도망/이동 로직
+    if (aiUnit.isHQ) {
+      if (armyAiLevel >= 2) {
+        // 사령부는 적과 거리를 벌리는 방향으로 도망
+        let closestEnemyDist = Infinity;
+        let closestEnemy = null;
+        enemies.forEach(enemy => {
+          const dist = Math.abs(enemy.x - aiUnit.x) + Math.abs(enemy.y - aiUnit.y);
+          if (dist < closestEnemyDist) {
+            closestEnemyDist = dist;
+            closestEnemy = enemy;
+          }
+        });
+
+        if (closestEnemyDist <= 5 && closestEnemy) {
+          // 적의 반대 방향으로 1칸 도망
+          let targetX = aiUnit.x;
+          let targetY = aiUnit.y;
+          if (aiUnit.x > closestEnemy.x) targetX = Math.min(19, targetX + 1);
+          else if (aiUnit.x < closestEnemy.x) targetX = Math.max(0, targetX - 1);
+          else if (aiUnit.y > closestEnemy.y) targetY = Math.min(19, targetY + 1);
+          else if (aiUnit.y < closestEnemy.y) targetY = Math.max(0, targetY - 1);
+          
+          if (!reservedTiles.includes(`${targetX},${targetY}`)) {
+            orders.push({ unitId: aiUnit.id, type: 'move', target: { x: targetX, y: targetY } });
+          }
+        }
+      }
+      return; // 사령부는 공격/후퇴 로직 없음
+    }
 
     // 1. AI 지능 레벨 (aiLevel) 추출
     let aiLevel = 1;
@@ -339,7 +465,7 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     }
   });
 
-  return orders;
+  return { orders, skills };
 }
 
 /**
@@ -372,10 +498,10 @@ export function resolveSimultaneousTurn(session) {
   } else {
     // 페널티 해제 복구 (필요시)
     units.forEach(u => {
-      if (u.originalAttack) u.attack = u.originalAttack;
-      if (u.originalDefense) u.defense = u.originalDefense;
-      if (u.originalSpeed) u.speed = u.originalSpeed;
-      if (u.originalMaxHp) u.maxHp = u.originalMaxHp;
+      if (u.originalAttack !== undefined) u.attack = u.originalAttack;
+      if (u.originalDefense !== undefined) u.defense = u.originalDefense;
+      if (u.originalSpeed !== undefined) u.speed = u.originalSpeed;
+      if (u.originalMaxHp !== undefined) u.maxHp = u.originalMaxHp;
     });
   }
 
@@ -413,33 +539,52 @@ export function resolveSimultaneousTurn(session) {
         const reqManpower = Math.floor((unit.manpowerCost || 0) * missingRatio);
         const reqWeapons = (unit.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: Math.max(1, Math.floor(w.amount * missingRatio)) }));
         
-        let canHeal = true;
+        let affordableRatio = 1.0;
         if (session.countryResources) {
           const res = session.countryResources;
-          if ((res.manpower || 0) < reqManpower) canHeal = false;
-          reqWeapons.forEach(rw => {
-            if (!res.weapons || (res.weapons[rw.name] || 0) < rw.amount) canHeal = false;
-          });
-          
-          if (canHeal) {
-             res.manpower -= reqManpower;
-             reqWeapons.forEach(rw => {
-               res.weapons[rw.name] -= rw.amount;
-             });
+          if (reqManpower > 0) {
+            affordableRatio = Math.min(affordableRatio, (res.manpower || 0) / reqManpower);
           }
-        }
-        
-        if (canHeal) {
-          unit.hp = max; // 자원이 충분하므로 풀피 회복
-          session.resourceDeductions.push({
-            owner: unit.owner,
-            manpower: reqManpower,
-            weapons: reqWeapons
+          reqWeapons.forEach(rw => {
+            if (rw.amount > 0) {
+              affordableRatio = Math.min(affordableRatio, (res.weapons?.[rw.name] || 0) / rw.amount);
+            }
           });
+          affordableRatio = Math.max(0, Math.min(1.0, affordableRatio));
+          
+          if (affordableRatio > 0) {
+            const consumedManpower = Math.floor(reqManpower * affordableRatio);
+            const consumedWeapons = reqWeapons.map(rw => ({ name: rw.name, amount: Math.floor(rw.amount * affordableRatio) }));
+            
+            res.manpower = (res.manpower || 0) - consumedManpower;
+            consumedWeapons.forEach(cw => {
+              res.weapons[cw.name] = (res.weapons[cw.name] || 0) - cw.amount;
+            });
+            
+            const healedRatio = missingRatio * affordableRatio;
+            unit.hp = Math.min(max, unit.hp + Math.floor(max * healedRatio));
+            
+            session.resourceDeductions.push({
+              owner: unit.owner,
+              manpower: consumedManpower,
+              weapons: consumedWeapons
+            });
+          }
         } else {
-          // 기획 의도: "부족하다면 회복 못해" - 체력 그대로 대기열 진입
+          // 리소스 제약이 없는 환경이라면 풀피 회복
+          unit.hp = max;
         }
       }
+    }
+  });
+
+  // 1.5 증원(Spawn) 먼저 처리 (HQ 위치에 유닛 즉시 등장)
+  orders.filter(o => o.type === 'spawn').forEach(order => {
+    const unit = units.find(u => u.id === order.unitId);
+    if (unit && unit.status === 'standby') {
+      unit.status = 'field';
+      unit.x = order.target.x;
+      unit.y = order.target.y;
     }
   });
 
@@ -489,17 +634,55 @@ export function resolveSimultaneousTurn(session) {
            occupant.hqHitsRemaining = (occupant.hqHitsRemaining || 2) - 1; // 사령부는 1타격만 입음
         }
       } else {
+        let attackerDmg = winner.unit.attack;
+        if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') attackerDmg = 0;
         const attackerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
-        const dmgToOccupant = calculateDamage(Math.floor(winner.unit.attack * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
+        const dmgToOccupant = calculateDamage(Math.floor(attackerDmg * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
         occupant.hp -= dmgToOccupant;
       }
 
       if (winner.unit.isHQ || winner.unit.hp <= 0) {
          // 사령부는 공격력이 없으므로 반격 피해 없음, 이미 즉사한 공수부대도 반격 없음
       } else {
+        let defenderDmg = occupant.attack;
+        const occupantOrder = orders.find(o => o.unitId === occupant.id);
+        if (occupant.subCategory === '포병' && occupantOrder && occupantOrder.type === 'move') defenderDmg = 0;
         const occupantEffects = applyTileEffects(occupant, board[occupant.y]?.[occupant.x]);
-        const dmgToWinner = calculateDamage(Math.floor(occupant.attack * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
+        const dmgToWinner = calculateDamage(Math.floor(defenderDmg * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
         winner.unit.hp -= dmgToWinner;
+      }
+    }
+    
+    // 후순위 유닛들(패자) 처리 (제자리 멈춤 및 교전)
+    for (let i = 1; i < contenders.length; i++) {
+      const loser = contenders[i].unit;
+      const loserOrder = contenders[i].order;
+      
+      // 승자(winner)가 적군이라면 loser는 winner를 향해 진입하려다 막힌 것이므로 교전
+      if (loser.owner !== winner.unit.owner && winner.unit.status === 'field' && loser.status === 'field') {
+        if (winner.unit.isHQ) {
+          if (loserOrder && loserOrder.isAirdrop && loser.subCategory === '공수부대') {
+             loser.hp = 0;
+             loser.status = 'destroyed';
+          } else {
+             winner.unit.hqHitsRemaining = (winner.unit.hqHitsRemaining || 2) - 1;
+          }
+        } else {
+          let attackerDmg = loser.attack;
+          if (loser.subCategory === '포병' && loserOrder && loserOrder.type === 'move') attackerDmg = 0;
+          const loserEffects = applyTileEffects(loser, board[loser.y]?.[loser.x]);
+          const dmgToWinner = calculateDamage(Math.floor(attackerDmg * loserEffects.attackMultiplier), winner.unit.defense, session.penetration[loser.owner] || 0);
+          winner.unit.hp -= dmgToWinner;
+        }
+
+        if (loser.isHQ || loser.hp <= 0) {
+        } else if (winner.unit.status === 'field' && !winner.unit.isHQ) {
+          let defenderDmg = winner.unit.attack;
+          if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') defenderDmg = 0;
+          const winnerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
+          const dmgToLoser = calculateDamage(Math.floor(defenderDmg * winnerEffects.attackMultiplier), loser.defense, session.penetration[winner.unit.owner] || 0);
+          loser.hp -= dmgToLoser;
+        }
       }
     }
   });
@@ -546,21 +729,10 @@ export function resolveSimultaneousTurn(session) {
     }
   });
 
-  // 6. 대기 상태(Standby) 체력 회복 및 자원 소모 청구
+  // 6. 대기 상태(Standby) 체력 회복 삭제 (기획 요구사항: 턴 넘김 시 체력 회복 없음)
+  // 기존 로직: 10% 회복 (주석 처리 또는 제거됨)
   units.forEach(u => {
-    const hasOrder = orders.some(o => o.unitId === u.id);
-    if (!hasOrder && u.status === 'field' && u.hp < (u.maxHp || 100)) {
-      const max = u.maxHp || 100;
-      const healAmount = Math.max(1, Math.floor(max * 0.1)); // 10% 회복
-      u.hp = Math.min(max, u.hp + healAmount);
-      
-      // 회복 비용 청구서 (UI에 넘김)
-      session.resourceDeductions.push({
-        owner: u.owner,
-        manpower: Math.floor((u.manpowerCost || 0) * 0.1),
-        weapons: (u.requiredWeapons || []).map(w => ({ name: w.weaponName, amount: Math.max(1, Math.floor(w.amount * 0.1)) }))
-      });
-    }
+    // 아무것도 안함 (필드에서 소모된 상태 그대로 유지)
   });
 
   return session;
@@ -623,8 +795,15 @@ export function resolveCommanderSkills(session) {
 
   if (!skillsQueue || skillsQueue.length === 0) return session;
 
+  // EMP 발동 시 양측의 다른 모든 사령부 스킬 무력화
+  let activeSkills = skillsQueue;
+  const isEMPActive = activeSkills.some(s => s.type === 'emp');
+  if (isEMPActive) {
+    activeSkills = activeSkills.filter(s => s.type === 'emp');
+  }
+
   // 2. 예약된 스킬들 즉발 처리
-  skillsQueue.forEach(skill => {
+  activeSkills.forEach(skill => {
     // ---- [AA 요격 판정] 폭격, CAS, 핵투발의 경우 상대 대공능력과 다이스 경합 ----
     let intercepted = false;
     if (['bombing', 'cas', 'nuke'].includes(skill.type)) {
@@ -662,7 +841,7 @@ export function resolveCommanderSkills(session) {
         unit.hp -= skill.damage;
       }
     }
-    else if (skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'bombing' || skill.type === 'naval_bombardment') {
+    if (skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'bombing' || skill.type === 'naval_bombardment') {
       // 3x3 범위 처리
       const targetArea = [];
       for (let dy = -1; dy <= 1; dy++) {
@@ -684,6 +863,15 @@ export function resolveCommanderSkills(session) {
           unit.hp -= dmg;
         }
       });
+    }
+    
+    // 소모성 스킬 사용 시 주체 유닛 파괴
+    if (skill.consumerId) {
+      const consumer = units.find(u => u.id === skill.consumerId);
+      if (consumer) {
+        consumer.hp = 0;
+        consumer.status = 'destroyed';
+      }
     }
     // EMP는 턴 처리 전에 모든 기계화 이동/스킬 큐를 막는 로직으로 별도 사전 적용됨
   });

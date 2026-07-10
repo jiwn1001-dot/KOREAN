@@ -12,7 +12,7 @@ import remarkGfm from 'remark-gfm';
 import ParliamentArch from '@/components/ParliamentArch';
 import SupportPieChart from '@/components/SupportPieChart';
 import CorpsFormation from '@/components/CorpsFormation';
-import LandCombatBoard from '@/components/LandCombatBoard';
+import CombatLobby from '@/components/CombatLobby';
 
 export default function CountryPage() {
   const params = useParams();
@@ -955,26 +955,6 @@ export default function CountryPage() {
 
 
   const renderFormation = () => {
-    // 1. Calculate research bonuses
-    const completedTechs = researches.filter(r => r.status === 'completed');
-    let penetrationBonus = 0;
-    let antiairBonus = 0;
-    let observationBonus = 0;
-
-    completedTechs.forEach(tech => {
-      const tree = techTrees.find(t => t.name === tech.name);
-      if (tree) {
-        for (let i = 0; i < tech.level; i++) {
-          const levelData = (Array.isArray(tree.levels) ? tree.levels : [])[i];
-          if (levelData) {
-            if (levelData.effect === 'penetration_boost') penetrationBonus += (levelData.effectValue || 0);
-            if (levelData.effect === 'antiair_boost') antiairBonus += (levelData.effectValue || 0);
-            if (levelData.effect === 'observation_boost') observationBonus += (levelData.effectValue || 0);
-          }
-        }
-      }
-    });
-
     const mobilizableRaw = economyData.population?.mobilizable || 0;
     const totalMobilizable = typeof mobilizableRaw === 'string' ? Number(mobilizableRaw.replace(/,/g, '')) : Number(mobilizableRaw);
 
@@ -1329,6 +1309,32 @@ export default function CountryPage() {
     );
   };
 
+  // Calculate stats from tech trees
+  const completedTechs = researches.filter(r => r.status === 'completed');
+  let penetrationBonus = 0;
+  let antiairBonus = 0;
+  let observationBonus = 0;
+
+  completedTechs.forEach(tech => {
+    const tree = techTrees.find(t => t.name === tech.name);
+    if (tree) {
+      for (let i = 0; i < tech.level; i++) {
+        const levelData = (Array.isArray(tree.levels) ? tree.levels : [])[i];
+        if (levelData) {
+          if (levelData.effect === 'penetration_boost') penetrationBonus += (levelData.effectValue || 0);
+          if (levelData.effect === 'antiair_boost') antiairBonus += (levelData.effectValue || 0);
+          if (levelData.effect === 'observation_boost') observationBonus += (levelData.effectValue || 0);
+        }
+      }
+    }
+  });
+
+  const countryStats = {
+    penetration: penetrationBonus,
+    antiAir: antiairBonus,
+    vision: observationBonus
+  };
+
   const renderTab = () => {
     switch (activeTab) {
       case 'politics':
@@ -1349,12 +1355,14 @@ export default function CountryPage() {
         return renderFormation();
       case 'land_combat':
         return (
-          <LandCombatBoard 
+          <CombatLobby 
             countryId={countryId} 
             militaryUnits={militaryUnits} 
             corps={corps} 
             armies={fieldArmies} 
             generals={generals}
+            admin={admin}
+            countryStats={countryStats}
           />
         );
       case 'corps':

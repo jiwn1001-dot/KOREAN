@@ -60,7 +60,10 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
               </div>
               
               <div style={{ marginBottom: '12px' }}>
-                <h5>소속 유닛 (최대 5개): {editingCorps.units.length}/5</h5>
+                <h5>소속 유닛 (최대 24개): {editingCorps.units.length}/24</h5>
+                <div style={{ fontSize: '0.8rem', color: editingCorps.units.length <= 5 ? 'var(--success)' : 'var(--warning)', marginBottom: '8px' }}>
+                  {editingCorps.units.length <= 5 ? '✅ 유저 직할 지휘 가능 (5개 이하)' : '⚠️ 유저 직할 불가능 (6개 이상 - AI 전담)'}
+                </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '40px', padding: '8px', border: '1px dashed var(--border-color)' }}>
                   {editingCorps.units.map(uid => {
                     const u = militaryUnits.find(mu => mu.id === uid);
@@ -81,7 +84,7 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                     <button 
                       key={u.id}
                       className="btn btn-sm"
-                      disabled={editingCorps.units.length >= 5 || editingCorps.units.includes(u.id)}
+                      disabled={editingCorps.units.length >= 24 || editingCorps.units.includes(u.id)}
                       onClick={() => setEditingCorps({...editingCorps, units: [...editingCorps.units, u.id]})}
                     >
                       + {u.name}
@@ -120,6 +123,9 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                   <p style={{ margin: '8px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                     지휘관: {commander ? `${commander.name} (Lv.${commander.aiLevel})` : '없음'}
                   </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: c.units.length <= 5 ? 'var(--success)' : 'var(--warning)' }}>
+                    {c.units.length <= 5 ? '✅ 유저 직할 가능' : '⚠️ 유저 직할 불가 (AI 전담)'}
+                  </p>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {c.units.map(uid => {
                       const u = militaryUnits.find(mu => mu.id === uid);
@@ -145,14 +151,31 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
           {editingArmy && (
             <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
               <h4>{editingArmy.id.startsWith('new') ? '야전군 창설' : '야전군 수정'}</h4>
-              <div style={{ marginBottom: '12px' }}>
+              <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
                 <input 
                   type="text" 
                   value={editingArmy.name} 
                   onChange={e => setEditingArmy({...editingArmy, name: e.target.value})}
                   className="input" 
                   placeholder="야전군 이름"
+                  style={{ flex: 1 }}
                 />
+                <select 
+                  className="input" 
+                  value={editingArmy.commanderId || ''}
+                  onChange={e => setEditingArmy({...editingArmy, commanderId: e.target.value})}
+                  style={{ flex: 1 }}
+                >
+                  <option value="">-- 야전군 사령관 임명 --</option>
+                  {editingArmy.corpsIds.map(cid => {
+                    const c = corps.find(co => co.id === cid);
+                    const gen = generals.find(g => g.id === c?.commanderId);
+                    if (!gen) return null;
+                    return (
+                      <option key={gen.id} value={gen.id}>{gen.name} (군단: {c.name})</option>
+                    );
+                  })}
+                </select>
               </div>
               
               <div style={{ marginBottom: '12px' }}>
@@ -209,6 +232,9 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                       if(confirm('삭제하시겠습니까?')) onUpdateArmies(armies.filter(x => x.id !== a.id));
                     }}>🗑️</button>
                   </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                  야전군 사령관: {generals.find(g => g.id === a.commanderId)?.name || '없음'}
                 </div>
                 <div style={{ marginTop: '12px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                   {a.corpsIds.map(cid => {

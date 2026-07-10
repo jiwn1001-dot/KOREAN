@@ -42,69 +42,14 @@ import {
   aiChooseCard
 } from '@/lib/aerialCombat';
 import LoginModal from '@/components/LoginModal';
+import AerialCardUI from '@/components/AerialCardUI';
 
 const MapEditor = dynamic(() => import('@/components/MapEditor'), { ssr: false });
+const CombatMapEditor = dynamic(() => import('@/components/CombatMapEditor'), { ssr: false });
 
-const AerialCardUI = ({ card }) => {
-  if (!card) return null;
-  const isAA = card.canBlock;
-  const isAce = card.isAce;
 
-  // 대공포 디자인
-  if (isAA) {
-    return (
-      <div style={{
-        minWidth: '100px', height: '140px', background: '#333', color: '#ff4d4f', border: '2px solid #ff4d4f',
-        borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 4px 8px rgba(255, 77, 79, 0.3)', padding: '8px', textAlign: 'center', flexShrink: 0
-      }}>
-        <div style={{ fontSize: '24px' }}>🎯</div>
-        <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginTop: '8px' }}>대공포</div>
-        <div style={{ fontSize: '0.7rem', color: '#ccc', marginTop: '4px' }}>무조건 요격</div>
-      </div>
-    );
-  }
 
-  // 에이스 디자인
-  if (isAce) {
-    return (
-      <div style={{
-        minWidth: '100px', height: '140px', background: 'linear-gradient(135deg, #FFD700 0%, #B8860B 100%)', 
-        border: '2px solid #FFF8DC', borderRadius: '8px', position: 'relative', overflow: 'hidden',
-        boxShadow: '0 4px 12px rgba(218, 165, 32, 0.5)', display: 'flex', flexDirection: 'column', flexShrink: 0
-      }}>
-        <div style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,0.6)', color: '#FFD700', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', zIndex: 10 }}>ACE</div>
-        {card.unitImage ? (
-          <img src={card.unitImage} alt="unit" style={{ width: '100%', height: '70px', objectFit: 'cover', borderBottom: '1px solid #FFF8DC' }} />
-        ) : (
-          <div style={{ width: '100%', height: '70px', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
-        )}
-        <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <div style={{ color: '#fff', fontSize: '0.75rem', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{card.unitName || '전투기'}</div>
-          <div style={{ color: '#fff', textShadow: '1px 1px 2px #000', fontWeight: 'bold' }}>전투력: {card.speed * 5}</div>
-        </div>
-      </div>
-    );
-  }
-
-  // 일반 카드 디자인
-  return (
-    <div style={{
-      minWidth: '100px', height: '140px', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-      borderRadius: '8px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0
-    }}>
-      {card.unitImage ? (
-        <img src={card.unitImage} alt="unit" style={{ width: '100%', height: '70px', objectFit: 'cover', borderBottom: '1px solid var(--border-color)' }} />
-      ) : (
-        <div style={{ width: '100%', height: '70px', background: 'var(--bg-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>✈️</div>
-      )}
-      <div style={{ padding: '8px', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.75rem', marginBottom: '4px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{card.unitName || '전투기'}</div>
-        <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.9rem' }}>속도: {card.speed}</div>
-      </div>
-    </div>
-  );
-};
+import AdminCombatSessions from '@/components/AdminCombatSessions';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -132,6 +77,7 @@ export default function AdminPage() {
   const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
   const [testAerialGame, setTestAerialGame] = useState(null); // 테스트 게임 상태
   const [testGameLog, setTestGameLog] = useState([]); // 라운드 로그
+  const [adminGenerals, setAdminGenerals] = useState([]);
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -169,6 +115,8 @@ export default function AdminPage() {
   const [diplomacyEntry, setDiplomacyEntry] = useState(null);
   const [diplomacyData, setDiplomacyData] = useState({ content: '', customFields: [] });
   const [diplomacyImages, setDiplomacyImages] = useState([]);
+  
+  const [combatMaps, setCombatMaps] = useState([]);
 
   const [mapData, setMapData] = useState(null);
   const [baseMapDataUrl, setBaseMapDataUrl] = useState(null);
@@ -354,6 +302,9 @@ export default function AdminPage() {
     else if (activeSection === 'resources') {
       loadCountries();
     }
+    else if (activeSection === 'combat-map') {
+      loadCombatMaps();
+    }
     else if (activeSection === 'map') {
       loadMap();
       loadCountries();
@@ -404,6 +355,47 @@ export default function AdminPage() {
       setResources(data);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const loadGenerals = async (cId) => {
+    try {
+      const entry = await getDataEntry('generals', cId);
+      setAdminGenerals(entry?.data?.generals || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadCombatMaps = async () => {
+    try {
+      const entry = await getDataEntry('combat_maps', 'global');
+      setCombatMaps(entry?.data?.maps || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveCombatMap = async (newMapData) => {
+    try {
+      const updatedMaps = [...combatMaps.filter(m => m.id !== newMapData.id), newMapData];
+      setCombatMaps(updatedMaps);
+      await upsertDataEntry('combat_maps', 'global', { maps: updatedMaps });
+      showToast('전투 맵이 저장되었습니다.');
+    } catch (err) {
+      showToast('맵 저장 실패', 'error');
+    }
+  };
+
+  const handleDeleteCombatMap = async (mapId) => {
+    if(!confirm('정말 삭제하시겠습니까?')) return;
+    try {
+      const updatedMaps = combatMaps.filter(m => m.id !== mapId);
+      setCombatMaps(updatedMaps);
+      await upsertDataEntry('combat_maps', 'global', { maps: updatedMaps });
+      showToast('전투 맵이 삭제되었습니다.');
+    } catch (err) {
+      showToast('맵 삭제 실패', 'error');
     }
   };
 
@@ -3143,6 +3135,108 @@ export default function AdminPage() {
     );
   };
 
+  const renderGenerals = () => {
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>🎖️ 장군/제독 관리</h2>
+        <div className="form-group">
+          <label className="form-label">국가 선택</label>
+          <select
+            className="form-select"
+            value={selectedCountryId}
+            onChange={(e) => {
+              setSelectedCountryId(e.target.value);
+              if (e.target.value) loadGenerals(e.target.value);
+            }}
+          >
+            <option value="">-- 국가를 선택하세요 --</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedCountryId && (
+          <div className="admin-form-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 className="admin-form-title" style={{ margin: 0 }}>해당 국가의 장군/제독 목록</h3>
+              <button className="btn btn-success" onClick={async () => {
+                const newGen = {
+                  id: 'gen_' + Date.now(),
+                  name: '새로운 장군',
+                  aiLevel: 1,
+                  type: '육군'
+                };
+                const updated = [...adminGenerals, newGen];
+                setAdminGenerals(updated);
+                await upsertDataEntry('generals', selectedCountryId, { generals: updated });
+              }}>➕ 장군 추가</button>
+            </div>
+            
+            {adminGenerals.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>등록된 장군이 없습니다.</p>
+            ) : (
+              <div className="card-grid card-grid-2">
+                {adminGenerals.map(g => (
+                  <div key={g.id} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={g.name} 
+                        onChange={(e) => {
+                          const updated = adminGenerals.map(x => x.id === g.id ? { ...x, name: e.target.value } : x);
+                          setAdminGenerals(updated);
+                        }}
+                        onBlur={async () => await upsertDataEntry('generals', selectedCountryId, { generals: adminGenerals })}
+                        style={{ fontWeight: 'bold' }}
+                      />
+                      <button className="btn btn-sm btn-danger" onClick={async () => {
+                        if(!confirm('이 장군을 삭제하시겠습니까?')) return;
+                        const updated = adminGenerals.filter(x => x.id !== g.id);
+                        setAdminGenerals(updated);
+                        await upsertDataEntry('generals', selectedCountryId, { generals: updated });
+                      }}>🗑️</button>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>AI 레벨 (1~5)</label>
+                      <input 
+                        type="number" 
+                        min="1" max="5" 
+                        className="form-input" 
+                        value={g.aiLevel} 
+                        onChange={(e) => {
+                          const updated = adminGenerals.map(x => x.id === g.id ? { ...x, aiLevel: parseInt(e.target.value) || 1 } : x);
+                          setAdminGenerals(updated);
+                        }}
+                        onBlur={async () => await upsertDataEntry('generals', selectedCountryId, { generals: adminGenerals })}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>병종 (육군/해군)</label>
+                      <select 
+                        className="form-select" 
+                        value={g.type || '육군'} 
+                        onChange={(e) => {
+                          const updated = adminGenerals.map(x => x.id === g.id ? { ...x, type: e.target.value } : x);
+                          setAdminGenerals(updated);
+                        }}
+                        onBlur={async () => await upsertDataEntry('generals', selectedCountryId, { generals: adminGenerals })}
+                      >
+                        <option value="육군">육군 (장군)</option>
+                        <option value="해군">해군 (제독)</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderMapEditor = () => (
     <div className="slide-up">
       <h2 style={{ marginBottom: '24px' }}>🗺️ 지도 색칠</h2>
@@ -3157,6 +3251,16 @@ export default function AdminPage() {
         onBaseMapUpload={handleBaseMapUpload}
         onSave={handleSaveMap}
         legend={countries.map((c) => ({ name: c.name, color: c.color }))}
+      />
+    </div>
+  );
+
+  const renderCombatMapEditor = () => (
+    <div className="slide-up">
+      <CombatMapEditor 
+        maps={combatMaps} 
+        onSaveMap={handleSaveCombatMap} 
+        onDeleteMap={handleDeleteCombatMap} 
       />
     </div>
   );
@@ -3192,6 +3296,10 @@ export default function AdminPage() {
     );
   }
 
+  const renderAdminCombatSessions = () => {
+    return <AdminCombatSessions countries={countries} />;
+  };
+
   const sidebarItems = [
     { id: 'management', label: '🎛️ 관리 패널' },
     { id: 'dashboard', label: '📊 대시보드 (턴)' },
@@ -3204,7 +3312,10 @@ export default function AdminPage() {
     { id: 'blueprints', label: '🛠️ 무기 청사진' },
     { id: 'formations', label: '🎖️ 편제 관리' },
     { id: 'aerial', label: '✈️ 공중전 설정' },
+    { id: 'generals', label: '🎖️ 장군/제독 관리' },
     { id: 'resources', label: '📦 자원 관리' },
+    { id: 'combat-map', label: '🏕️ 전투 맵 에디터' },
+    { id: 'combat-sessions', label: '⚔️ 지상전 세션 강제 배정' },
     { id: 'map', label: '🗺️ 지도 색칠' },
   ];
 
@@ -3234,10 +3345,13 @@ export default function AdminPage() {
           {activeSection === 'country-info' && renderCountryInfo()}
           {activeSection === 'research' && renderResearch()}
           {activeSection === 'blueprints' && renderBlueprints()}
-          {activeSection === 'formations' && renderUnitTemplates()}
-          {activeSection === 'aerial' && renderAerialSession()}
-          {activeSection === 'resources' && renderResources()}
-          {activeSection === 'map' && renderMapEditor()}
+          { activeSection === 'formations' && renderUnitTemplates() }
+          { activeSection === 'aerial' && renderAerialSession() }
+          { activeSection === 'generals' && renderGenerals() }
+          { activeSection === 'resources' && renderResources() }
+          { activeSection === 'combat-map' && renderCombatMapEditor() }
+          { activeSection === 'combat-sessions' && renderAdminCombatSessions() }
+          { activeSection === 'map' && renderMapEditor() }
         </div>
       </div>
 

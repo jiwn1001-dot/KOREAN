@@ -487,3 +487,59 @@ export async function getCountrySupplyAndAirStatus(countryId) {
     return { economy: {}, aerial: null };
   }
 }
+
+// ==================== COMBAT CASUALTIES ====================
+
+/**
+ * 전투 종료 시 사상자/손실된 자원을 DB에 반영합니다.
+ * @param {Object} casualties - { [countryId]: { manpower: 100, weapons: { '전차': 5, '소총': 100 } } }
+ */
+export async function applyCombatCasualties(casualties) {
+  if (!casualties) return;
+
+  for (const countryId of Object.keys(casualties)) {
+    const loss = casualties[countryId];
+    if (!loss) continue;
+
+    // 1. 인력 차감 (economy data entry의 population.mobilizable)
+    if (loss.manpower > 0) {
+      try {
+        const ecoEntry = await getDataEntry('economy', countryId);
+        if (ecoEntry && ecoEntry.data) {
+          const currentEco = ecoEntry.data;
+          const currentMob = currentEco.population?.mobilizable || 0;
+          const newMob = Math.max(0, currentMob - loss.manpower);
+          
+          await upsertDataEntry('economy', countryId, {
+            ...currentEco,
+            population: {
+              ...(currentEco.population || {}),
+              mobilizable: newMob
+            }
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to deduct manpower for country ${countryId}`, err);
+      }
+    }
+
+    // 2. 무기 차감 (resources table)
+    if (loss.weapons) {
+      try {
+        const resources = await getResources(countryId);
+        for (const [weaponName, amount] of Object.entries(loss.weapons)) {
+          if (amount <= 0) continue;
+          const resType = `weapon:${weaponName}`;
+          const res = resources.find(r => r.resource_type === resType);
+          if (res) {
+            const newAmount = Math.max(0, Number(res.amount) - amount);
+            await upsertResource(countryId, resType, newAmount, res.production_per_turn || 0);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to deduct weapons for country ${countryId}`, err);
+      }
+    }
+  }
+}
+
