@@ -825,10 +825,10 @@ export default function CountryPage() {
                   if (!bp) return null;
                   const amt = parseInt(queueTargetAmount) || 1;
                   const indCost = (bp.industryCost || 1) * amt;
-                  const resText = bp.resources?.map(r => {
-                    const label = resourceLabels[r.name]?.label || r.name;
-                    return `${label} ${r.amount * amt}`;
-                  }).join(', ') || '없음';
+                  const resText = bp.resources ? Object.entries(bp.resources).map(([rName, rAmount]) => {
+                    const label = resourceLabels[rName]?.label || rName;
+                    return `${label} ${rAmount * amt}`;
+                  }).join(', ') : '없음';
                   
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
