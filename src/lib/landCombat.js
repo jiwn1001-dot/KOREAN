@@ -150,13 +150,17 @@ export function applyTerrainMovementLock(unit, tile) {
 /**
  * 경로(Path)상 장애물이나 적을 만났을 때 실제 최종 도착지 반환 (Bresenham 알고리즘 기반)
  */
-function calculateActualPath(unit, targetX, targetY, board, allUnits) {
+function calculateActualPath(unit, targetX, targetY, board, allUnits, isAirdrop = false) {
+  if (isAirdrop) {
+    return { x: targetX, y: targetY };
+  }
+
   let currentX = unit.x;
   let currentY = unit.y;
   let lastValidX = unit.x;
   let lastValidY = unit.y;
 
-  const maxSteps = unit.speed || 1;
+  const maxSteps = unit.isHQ ? 1 : (unit.speed || 1);
   const isMechanized = unit.subCategory === '기계화' || unit.subCategory === '전차';
   
   let dx = Math.abs(targetX - currentX);
@@ -425,7 +429,7 @@ export function resolveSimultaneousTurn(session) {
     const unit = units.find(u => u.id === order.unitId);
     if (!unit) return;
     
-    const actualTarget = calculateActualPath(unit, order.target.x, order.target.y, board, units);
+    const actualTarget = calculateActualPath(unit, order.target.x, order.target.y, board, units, order.isAirdrop);
     const key = `${actualTarget.x},${actualTarget.y}`;
     if (!targetMap[key]) targetMap[key] = [];
     targetMap[key].push({ order, unit });
@@ -455,16 +459,24 @@ export function resolveSimultaneousTurn(session) {
     if (occupant && occupant.owner !== winner.unit.owner) {
       // winner가 occupant를 공격, occupant가 winner를 반격
       if (occupant.isHQ) {
-        occupant.hqHitsRemaining = (occupant.hqHitsRemaining || 2) - 1; // 사령부는 1타격만 입음
+        if (winner.order && winner.order.isAirdrop && winner.unit.subCategory === '공수부대') {
+           // 공수 낙하로 사령부 진입 시 무조건 패배 (즉사)
+           winner.unit.hp = 0;
+           winner.unit.status = 'destroyed';
+        } else {
+           occupant.hqHitsRemaining = (occupant.hqHitsRemaining || 2) - 1; // 사령부는 1타격만 입음
+        }
       } else {
-        const dmgToOccupant = calculateDamage(winner.unit.attack, occupant.defense, session.penetration[winner.unit.owner] || 0);
+        const attackerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
+        const dmgToOccupant = calculateDamage(Math.floor(winner.unit.attack * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
         occupant.hp -= dmgToOccupant;
       }
 
-      if (winner.unit.isHQ) {
-         // 사령부는 공격력이 없으므로 반격 피해 없음
+      if (winner.unit.isHQ || winner.unit.hp <= 0) {
+         // 사령부는 공격력이 없으므로 반격 피해 없음, 이미 즉사한 공수부대도 반격 없음
       } else {
-        const dmgToWinner = calculateDamage(occupant.attack, winner.unit.defense, session.penetration[occupant.owner] || 0);
+        const occupantEffects = applyTileEffects(occupant, board[occupant.y]?.[occupant.x]);
+        const dmgToWinner = calculateDamage(Math.floor(occupant.attack * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
         winner.unit.hp -= dmgToWinner;
       }
     }
@@ -479,7 +491,8 @@ export function resolveSimultaneousTurn(session) {
         if (targetUnit.isHQ) {
            // 사령부는 포병 공격에 완전 면역
         } else {
-          const dmg = calculateDamage(unit.attack, targetUnit.defense, session.penetration[unit.owner] || 0);
+          const attackerEffects = applyTileEffects(unit, board[unit.y]?.[unit.x]);
+          const dmg = calculateDamage(Math.floor(unit.attack * attackerEffects.attackMultiplier), targetUnit.defense, session.penetration[unit.owner] || 0);
           targetUnit.hp -= dmg;
         }
       }

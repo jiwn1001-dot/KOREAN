@@ -73,7 +73,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           setSelectedUnit(null);
         } else {
           // 이동 예약
-          setOrders(prev => [...prev.filter(o => o.unitId !== selectedUnit.id), { unitId: selectedUnit.id, type: 'move', target: {x, y} }]);
+          const isAirdrop = selectedUnit.subCategory === '공수부대' && hasAirSupremacy;
+          setOrders(prev => [...prev.filter(o => o.unitId !== selectedUnit.id), { unitId: selectedUnit.id, type: 'move', target: {x, y}, isAirdrop }]);
           setSelectedUnit(null);
         }
       } else {
@@ -348,7 +349,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           <button 
             className={`cyber-btn ${targetingSkill === 'cas' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('cas')}
-            disabled={!hasAirSupremacy || specialUnits.cas.count === 0 || activeSkills.length > 0}
+            disabled={specialUnits.cas.count === 0 || activeSkills.length > 0}
           >🛩️ CAS</button>
           
           <button 
