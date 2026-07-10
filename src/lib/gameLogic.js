@@ -501,14 +501,14 @@ export async function consumeResources(countryId, requiredResources) {
 export async function transferTech(targetCountryId, techName, techLevel, isAdmin = false) {
   try {
     // 1. Get target's current tech level
-    const { data: currentRes } = await supabase
+    const { data: currentResList } = await supabase
       .from('researches')
       .select('*')
       .eq('country_id', targetCountryId)
-      .eq('name', techName)
-      .single();
+      .eq('name', techName);
 
-    const currentLevel = currentRes ? currentRes.level : 0;
+    const completedRes = currentResList ? currentResList.filter(r => r.status === 'completed') : [];
+    const currentLevel = completedRes.length > 0 ? Math.max(...completedRes.map(r => r.level)) : 0;
 
     if (currentLevel >= techLevel) {
       return { success: false, error: '대상 국가가 이미 해당 기술을 같거나 높은 단계로 보유하고 있습니다.' };
@@ -523,18 +523,20 @@ export async function transferTech(targetCountryId, techName, techLevel, isAdmin
       }
     }
 
-    // Update or insert target research
-    if (currentRes) {
-      await supabase.from('researches').update({ level: techLevel, status: 'completed', remaining_turns: 0 }).eq('id', currentRes.id);
-    } else {
-      await supabase.from('researches').insert({
-        country_id: targetCountryId,
-        name: techName,
-        level: techLevel,
-        status: 'completed',
-        remaining_turns: 0
-      });
+    // Delete existing rows and insert the new level
+    if (currentResList && currentResList.length > 0) {
+      for (const r of currentResList) {
+        await supabase.from('researches').delete().eq('id', r.id);
+      }
     }
+    
+    await supabase.from('researches').insert({
+      country_id: targetCountryId,
+      name: techName,
+      level: techLevel,
+      status: 'completed',
+      remaining_turns: 0
+    });
 
     // [뼈대] 보너스는 나중에 생산력에 비례하여 직접 계산되도록 추가할 예정이므로 DB 저장은 제거함
     // if (bonusToAdd > 0) { ... }

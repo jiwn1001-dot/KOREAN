@@ -1593,23 +1593,21 @@ export default function AdminPage() {
                   
                   if (!confirm(`'${techName}' 기술을 ${level}단계로 설정하시겠습니까?`)) return;
                   
-                  const existingRes = researches.find(r => r.name === techName);
-                  if (level === 0) {
-                    if (existingRes) await deleteResearch(existingRes.id);
-                  } else {
-                    if (existingRes) {
-                      await updateResearch(existingRes.id, { level, status: 'completed', remaining_turns: 0 });
-                    } else {
-                      await createResearch({
-                        country_id: selectedCountryId,
-                        category: tree.category,
-                        name: techName,
-                        level,
-                        required_turns: 0,
-                        remaining_turns: 0,
-                        status: 'completed'
-                      });
-                    }
+                  const matchingRes = researches.filter(r => r.name === techName);
+                  for (const r of matchingRes) {
+                    await deleteResearch(r.id);
+                  }
+                  
+                  if (level > 0) {
+                    await createResearch({
+                      country_id: selectedCountryId,
+                      category: tree.category,
+                      name: techName,
+                      level,
+                      required_turns: 0,
+                      remaining_turns: 0,
+                      status: 'completed'
+                    });
                   }
                   
                   alert('연구가 업데이트되었습니다.');
