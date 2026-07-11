@@ -344,10 +344,24 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
   const handleNextTurn = () => {
     let nextPlayers = { ...initialSession.players };
+    
+    // 내 클라이언트 소유의 AI 명령 산출 (위임했거나 선택되지 않은 군단)
+    const excludeCorps = autoMode ? null : activeCorpsId;
+    const { orders: alliedAIOrders, skills: alliedAISkills } = calculateAIOrders({ 
+      units: unitsOnBoard, 
+      userOrders: orders,
+      corps,
+      generals,
+      armies
+    }, countryId, excludeCorps); 
+    
+    const finalOrders = [...orders, ...alliedAIOrders];
+    const finalSkills = [...activeSkills, ...alliedAISkills];
+
     if (nextPlayers[countryId]) {
       nextPlayers[countryId].ready = true;
-      nextPlayers[countryId].orders = [...orders];
-      nextPlayers[countryId].skills = [...activeSkills];
+      nextPlayers[countryId].orders = finalOrders;
+      nextPlayers[countryId].skills = finalSkills;
     }
     if (onSaveSession) {
       onSaveSession({ players: nextPlayers });
@@ -375,17 +389,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       }
     });
 
-    // Allied AI logic for unassigned corps
-    const excludeCorps = autoMode ? null : activeCorpsId;
-    const { orders: alliedAIOrders, skills: alliedAISkills } = calculateAIOrders({ 
-      units: unitsOnBoard, 
-      userOrders: currentOrders,
-      corps,
-      generals,
-      armies
-    }, countryId, excludeCorps); 
-    currentOrders = currentOrders.concat(alliedAIOrders);
-    aiSkillsCombined = aiSkillsCombined.concat(alliedAISkills);
+    // (삭제됨: 아군 AI 연산은 이제 각 클라이언트의 handleNextTurn에서 개별적으로 산출되어 서버로 전달됨)
 
     // 3. Extract Stats
     const countryStatsMap = {};
