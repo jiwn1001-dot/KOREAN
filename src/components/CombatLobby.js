@@ -17,6 +17,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
   const [supplyLimit, setSupplyLimit] = useState(10);
   const [opponentId, setOpponentId] = useState('');
   const [selectedArmyId, setSelectedArmyId] = useState('');
+  const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
 
   // Supply Limit Negotiation
   const [editingSupplyFor, setEditingSupplyFor] = useState(null);
@@ -108,6 +109,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       supplyLimitTeam2: parseInt(supplyLimit) || 10,
       host: countryId,
       opponent: opponentId || 'AI',
+      allowNavalBombardment,
       status: 'waiting',
       players: {
         [countryId]: {
@@ -332,6 +334,13 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
                 <option key={a.id} value={a.id}>{a.name} (소속 군단: {a.corpsIds.length}개)</option>
               ))}
             </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">특수 룰 (관리자 옵션)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" id="allowNaval" checked={allowNavalBombardment} onChange={e => setAllowNavalBombardment(e.target.checked)} />
+              <label htmlFor="allowNaval">해안포격 스킬 허용</label>
+            </div>
           </div>
           <button className="btn btn-success" onClick={handleCreateSession}>방 만들기</button>
         </div>

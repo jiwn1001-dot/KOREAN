@@ -45,8 +45,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       missile: getMaxAttack('미사일'),
       nuke: getMaxAttack('핵무기'),
       nukeMissile: getMaxAttack('핵미사일'),
-      chemical: getMaxAttack('화학무기'), // 임시 subCategory
-      naval: getMaxAttack('전함') // 임시 subCategory
+      chemical: getMaxAttack('독가스')
     };
   }, [unitsOnBoard, countryId]);
 
@@ -697,8 +696,14 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           >🧪 독가스</button>
           <button 
             className={`cyber-btn ${targetingSkill === 'naval_bombardment' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('naval_bombardment')}
-            disabled={specialUnits.naval.count === 0 || usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
+            onClick={() => {
+              if(!initialSession.allowNavalBombardment) {
+                alert('관리자에 의해 해안포격 스킬 사용이 금지된 전장입니다.');
+                return;
+              }
+              setTargetingSkill('naval_bombardment');
+            }}
+            disabled={!initialSession.allowNavalBombardment || usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
           >🚢 해안포격</button>
           
           <button 

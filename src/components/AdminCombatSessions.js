@@ -15,6 +15,7 @@ export default function AdminCombatSessions({ countries }) {
   const [supplyLimitTeam2, setSupplyLimitTeam2] = useState(10);
   const [sessionCategory, setSessionCategory] = useState('land'); // land, naval, bombing
   const [battleMode, setBattleMode] = useState('encounter'); // encounter, siege
+  const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
   
   // Team 1 & Team 2: { countryId, armyId }[]
   const [team1, setTeam1] = useState([]);
@@ -81,6 +82,7 @@ export default function AdminCombatSessions({ countries }) {
       supplyLimitTeam2: parseInt(supplyLimitTeam2),
       sessionCategory,
       battleMode,
+      allowNavalBombardment,
       host: team1[0].countryId, // 첫 번째 국가가 방장 역할 (팀 리더)
       opponent: team2[0].countryId,
       status: battleMode === 'siege' ? 'defense_prep' : 'waiting', // 방어전은 사전배치 페이즈 대기
@@ -182,6 +184,13 @@ export default function AdminCombatSessions({ countries }) {
         <div className="form-group">
           <label className="form-label">Team 2 보급 한계</label>
           <input type="number" className="form-input" value={supplyLimitTeam2} onChange={e => setSupplyLimitTeam2(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">특수 룰</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input type="checkbox" id="adminAllowNaval" checked={allowNavalBombardment} onChange={e => setAllowNavalBombardment(e.target.checked)} />
+            <label htmlFor="adminAllowNaval">해안포격 스킬 허용</label>
+          </div>
         </div>
       </div>
 
