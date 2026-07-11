@@ -1389,6 +1389,7 @@ export default function CountryPage() {
             generals={generals}
             admin={admin}
             countryStats={countryStats}
+            unitTemplates={unitTemplates}
           />
         );
       case 'corps':
@@ -1399,6 +1400,7 @@ export default function CountryPage() {
             corps={corps} 
             armies={fieldArmies} 
             generals={generals}
+            unitTemplates={unitTemplates}
             onUpdateCorps={async (newCorps) => {
               setCorps(newCorps);
               await upsertDataEntry('corps', countryId, { corps: newCorps });

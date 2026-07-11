@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getDataEntry, upsertDataEntry, getCountries } from '@/lib/store';
 import LandCombatBoard from '@/components/LandCombatBoard';
 
-export default function CombatLobby({ countryId, militaryUnits, corps, armies, generals, admin, countryStats }) {
+export default function CombatLobby({ countryId, militaryUnits, corps, armies, generals, admin, countryStats, unitTemplates = [] }) {
   const [maps, setMaps] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [countries, setCountries] = useState([]);
@@ -139,14 +139,26 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
         c.units.forEach(uid => {
           const u = militaryUnits.find(mu => mu.id === uid);
           if (u) {
+            const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
             const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
             const startX = isTeam1 ? 0 : 19;
             myUnits.push({
               ...u,
+              name: u.customName || tmpl.name || '알 수 없는 유닛',
+              image: tmpl.image || null,
+              attack: tmpl.attack || 0,
+              defense: tmpl.defense || 0,
+              speed: tmpl.speed || 0,
+              maxHp: tmpl.hp || 100,
+              hp: tmpl.hp || 100, // 처음에 풀피로 참전
+              vision: (tmpl.vision || 0) + (countryStats?.vision || 0),
+              supplyConsumption: tmpl.supplyConsumption || 1,
+              majorCategory: tmpl.majorCategory,
+              minorCategory: tmpl.minorCategory,
+              subCategory: tmpl.subCategory,
               x: startX,
               y: startX,
               status: 'standby', // Starts in standby for manual deployment
-              supplyConsumption: u.supplyConsumption || 1,
               owner: countryId,
               corpsId: c.id,
               aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
@@ -170,6 +182,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       owner: countryId,
       isHQ: true,
       hp: 100,
+      vision: (countryStats?.vision || 0),
       supplyConsumption: 0 // HQ costs 0 supply
     });
 

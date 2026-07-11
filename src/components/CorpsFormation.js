@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function CorpsFormation({ countryId, militaryUnits, corps, armies, generals, onUpdateCorps, onUpdateArmies }) {
+export default function CorpsFormation({ countryId, militaryUnits, corps, armies, generals, onUpdateCorps, onUpdateArmies, unitTemplates = [] }) {
   const [activeTab, setActiveTab] = useState('corps');
   const [editingCorps, setEditingCorps] = useState(null);
   const [editingArmy, setEditingArmy] = useState(null);
@@ -67,10 +67,12 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '40px', padding: '8px', border: '1px dashed var(--border-color)' }}>
                   {editingCorps.units.map(uid => {
                     const u = militaryUnits.find(mu => mu.id === uid);
+                    const tmpl = unitTemplates.find(t => t.id == u?.templateId);
+                    const displayName = (u?.customName && u.customName.trim() !== '') ? u.customName : (tmpl?.name || '알 수 없는 유닛');
                     return (
                       <div key={uid} style={{ padding: '4px 8px', backgroundColor: 'var(--primary)', color: 'white', borderRadius: '4px', cursor: 'pointer' }}
                            onClick={() => setEditingCorps({...editingCorps, units: editingCorps.units.filter(id => id !== uid)})}>
-                        {u?.name || '알 수 없는 유닛'} (클릭해제)
+                        {displayName} (클릭해제)
                       </div>
                     );
                   })}
@@ -80,16 +82,20 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
               <div>
                 <h5>배치 가능 유닛</h5>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                  {availableUnits.map(u => (
-                    <button 
-                      key={u.id}
-                      className="btn btn-sm"
-                      disabled={editingCorps.units.length >= 24 || editingCorps.units.includes(u.id)}
-                      onClick={() => setEditingCorps({...editingCorps, units: [...editingCorps.units, u.id]})}
-                    >
-                      + {u.name}
-                    </button>
-                  ))}
+                  {availableUnits.map(u => {
+                    const tmpl = unitTemplates.find(t => t.id == u.templateId);
+                    const displayName = (u.customName && u.customName.trim() !== '') ? u.customName : (tmpl?.name || '알 수 없는 유닛');
+                    return (
+                      <button 
+                        key={u.id}
+                        className="btn btn-sm"
+                        disabled={editingCorps.units.length >= 24 || editingCorps.units.includes(u.id)}
+                        onClick={() => setEditingCorps({...editingCorps, units: [...editingCorps.units, u.id]})}
+                      >
+                        + {displayName}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -135,7 +141,9 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {c.units.map(uid => {
                       const u = militaryUnits.find(mu => mu.id === uid);
-                      return <span key={uid} style={{ fontSize: '0.8rem', padding: '2px 6px', background: 'var(--bg-body)', borderRadius: '4px' }}>{u?.name}</span>;
+                      const tmpl = unitTemplates.find(t => t.id == u?.templateId);
+                      const displayName = (u?.customName && u.customName.trim() !== '') ? u.customName : (tmpl?.name || '알 수 없는 유닛');
+                      return <span key={uid} style={{ fontSize: '0.8rem', padding: '2px 6px', background: 'var(--bg-body)', borderRadius: '4px' }}>{displayName}</span>;
                     })}
                   </div>
                 </div>

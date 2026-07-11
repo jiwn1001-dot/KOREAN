@@ -690,7 +690,27 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             const isSelected = selectedUnit?.id === unit?.id;
             const hpRatio = unit ? Math.max(0, unit.hp / (unit.maxHp || 100)) : 1;
             
+            let isMoveTarget = false;
+            if (isVisible && selectedUnit && selectedUnit.owner === countryId && orderMode === 'move') {
+              const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+              if (dist <= (selectedUnit.speed || 1)) {
+                isMoveTarget = true;
+              }
+            }
+
+            let isDirectControl = false;
+            if (unit && unit.owner === countryId && !unit.isHQ) {
+              const unitCorps = corps?.find(c => c.id === unit.corpsId);
+              if (!unitCorps || unitCorps.units?.length <= 5) {
+                isDirectControl = true;
+              }
+            }
+
             const style = getTileStyle(tile.type, isVisible, isSelected);
+            if (isMoveTarget && !isSelected) {
+              style.backgroundColor = 'rgba(56, 189, 248, 0.25)';
+              style.border = '1px solid rgba(56, 189, 248, 0.6)';
+            }
 
             return (
               <div 
@@ -713,17 +733,22 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                     width: '24px',
                     height: '24px',
                     backgroundColor: unit.owner === countryId ? 'rgba(59, 130, 246, 0.8)' : 'rgba(239, 68, 68, 0.8)',
+                    backgroundImage: unit.image ? `url(${unit.image})` : 'none',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
                     borderRadius: '4px',
-                    border: `1px solid ${unit.owner === countryId ? '#60a5fa' : '#fca5a5'}`,
+                    border: isDirectControl ? '2px solid #fbbf24' : `1px solid ${unit.owner === countryId ? '#60a5fa' : '#fca5a5'}`,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: `0 0 8px ${unit.owner === countryId ? 'rgba(59, 130, 246, 0.6)' : 'rgba(239, 68, 68, 0.6)'}`
+                    boxShadow: isDirectControl ? '0 0 12px rgba(251, 191, 36, 0.8)' : `0 0 8px ${unit.owner === countryId ? 'rgba(59, 130, 246, 0.6)' : 'rgba(239, 68, 68, 0.6)'}`
                   }}>
-                    <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#fff', textShadow: '1px 1px 0 #000' }}>
-                      {unit.isHQ ? 'HQ' : unit.name?.substring(0,2)}
-                    </span>
+                    {!unit.image && (
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#fff', textShadow: '1px 1px 0 #000' }}>
+                        {unit.isHQ ? 'HQ' : unit.name?.substring(0,2)}
+                      </span>
+                    )}
                     {/* 미니 체력 바 */}
                     <div style={{ position: 'absolute', bottom: '-4px', width: '100%', height: '3px', background: '#333', borderRadius: '2px', overflow: 'hidden' }}>
                       <div style={{ width: `${hpRatio * 100}%`, height: '100%', background: hpRatio > 0.5 ? '#10b981' : hpRatio > 0.2 ? '#eab308' : '#ef4444' }}></div>
