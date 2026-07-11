@@ -88,7 +88,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       return;
     }
 
-    if (phase !== 'combat' || !initialSession.players) return;
+    if ((phase !== 'combat' && phase !== 'aerial_combat') || !initialSession.players) return;
 
     // 참가자 동기화 로직 (turn이 올랐을 때)
     if (initialSession.turn && initialSession.turn > turn) {
