@@ -44,7 +44,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
 
       const cSessions = await getDataEntry('combat_sessions');
-      const latestSessions = cSessions?.sessions || [];
+      const latestSessions = cSessions?.data?.sessions || [];
       setSessions(latestSessions);
       
       // Update activeSession with real-time data
