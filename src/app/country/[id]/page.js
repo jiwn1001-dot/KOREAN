@@ -1066,16 +1066,34 @@ export default function CountryPage() {
                 await upsertDataEntry('economy', countryId, newEcoData);
 
                 // 3. 편제 유닛 추가
-                const newUnit = {
-                  id: Date.now().toString(),
-                  templateId: tmplId,
-                  customName: template.majorCategory === '공군' ? '' : customName,
-                  count,
-                  operational: count, // 초기엔 전체 가동
-                  createdAt: new Date().toISOString()
-                };
+                const isAir = template.majorCategory === '공군';
+                const newUnitsToAdd = [];
 
-                const newUnits = [...militaryUnits, newUnit];
+                if (isAir) {
+                  // 공군은 묶음 관리
+                  newUnitsToAdd.push({
+                    id: Date.now().toString(),
+                    templateId: tmplId,
+                    customName: '',
+                    count,
+                    operational: count,
+                    createdAt: new Date().toISOString()
+                  });
+                } else {
+                  // 지상군 등은 맵 보드 타일에 각각 배치되어야 하므로 수량만큼 개별 분할 생성
+                  for (let i = 0; i < count; i++) {
+                    newUnitsToAdd.push({
+                      id: Date.now().toString() + '_' + i,
+                      templateId: tmplId,
+                      customName: count > 1 && customName ? `${customName} ${i+1}` : customName,
+                      count: 1,
+                      operational: 1,
+                      createdAt: new Date().toISOString()
+                    });
+                  }
+                }
+
+                const newUnits = [...militaryUnits, ...newUnitsToAdd];
                 await upsertDataEntry('military_units', countryId, { units: newUnits });
                 setMilitaryUnits(newUnits);
                 
