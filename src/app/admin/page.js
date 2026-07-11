@@ -3165,7 +3165,9 @@ export default function AdminPage() {
                   id: 'gen_' + Date.now(),
                   name: '새로운 장군',
                   aiLevel: 1,
-                  type: '육군'
+                  type: '육군',
+                  image: '',
+                  description: ''
                 };
                 const updated = [...adminGenerals, newGen];
                 setAdminGenerals(updated);
@@ -3226,6 +3228,34 @@ export default function AdminPage() {
                         <option value="육군">육군 (장군)</option>
                         <option value="해군">해군 (제독)</option>
                       </select>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>사진 URL</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={g.image || ''} 
+                        onChange={(e) => {
+                          const updated = adminGenerals.map(x => x.id === g.id ? { ...x, image: e.target.value } : x);
+                          setAdminGenerals(updated);
+                        }}
+                        onBlur={async () => await upsertDataEntry('generals', selectedCountryId, { generals: adminGenerals })}
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>상세 설명</label>
+                      <textarea 
+                        className="form-textarea" 
+                        value={g.description || ''} 
+                        onChange={(e) => {
+                          const updated = adminGenerals.map(x => x.id === g.id ? { ...x, description: e.target.value } : x);
+                          setAdminGenerals(updated);
+                        }}
+                        onBlur={async () => await upsertDataEntry('generals', selectedCountryId, { generals: adminGenerals })}
+                        style={{ minHeight: '60px' }}
+                        placeholder="장군의 특징 및 배경..."
+                      />
                     </div>
                   </div>
                 ))}

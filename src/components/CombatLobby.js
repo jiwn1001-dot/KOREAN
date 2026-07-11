@@ -318,7 +318,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
         <p style={{ color: 'var(--text-muted)' }}>현재 진행 중이거나 대기 중인 세션이 없습니다.</p>
       ) : (
         <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
-          {sessions.map(s => {
+          {sessions.filter(s => s.isActive !== false).map(s => {
             const hostName = countries.find(c => c.id === s.host)?.name || s.host;
             const oppName = s.opponent && s.opponent !== 'AI' ? countries.find(c => c.id === s.opponent)?.name || s.opponent : '누구나 (또는 AI)';
             const mapName = maps.find(m => m.id === s.mapId)?.name || '알 수 없는 맵';

@@ -94,7 +94,8 @@ export default function AdminCombatSessions({ countries }) {
       isTeamBattle: true,
       team1: team1.map(t => t.countryId),
       team2: team2.map(t => t.countryId),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      isActive: true // 기본적으로 세션은 활성화 상태로 생성됨
     };
 
     // 각 팀 멤버들의 players 데이터 초기화 (유닛 데이터는 각 유저가 전투로비 진입시 채워지게 됨)
@@ -131,6 +132,15 @@ export default function AdminCombatSessions({ countries }) {
   const handleDeleteSession = async (id) => {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     const updated = sessions.filter(s => s.id !== id);
+    setSessions(updated);
+    await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
+  };
+
+  const handleToggleActiveSession = async (id, currentStatus) => {
+    const updated = sessions.map(s => {
+      if (s.id === id) return { ...s, isActive: !currentStatus };
+      return s;
+    });
     setSessions(updated);
     await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
   };
@@ -233,7 +243,15 @@ export default function AdminCombatSessions({ countries }) {
                 <button className="btn btn-sm btn-warning" style={{marginLeft:'16px'}} onClick={() => handleTriggerInvasion(s.id)}>🔥 침공 개시 (공격측 진입 허용)</button>
               )}
             </div>
-            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                className={`btn btn-sm ${s.isActive === false ? 'btn-secondary' : 'btn-success'}`}
+                onClick={() => handleToggleActiveSession(s.id, s.isActive !== false)}
+              >
+                {s.isActive === false ? '🔴 비활성화' : '🟢 활성화됨'}
+              </button>
+              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>
+            </div>
           </div>
         ))}
       </div>

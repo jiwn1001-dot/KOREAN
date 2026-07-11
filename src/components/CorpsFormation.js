@@ -123,6 +123,12 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                   <p style={{ margin: '8px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                     지휘관: {commander ? `${commander.name} (Lv.${commander.aiLevel})` : '없음'}
                   </p>
+                  {commander && (commander.image || commander.description) && (
+                    <div style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', marginBottom: '8px', fontSize: '0.8rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                      {commander.image && <img src={commander.image} alt={commander.name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                      <div style={{ color: 'var(--text-secondary)' }}>{commander.description || '상세 정보가 없습니다.'}</div>
+                    </div>
+                  )}
                   <p style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: c.units.length <= 5 ? 'var(--success)' : 'var(--warning)' }}>
                     {c.units.length <= 5 ? '✅ 유저 직할 가능' : '⚠️ 유저 직할 불가 (AI 전담)'}
                   </p>
@@ -236,6 +242,18 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                 <div style={{ marginTop: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                   야전군 사령관: {generals.find(g => g.id === a.commanderId)?.name || '없음'}
                 </div>
+                {(() => {
+                  const armyCommander = generals.find(g => g.id === a.commanderId);
+                  if (armyCommander && (armyCommander.image || armyCommander.description)) {
+                    return (
+                      <div style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', marginTop: '8px', fontSize: '0.8rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                        {armyCommander.image && <img src={armyCommander.image} alt={armyCommander.name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />}
+                        <div style={{ color: 'var(--text-secondary)' }}>{armyCommander.description || '상세 정보가 없습니다.'}</div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div style={{ marginTop: '12px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                   {a.corpsIds.map(cid => {
                     const c = corps.find(co => co.id === cid);
