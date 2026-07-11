@@ -687,7 +687,6 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         <div className="cyber-panel" style={{ textAlign: 'center', padding: '60px', marginTop: '40px' }}>
           <h2 style={{ color: uiColors.neonRed, fontSize: '2rem', textShadow: '0 0 20px rgba(239, 68, 68, 0.7)' }}>SIMULATION TERMINATED</h2>
           <p style={{ color: '#94a3b8', fontSize: '1.1rem', margin: '20px 0' }}>생존 병력 데이터가 저장되었습니다. 자원 차감 프로세스를 시작합니다.</p>
-          <button className="cyber-btn" onClick={() => setPhase('combat')}>시스템 재부팅 (테스트)</button>
         </div>
       ) : phase === 'aerial_combat' ? (
         <div className="cyber-panel" style={{ textAlign: 'center', padding: '60px', marginTop: '40px', border: `1px solid ${uiColors.neonBlue}` }}>
