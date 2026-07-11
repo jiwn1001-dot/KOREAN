@@ -623,26 +623,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 className="cyber-btn"
                 style={{ background: hasAirSupremacy ? uiColors.neonGreen : 'rgba(30,41,59,0.8)', borderColor: hasAirSupremacy ? uiColors.neonGreen : '#3b82f6', color: hasAirSupremacy ? '#fff' : '#60a5fa' }}
                 onClick={() => {
-                  // 적군이 보유한 공군력/방공망 스탯이 존재하는지 검사
-                  let enemyAntiAir = 0;
-                  const opponentId = initialSession?.opponent;
-                  if (opponentId && initialSession?.players?.[opponentId]?.stats) {
-                    enemyAntiAir = initialSession.players[opponentId].stats.antiAir || 0;
-                  }
-                  
-                  const enemyAircrafts = unitsOnBoard.filter(u => u.owner !== countryId && u.status === 'field' && ['전투기', '요격기'].includes(u.subCategory));
-                  
-                  if (enemyAntiAir === 0 && enemyAircrafts.length === 0) {
-                    alert('적군의 공군력(방공망)이 감지되지 않았습니다. 무혈입성으로 제공권을 즉시 장악합니다!');
-                    setHasAirSupremacy(true);
+                  if (autoAirCombat) {
+                    const win = Math.random() > 0.5;
+                    setHasAirSupremacy(win);
+                    alert(win ? '자동 주사위 판정 승리! 제공권을 장악했습니다.' : '자동 주사위 판정 패배. 제공권 확보에 실패했습니다.');
                   } else {
-                    if (autoAirCombat) {
-                      const win = Math.random() > 0.5;
-                      setHasAirSupremacy(win);
-                      alert(win ? '자동 주사위 판정 승리! 제공권을 장악했습니다.' : '자동 주사위 판정 패배. 제공권 확보에 실패했습니다.');
-                    } else {
-                      setPhase('aerial_combat');
-                    }
+                    setPhase('aerial_combat');
                   }
                 }}
               >
