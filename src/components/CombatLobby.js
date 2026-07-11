@@ -68,6 +68,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
         c.units.forEach(uid => {
           const u = militaryUnits.find(mu => mu.id === uid);
           if (u) {
+            const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+            // 현재 유저가 직접 생성하는 세션에는 카테고리 구분이 없지만 추후 확장성을 위해 둠
+            
             // Convert to field unit format
             myUnits.push({
               ...u,
@@ -150,6 +153,12 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
           const u = militaryUnits.find(mu => mu.id === uid);
           if (u) {
             const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+            
+            // 세션 카테고리 필터링 (폭격전이면 공군만, 해전이면 해군만, 육전이면 육군만 참전 가능)
+            if (session.sessionCategory === 'bombing' && tmpl.majorCategory !== '공군') return;
+            if (session.sessionCategory === 'naval' && tmpl.majorCategory !== '해군') return;
+            if (session.sessionCategory === 'land' && tmpl.majorCategory !== '육군') return;
+            
             const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
             const startX = isTeam1 ? 0 : 19;
             myUnits.push({
@@ -411,7 +420,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
                   {s.status === 'waiting' && isHost && !isTeamBattle && !isPlaying && (
                     <button className="btn btn-primary" onClick={() => setActiveSession(s)}>⚔️ 입장 (대기/AI 플레이)</button>
                   )}
-                  {(admin || isHost) && (
+                  {admin && (
                     <button className="btn btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>
                   )}
                 </div>
