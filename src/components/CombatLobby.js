@@ -28,6 +28,15 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (activeSession && sessions.length > 0) {
+      const updated = sessions.find(s => s.id === activeSession.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(activeSession)) {
+        setActiveSession(updated);
+      }
+    }
+  }, [sessions]);
+
   const loadLobbyData = async () => {
     try {
       const mapEntry = await getDataEntry('combat_maps', null);
@@ -64,7 +73,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
               ...u,
               x: 0, // Default deploy position
               y: 0,
-              status: 'field',
+              status: 'standby',
               owner: countryId,
               corpsId: c.id,
               aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
@@ -82,7 +91,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       subCategory: 'HQ',
       x: 0,
       y: 0,
-      status: 'field',
+      status: 'standby',
       owner: countryId,
       isHQ: true,
       hp: 100
@@ -100,7 +109,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       players: {
         [countryId]: {
           armyId: selectedArmyId,
-          ready: true,
+          ready: false,
           units: myUnits,
           stats: countryStats
         }
@@ -196,19 +205,21 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
     updatedSession.players[countryId] = {
       ...updatedSession.players[countryId],
       armyId: selectedArmyId,
-      ready: true,
+      ready: false,
       units: myUnits,
       stats: countryStats
     };
 
-    // If 1v1, it starts when opponent joins. For team battles, it's always playing as soon as one person joins or admin created it.
+    // If 1v1, it goes to deployment when opponent joins. For team battles, it goes to deployment as well.
     if (!session.isTeamBattle) {
-      updatedSession.status = 'playing';
+      updatedSession.status = 'deployment';
+    } else {
+      updatedSession.status = 'deployment';
     }
 
     // Combine units for the board
     updatedSession.units = [
-      ...Object.values(updatedSession.players).filter(p => p.ready).flatMap(p => p.units || [])
+      ...Object.values(updatedSession.players).flatMap(p => p.units || [])
     ];
 
     const updatedSessions = sessions.map(s => s.id === session.id ? updatedSession : s);

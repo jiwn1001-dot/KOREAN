@@ -53,7 +53,11 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     if (initialSession && initialSession.board) {
       setBoard(initialSession.board);
       setUnitsOnBoard(initialSession.units || []);
-      setPhase(initialSession.phase || (initialSession.turn === 1 || !initialSession.turn ? 'deployment' : 'combat'));
+      
+      let computedPhase = initialSession.phase || 'deployment';
+      if (initialSession.status === 'playing') computedPhase = 'combat';
+      
+      setPhase(computedPhase);
       setTurn(initialSession.turn || 1);
       setUsedSkills(initialSession.usedSkills || []);
       setNukeUses(initialSession.nukeUses || 0);
@@ -72,8 +76,16 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
   const handleTileClick = (x, y) => {
     if (phase === 'deployment') {
+      const existingFieldUnit = unitsOnBoard.find(u => u.x === x && u.y === y && u.status === 'field' && u.owner === countryId);
+      
+      // 이미 필드에 있는 내 유닛을 클릭하면 다시 대기 상태로 돌림
+      if (existingFieldUnit) {
+        setUnitsOnBoard(unitsOnBoard.map(u => u.id === existingFieldUnit.id ? { ...u, status: 'standby' } : u));
+        return;
+      }
+
       if (!selectedStandbyUnitId) {
-        alert('배치할 대기 사단을 먼저 선택해주세요.');
+        alert('배치할 대기 사단을 먼저 선택해주세요. (필드에 배치된 아군 유닛을 클릭하면 대기열로 되돌릴 수 있습니다.)');
         return;
       }
       
@@ -246,12 +258,41 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     updatedUnits = deployAIUnits(updatedUnits, initialSession, countryId);
 
     setUnitsOnBoard(updatedUnits);
-    setPhase('combat');
     setSelectedStandbyUnitId(null);
 
-    if (isSiegeDefense) {
-      alert('사전 방어 배치가 완료되었습니다. 로비로 이동하여 침공을 대기하십시오.');
-      if (onSaveSession) onSaveSession({ units: updatedUnits });
+    let nextPlayers = { ...initialSession.players };
+    if (nextPlayers[countryId]) {
+      nextPlayers[countryId].ready = true;
+    }
+
+    // AI 상대방 처리 (AI는 항상 ready로 간주)
+    if (initialSession.opponent === 'AI' && nextPlayers['AI']) {
+      nextPlayers['AI'].ready = true;
+    }
+
+    const allReady = Object.values(nextPlayers).every(p => p.ready);
+    let nextStatus = initialSession.status;
+    let nextPhase = 'deployment';
+    
+    if (allReady) {
+      nextStatus = 'playing';
+      nextPhase = 'combat';
+      alert('모든 플레이어가 배치를 완료하여 1턴이 시작됩니다!');
+    } else {
+      if (isSiegeDefense) {
+        alert('사전 방어 배치가 완료되었습니다. 로비로 이동하여 침공을 대기하십시오.');
+      } else {
+        alert('배치가 완료되었습니다. 상대방을 기다립니다...');
+      }
+    }
+
+    if (onSaveSession) {
+      onSaveSession({
+        units: updatedUnits,
+        players: nextPlayers,
+        status: nextStatus,
+        phase: nextPhase
+      });
     }
   };
 
@@ -816,13 +857,19 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                     <div style={{ color: '#64748b', textAlign: 'center', padding: '20px 0' }}>대기 중인 유닛이 없습니다.</div>
                   )}
                 </div>
-                <button 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', marginTop: '20px' }}
-                  onClick={handleDeployComplete}
-                >
-                  배치 완료 (전투 시작)
-                </button>
+                {initialSession?.players?.[countryId]?.ready ? (
+                  <div style={{ marginTop: '20px', padding: '12px', textAlign: 'center', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981', borderRadius: '6px', fontWeight: 'bold' }}>
+                    배치 완료됨. 상대방을 기다리는 중...
+                  </div>
+                ) : (
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ width: '100%', marginTop: '20px' }}
+                    onClick={handleDeployComplete}
+                  >
+                    배치 완료 (전투 시작)
+                  </button>
+                )}
               </>
             ) : (
               <>
