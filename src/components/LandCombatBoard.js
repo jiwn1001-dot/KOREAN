@@ -76,7 +76,18 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
   // 동시 턴 동기화 훅
   useEffect(() => {
-    if (phase !== 'combat' || !initialSession || !initialSession.players) return;
+    if (!initialSession) return;
+
+    // 게임 종료 및 항복 동기화 로직
+    if (initialSession.phase === 'game_over' && phase !== 'game_over') {
+      if (initialSession.surrendered && initialSession.surrendered !== countryId) {
+        alert('상대방이 전술적 항복을 선언했습니다! 아군의 승리입니다!');
+      }
+      setPhase('game_over');
+      return;
+    }
+
+    if (phase !== 'combat' || !initialSession.players) return;
 
     // 참가자 동기화 로직 (turn이 올랐을 때)
     if (initialSession.turn && initialSession.turn > turn) {
