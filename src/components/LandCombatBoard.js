@@ -758,26 +758,16 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           <p style={{ color: '#94a3b8', fontSize: '1.1rem', margin: '20px 0' }}>생존 병력 데이터가 저장되었습니다. 자원 차감 프로세스를 시작합니다.</p>
         </div>
       ) : phase === 'aerial_combat' ? (
-        <div className="cyber-panel" style={{ textAlign: 'center', padding: '60px', marginTop: '40px', border: `1px solid ${uiColors.neonBlue}` }}>
-          <h2 style={{ color: uiColors.neonBlue, fontSize: '2rem' }}>✈️ 제공권 장악 시퀀스</h2>
-          <p style={{ color: '#94a3b8', fontSize: '1.1rem', margin: '20px 0 40px' }}>공중 우세를 점하기 위한 교전이 발생했습니다. 카드를 선택하십시오.</p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-            <button className="cyber-btn" style={{ borderColor: uiColors.neonYellow, color: uiColors.neonYellow }} onClick={() => {
-              const intercepted = calculateAirInterception(2, 3);
-              if (intercepted) {
-                setActiveSkills(prev => prev.filter(s => s.type !== 'bombing'));
-                setPhase('combat');
-                alert('💥 다이스 요격 성공! 방어막이 활성화되었습니다.');
-              } else {
-                setActiveSkills(prev => prev.map(s => s.type === 'bombing' ? { ...s, pending: false, damage: 100 } : s));
-                setPhase('combat');
-                alert('✈️ 다이스 요격 실패! 공격 대형이 목표로 진입합니다.');
-              }
-            }}>🎲 다이스 자동 요격 굴림</button>
-            <button className="cyber-btn" style={{ background: uiColors.neonGreen, color: '#fff', borderColor: uiColors.neonGreen }} onClick={() => { setHasAirSupremacy(true); setPhase('combat'); }}>🏆 공중전 승리 (시뮬레이션)</button>
-            <button className="cyber-btn" style={{ background: uiColors.neonRed, color: '#fff', borderColor: uiColors.neonRed }} onClick={() => { setHasAirSupremacy(false); setPhase('combat'); }}>💀 공중전 패배 (시뮬레이션)</button>
-          </div>
-        </div>
+        <AerialMinigame
+          countryId={countryId}
+          myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군')}
+          enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.majorCategory === '공군')}
+          autoMode={autoAirCombat}
+          onComplete={(isWin) => {
+            setHasAirSupremacy(isWin);
+            setPhase('combat');
+          }}
+        />
       ) : (
       <div style={{ display: 'flex', gap: '24px' }}>
         {/* 20x20 사이버네틱 보드 렌더링 */}
@@ -1056,19 +1046,6 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           </div>
         </div>
       </div>
-      )}
-      {/* 공중전 미니게임 */}
-      {phase === 'aerial_combat' && (
-        <AerialMinigame 
-          countryId={countryId} 
-          myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군')} 
-          enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.majorCategory === '공군')} 
-          autoMode={autoAirCombat} 
-          onComplete={(isWin) => {
-            setHasAirSupremacy(isWin);
-            setPhase('combat');
-          }}
-        />
       )}
     </div>
   );
