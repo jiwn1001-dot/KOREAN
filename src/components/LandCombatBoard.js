@@ -1047,8 +1047,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       {phase === 'aerial_combat' && (
         <AerialMinigame 
           countryId={countryId} 
-          myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.category === 'air')} 
-          enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.category === 'air')} 
+          myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군')} 
+          enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.majorCategory === '공군')} 
           autoMode={autoAirCombat} 
           onComplete={(isWin) => {
             setHasAirSupremacy(isWin);
