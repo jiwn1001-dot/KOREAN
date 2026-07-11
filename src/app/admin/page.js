@@ -369,7 +369,7 @@ export default function AdminPage() {
 
   const loadCombatMaps = async () => {
     try {
-      const entry = await getDataEntry('combat_maps', 'global');
+      const entry = await getDataEntry('combat_maps', null);
       setCombatMaps(entry?.data?.maps || []);
     } catch (err) {
       console.error(err);
@@ -380,7 +380,7 @@ export default function AdminPage() {
     try {
       const updatedMaps = [...combatMaps.filter(m => m.id !== newMapData.id), newMapData];
       setCombatMaps(updatedMaps);
-      await upsertDataEntry('combat_maps', 'global', { maps: updatedMaps });
+      await upsertDataEntry('combat_maps', null, { maps: updatedMaps });
       showToast('전투 맵이 저장되었습니다.');
     } catch (err) {
       showToast('맵 저장 실패', 'error');
@@ -392,7 +392,7 @@ export default function AdminPage() {
     try {
       const updatedMaps = combatMaps.filter(m => m.id !== mapId);
       setCombatMaps(updatedMaps);
-      await upsertDataEntry('combat_maps', 'global', { maps: updatedMaps });
+      await upsertDataEntry('combat_maps', null, { maps: updatedMaps });
       showToast('전투 맵이 삭제되었습니다.');
     } catch (err) {
       showToast('맵 삭제 실패', 'error');
@@ -1721,22 +1721,42 @@ export default function AdminPage() {
                   if (!confirm(`'${name}' 유닛의 총 개수를 ${count}개로 설정하시겠습니까? (기존 데이터 덮어쓰기)`)) return;
                   
                   let newUnits = [...militaryUnits];
-                  const existingIdx = newUnits.findIndex(u => u.templateId === tmpl.id || u.name === name);
+                  const isAir = tmpl.majorCategory === '공군';
                   
                   if (count === 0) {
-                    if (existingIdx !== -1) newUnits.splice(existingIdx, 1);
+                    newUnits = newUnits.filter(u => u.templateId !== tmpl.id && u.name !== name);
                   } else {
-                    if (existingIdx !== -1) {
-                      newUnits[existingIdx].count = count;
-                      newUnits[existingIdx].operational = Math.min(newUnits[existingIdx].operational, count);
+                    if (isAir) {
+                      const existingIdx = newUnits.findIndex(u => u.templateId === tmpl.id || u.name === name);
+                      if (existingIdx !== -1) {
+                        newUnits[existingIdx].count = count;
+                        newUnits[existingIdx].operational = Math.min(newUnits[existingIdx].operational || count, count);
+                      } else {
+                        newUnits.push({
+                          id: Date.now().toString(),
+                          templateId: tmpl.id,
+                          name: tmpl.name,
+                          count: count,
+                          operational: count
+                        });
+                      }
                     } else {
-                      newUnits.push({
-                        id: Date.now().toString(),
-                        templateId: tmpl.id,
-                        name: tmpl.name,
-                        count: count,
-                        operational: count
-                      });
+                      // 지상군은 기존 해당 템플릿의 유닛을 전부 제거하고 새 개수만큼 개별 생성 (덮어쓰기 로직이므로)
+                      newUnits = newUnits.filter(u => u.templateId !== tmpl.id && u.name !== name);
+                      for (let i = 0; i < count; i++) {
+                        newUnits.push({
+                          id: Date.now().toString() + '_' + i,
+                          templateId: tmpl.id,
+                          customName: `${tmpl.name} ${i + 1}`,
+                          name: tmpl.name,
+                          count: 1,
+                          operational: 1,
+                          hp: tmpl.hp || 100,
+                          maxHp: tmpl.hp || 100,
+                          status: 'standby',
+                          experience: 0
+                        });
+                      }
                     }
                   }
                   

@@ -27,10 +27,10 @@ export default function AdminCombatSessions({ countries }) {
   }, [countries]);
 
   const loadData = async () => {
-    const sessionEntry = await getDataEntry('combat_sessions', 'global');
+    const sessionEntry = await getDataEntry('combat_sessions', null);
     if (sessionEntry?.data?.sessions) setSessions(sessionEntry.data.sessions);
 
-    const mapEntry = await getDataEntry('combat_maps', 'global');
+    const mapEntry = await getDataEntry('combat_maps', null);
     if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
 
     const fArmies = {};
@@ -106,7 +106,7 @@ export default function AdminCombatSessions({ countries }) {
 
     const updatedSessions = [...sessions, newSession];
     setSessions(updatedSessions);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+    await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
     
     alert('팀전 세션 강제 배정이 완료되었습니다.');
     setSessionName('');
@@ -121,7 +121,7 @@ export default function AdminCombatSessions({ countries }) {
       return s;
     });
     setSessions(updated);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
+    await upsertDataEntry('combat_sessions', null, { sessions: updated });
     alert('침공이 개시되었습니다! 이제 공격측 유저들이 세션에 합류할 수 있습니다.');
   };
 
@@ -129,7 +129,7 @@ export default function AdminCombatSessions({ countries }) {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     const updated = sessions.filter(s => s.id !== id);
     setSessions(updated);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
+    await upsertDataEntry('combat_sessions', null, { sessions: updated });
   };
 
   const handleToggleActiveSession = async (id, currentStatus) => {
@@ -138,7 +138,7 @@ export default function AdminCombatSessions({ countries }) {
       return s;
     });
     setSessions(updated);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
+    await upsertDataEntry('combat_sessions', null, { sessions: updated });
   };
 
   return (

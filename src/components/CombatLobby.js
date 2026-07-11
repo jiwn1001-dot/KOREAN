@@ -30,10 +30,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
 
   const loadLobbyData = async () => {
     try {
-      const mapEntry = await getDataEntry('combat_maps', 'global');
+      const mapEntry = await getDataEntry('combat_maps', null);
       if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
 
-      const sessionEntry = await getDataEntry('combat_sessions', 'global');
+      const sessionEntry = await getDataEntry('combat_sessions', null);
       if (sessionEntry?.data?.sessions) setSessions(sessionEntry.data.sessions);
       
       const clist = await getCountries();
@@ -111,7 +111,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
 
     const updatedSessions = [...sessions, newSession];
     setSessions(updatedSessions);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+    await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
     
     setShowCreate(false);
     alert('전투 세션이 생성되었습니다. 상대방의 수락을 기다립니다.');
@@ -213,7 +213,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
 
     const updatedSessions = sessions.map(s => s.id === session.id ? updatedSession : s);
     setSessions(updatedSessions);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+    await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
     
     setActiveSession(updatedSession);
   };
@@ -221,7 +221,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
   const handleDeleteSession = async (sessionId) => {
     const updatedSessions = sessions.filter(s => s.id !== sessionId);
     setSessions(updatedSessions);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+    await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
   };
 
   const handleUpdateSupply = async (session) => {
@@ -231,7 +231,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
     const updatedSession = { ...session, supplyLimitTeam1: parsedLimit, supplyLimitTeam2: parsedLimit };
     const updatedSessions = sessions.map(s => s.id === session.id ? updatedSession : s);
     setSessions(updatedSessions);
-    await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+    await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
     setEditingSupplyFor(null);
   };
 
@@ -252,7 +252,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
              const updatedSession = { ...activeSession, ...updatedData };
              const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
              setSessions(updatedSessions);
-             await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
+             await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
              setActiveSession(updatedSession);
           }}
         />
