@@ -92,7 +92,8 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       id: 'session_' + Date.now(),
       name: sessionName,
       mapId: selectedMapId,
-      supplyLimit: parseInt(supplyLimit) || 10,
+      supplyLimitTeam1: parseInt(supplyLimit) || 10,
+      supplyLimitTeam2: parseInt(supplyLimit) || 10,
       host: countryId,
       opponent: opponentId || 'AI',
       status: 'waiting',
@@ -214,7 +215,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
     const parsedLimit = parseInt(newSupplyLimit, 10);
     if (isNaN(parsedLimit) || parsedLimit <= 0) return alert('유효한 보급 한계를 입력하세요.');
     
-    const updatedSession = { ...session, supplyLimit: parsedLimit };
+    const updatedSession = { ...session, supplyLimitTeam1: parsedLimit, supplyLimitTeam2: parsedLimit };
     const updatedSessions = sessions.map(s => s.id === session.id ? updatedSession : s);
     setSessions(updatedSessions);
     await upsertDataEntry('combat_sessions', 'global', { sessions: updatedSessions });
@@ -361,9 +362,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
                       </span>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                        {s.supplyLimit}
+                        T1(공격): {s.supplyLimitTeam1 || s.supplyLimit || 10} / T2(수비): {s.supplyLimitTeam2 || s.supplyLimit || 10}
                         {s.status === 'waiting' && !isTeamBattle && (
-                          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 4px', marginLeft: '4px' }} onClick={() => { setEditingSupplyFor(s.id); setNewSupplyLimit(s.supplyLimit); }}>✏️</button>
+                          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 4px', marginLeft: '4px' }} onClick={() => { setEditingSupplyFor(s.id); setNewSupplyLimit(s.supplyLimitTeam1 || s.supplyLimit); }}>✏️</button>
                         )}
                       </span>
                     )}

@@ -11,7 +11,8 @@ export default function AdminCombatSessions({ countries }) {
   // Form State
   const [sessionName, setSessionName] = useState('');
   const [selectedMapId, setSelectedMapId] = useState('');
-  const [supplyLimit, setSupplyLimit] = useState(10);
+  const [supplyLimitTeam1, setSupplyLimitTeam1] = useState(10);
+  const [supplyLimitTeam2, setSupplyLimitTeam2] = useState(10);
   const [sessionCategory, setSessionCategory] = useState('land'); // land, naval, bombing
   const [battleMode, setBattleMode] = useState('encounter'); // encounter, siege
   
@@ -43,7 +44,7 @@ export default function AdminCombatSessions({ countries }) {
   const handleAddToTeam = (teamNum) => {
     const defaultCountry = countries[0]?.id;
     if (!defaultCountry) return;
-    const newEntry = { countryId: defaultCountry, armyId: '' };
+    const newEntry = { countryId: defaultCountry };
     if (teamNum === 1) setTeam1([...team1, newEntry]);
     else setTeam2([...team2, newEntry]);
   };
@@ -52,12 +53,10 @@ export default function AdminCombatSessions({ countries }) {
     if (teamNum === 1) {
       const newTeam = [...team1];
       newTeam[index][field] = value;
-      if (field === 'countryId') newTeam[index].armyId = ''; // Reset army if country changes
       setTeam1(newTeam);
     } else {
       const newTeam = [...team2];
       newTeam[index][field] = value;
-      if (field === 'countryId') newTeam[index].armyId = '';
       setTeam2(newTeam);
     }
   };
@@ -73,16 +72,13 @@ export default function AdminCombatSessions({ countries }) {
   const handleCreateSession = async () => {
     if (!sessionName || !selectedMapId) return alert('세션 이름과 맵을 지정하세요.');
     if (team1.length === 0 || team2.length === 0) return alert('각 팀에 최소 한 명 이상의 국가가 배정되어야 합니다.');
-    
-    for (const t of [...team1, ...team2]) {
-      if (!t.armyId) return alert(`국가(${t.countryId})의 투입 야전군이 선택되지 않았습니다.`);
-    }
 
     const newSession = {
       id: 'session_' + Date.now(),
       name: sessionName,
       mapId: selectedMapId,
-      supplyLimit: parseInt(supplyLimit),
+      supplyLimitTeam1: parseInt(supplyLimitTeam1),
+      supplyLimitTeam2: parseInt(supplyLimitTeam2),
       sessionCategory,
       battleMode,
       host: team1[0].countryId, // 첫 번째 국가가 방장 역할 (팀 리더)
@@ -98,10 +94,10 @@ export default function AdminCombatSessions({ countries }) {
       isActive: true // 기본적으로 세션은 활성화 상태로 생성됨
     };
 
-    // 각 팀 멤버들의 players 데이터 초기화 (유닛 데이터는 각 유저가 전투로비 진입시 채워지게 됨)
+    // 각 팀 멤버들의 players 데이터 초기화 (유닛 데이터 및 야전군은 유저가 로비에서 입장시 세팅)
     [...team1, ...team2].forEach(t => {
       newSession.players[t.countryId] = {
-        armyId: t.armyId,
+        armyId: null,
         ready: false, // 유저가 개별적으로 준비 완료(입장) 해야 함
         units: [],
         stats: { penetration: 0, antiAir: 0, vision: 0 } // 접속 시 갱신됨
@@ -180,8 +176,12 @@ export default function AdminCombatSessions({ countries }) {
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">보급 한계</label>
-          <input type="number" className="form-input" value={supplyLimit} onChange={e => setSupplyLimit(e.target.value)} />
+          <label className="form-label">Team 1 보급 한계</label>
+          <input type="number" className="form-input" value={supplyLimitTeam1} onChange={e => setSupplyLimitTeam1(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Team 2 보급 한계</label>
+          <input type="number" className="form-input" value={supplyLimitTeam2} onChange={e => setSupplyLimitTeam2(e.target.value)} />
         </div>
       </div>
 
@@ -193,10 +193,6 @@ export default function AdminCombatSessions({ countries }) {
             <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <select className="form-select" value={t.countryId} onChange={e => handleUpdateTeam(1, idx, 'countryId', e.target.value)}>
                 {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <select className="form-select" value={t.armyId} onChange={e => handleUpdateTeam(1, idx, 'armyId', e.target.value)}>
-                <option value="">- 야전군 선택 -</option>
-                {fieldArmiesMap[t.countryId]?.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => handleRemoveFromTeam(1, idx)}>X</button>
             </div>
@@ -211,10 +207,6 @@ export default function AdminCombatSessions({ countries }) {
             <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <select className="form-select" value={t.countryId} onChange={e => handleUpdateTeam(2, idx, 'countryId', e.target.value)}>
                 {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <select className="form-select" value={t.armyId} onChange={e => handleUpdateTeam(2, idx, 'armyId', e.target.value)}>
-                <option value="">- 야전군 선택 -</option>
-                {fieldArmiesMap[t.countryId]?.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => handleRemoveFromTeam(2, idx)}>X</button>
             </div>
@@ -237,7 +229,8 @@ export default function AdminCombatSessions({ countries }) {
               <strong style={{marginRight:'8px'}}>{s.name}</strong> 
               <span style={{color:'var(--accent)'}}>[{s.sessionCategory === 'land' ? '육전' : s.sessionCategory === 'naval' ? '해전' : '폭격전'}]</span> 
               <span style={{color:'var(--danger)', marginLeft:'4px'}}>[{s.battleMode === 'siege' ? '방어전' : '조우전'}]</span> | 
-              맵: {maps.find(m => m.id === s.mapId)?.name}
+              맵: {maps.find(m => m.id === s.mapId)?.name} | 
+              보급(T1/T2): {s.supplyLimitTeam1 || s.supplyLimit} / {s.supplyLimitTeam2 || s.supplyLimit}
               
               {s.battleMode === 'siege' && s.status === 'defense_prep' && (
                 <button className="btn btn-sm btn-warning" style={{marginLeft:'16px'}} onClick={() => handleTriggerInvasion(s.id)}>🔥 침공 개시 (공격측 진입 허용)</button>

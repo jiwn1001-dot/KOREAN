@@ -6,6 +6,9 @@ import AerialMinigame from '@/components/AerialMinigame';
 import { applyCombatCasualties } from '@/lib/store';
 
 export default function LandCombatBoard({ countryId, militaryUnits, corps, armies, generals, initialSession, onSaveSession }) {
+  const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1?.includes(countryId) : (initialSession?.host === countryId);
+  const mySupplyLimit = isTeam1 ? (initialSession?.supplyLimitTeam1 || 10) : (initialSession?.supplyLimitTeam2 || 10);
+
   const [board, setBoard] = useState([]);
   const [unitsOnBoard, setUnitsOnBoard] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -94,8 +97,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
       // Check supply limit (HQ is 0)
       const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
-      if (currentSupply + (unitToDeploy.supplyConsumption || 0) > (initialSession?.supplyLimit || 10)) {
-        return alert('보급 한계를 초과하여 배치할 수 없습니다.');
+      if (currentSupply + (unitToDeploy.supplyConsumption || 0) > mySupplyLimit) {
+        return alert(`보급 한계(${mySupplyLimit})를 초과하여 배치할 수 없습니다.`);
       }
 
       const updatedUnits = unitsOnBoard.map(u => {
@@ -109,7 +112,6 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       setSelectedStandbyUnitId(null);
     } else if (phase === 'combat') {
       if (selectedStandbyUnitId) {
-        const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
         const validX = isTeam1 ? 0 : 19;
         
         if (x !== validX) return alert('전투 중 예비대 투입은 아군 진영의 맨 끝 줄에만 가능합니다.');
@@ -122,8 +124,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           return acc + (su?.supplyConsumption || 0);
         }, 0);
 
-        if (currentSupply + queuedSpawns + (unitToDeploy?.supplyConsumption || 0) > (initialSession?.supplyLimit || 10)) {
-          return alert('보급 한계를 초과하여 투입할 수 없습니다.');
+        if (currentSupply + queuedSpawns + (unitToDeploy?.supplyConsumption || 0) > mySupplyLimit) {
+          return alert(`보급 한계(${mySupplyLimit})를 초과하여 투입할 수 없습니다.`);
         }
 
         setOrders(prev => [...prev.filter(o => o.unitId !== selectedStandbyUnitId), { unitId: selectedStandbyUnitId, type: 'spawn', target: {x, y} }]);
@@ -294,7 +296,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       units: JSON.parse(JSON.stringify(unitsOnBoard)), // 딥카피
       orders: currentOrders,
       skillsQueue: [...activeSkills, ...aiSkillsCombined],
-      supplyLimit: initialSession?.supplyLimit || 10,
+      supplyLimitTeam1: initialSession?.supplyLimitTeam1 || 10,
+      supplyLimitTeam2: initialSession?.supplyLimitTeam2 || 10,
       penetration: { [countryId]: countryStatsMap[countryId]?.penetration || 0, 'enemy': countryStatsMap['enemy']?.penetration || 0 }, 
       antiAir: { [countryId]: countryStatsMap[countryId]?.antiAir || 0, 'enemy': countryStatsMap['enemy']?.antiAir || 0 }, 
       vision: { [countryId]: countryStatsMap[countryId]?.vision || 0, 'enemy': countryStatsMap['enemy']?.vision || 0 },
@@ -750,8 +753,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '8px' }}>
                     보급 사용량: 
-                    <span style={{ color: unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0) >= (initialSession?.supplyLimit || 10) ? uiColors.neonRed : '#fff', fontWeight: 'bold', marginLeft: '8px' }}>
-                      {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0)} / {initialSession?.supplyLimit || 10}
+                    <span style={{ color: unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0) >= mySupplyLimit ? uiColors.neonRed : '#fff', fontWeight: 'bold', marginLeft: '8px' }}>
+                      {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0)} / {mySupplyLimit}
                     </span>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: '#64748b' }}>

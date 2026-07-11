@@ -205,7 +205,6 @@ function calculateActualPath(unit, targetX, targetY, board, allUnits, isAirdrop 
  */
 export function deployAIUnits(units, initialSession, userCountryId) {
   let updatedUnits = [...units];
-  const supplyLimit = initialSession?.supplyLimit || 10;
   
   // 모든 참전국 ID 추출
   const allCountries = [...new Set(updatedUnits.map(u => u.owner))];
@@ -214,6 +213,7 @@ export function deployAIUnits(units, initialSession, userCountryId) {
     if (countryId === userCountryId) continue; // 유저는 직접 배치함
 
     const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+    const supplyLimit = isTeam1 ? (initialSession?.supplyLimitTeam1 || 10) : (initialSession?.supplyLimitTeam2 || 10);
     const xRange = isTeam1 ? [0, 9] : [10, 19];
     
     // 이 국가의 스탠바이 유닛들 가져오기

@@ -1177,6 +1177,32 @@ export default function CountryPage() {
               )}
             </div>
           </div>
+
+          {/* 장군 목록 */}
+          <div className="content-section" style={{ marginTop: '30px' }}>
+            <h3 className="content-section-title">🎖️ 보유 장군 및 제독</h3>
+            {generals.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>보유한 장군이나 제독이 없습니다.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+                {generals.map(g => (
+                  <div key={g.id} className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', background: 'var(--bg-glass)', border: '1px solid var(--border-color)' }}>
+                    {g.image ? (
+                      <img src={g.image} alt={g.name} style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', marginBottom: '12px', border: '2px solid var(--accent)' }} />
+                    ) : (
+                      <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--bg-card)', border: '2px solid var(--text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                        👤
+                      </div>
+                    )}
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem' }}>{g.name}</h4>
+                    <div className="badge badge-accent" style={{ marginBottom: '8px' }}>Level {g.aiLevel || 1}</div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px' }}>병종: {g.specialty || '일반'}</div>
+                    {g.description && <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{g.description}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
