@@ -44,7 +44,9 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       cas: getMaxAttack('근접항공지원기'),
       missile: getMaxAttack('미사일'),
       nuke: getMaxAttack('핵무기'),
-      nukeMissile: getMaxAttack('핵미사일')
+      nukeMissile: getMaxAttack('핵미사일'),
+      chemical: getMaxAttack('화학무기'), // 임시 subCategory
+      naval: getMaxAttack('전함') // 임시 subCategory
     };
   }, [unitsOnBoard, countryId]);
 
@@ -691,12 +693,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           <button 
             className={`cyber-btn ${targetingSkill === 'poison' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('poison')}
-            disabled={usedSkills.includes('poison') || activeSkills.length > 0 || hasRecon}
+            disabled={specialUnits.chemical.count === 0 || usedSkills.includes('poison') || activeSkills.length > 0 || hasRecon}
           >🧪 독가스</button>
           <button 
             className={`cyber-btn ${targetingSkill === 'naval_bombardment' ? 'active' : ''}`} 
             onClick={() => setTargetingSkill('naval_bombardment')}
-            disabled={usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
+            disabled={specialUnits.naval.count === 0 || usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
           >🚢 해안포격</button>
           
           <button 
