@@ -33,8 +33,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     const myUnits = unitsOnBoard.filter(u => u.owner === countryId);
     
     // 공격력 계산 로직 (동일 병과가 여러개면 최대 공격력 사용)
-    const getMaxAttack = (subCat) => {
-      const units = myUnits.filter(u => u.subCategory === subCat);
+    const getMaxAttack = (minorCat) => {
+      const units = myUnits.filter(u => u.minorCategory === minorCat || u.subCategory === minorCat);
       if (units.length === 0) return { count: 0, damage: 0, units: [] };
       return { count: units.length, damage: Math.max(...units.map(u => u.attack || 0)), units: units };
     };
