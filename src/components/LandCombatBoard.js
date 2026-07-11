@@ -903,7 +903,6 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 );
               })}
             </ul>
-            </ul>
           </div>
         </div>
       </div>
