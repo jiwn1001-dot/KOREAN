@@ -1770,18 +1770,30 @@ export default function AdminPage() {
             <div style={{ marginTop: '16px' }}>
               <h5 style={{ marginBottom: '8px' }}>현재 보유 부대</h5>
               <div className="card-grid card-grid-3">
-                {militaryUnits.map(u => (
-                  <div key={u.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <strong>{u.name}</strong> 
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>가동: {u.operational} / 총: {u.count}</div>
+                {(() => {
+                  const grouped = {};
+                  militaryUnits.forEach(u => {
+                    const key = u.templateId || u.name;
+                    if (!grouped[key]) {
+                      grouped[key] = { id: u.id, name: u.name, count: 0, operational: 0, sample: u };
+                    }
+                    grouped[key].count += (u.count || 1);
+                    grouped[key].operational += (u.operational || 1);
+                  });
+                  
+                  return Object.values(grouped).map(g => (
+                    <div key={g.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong>{g.name}</strong> 
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>가동: {g.operational} / 총: {g.count}</div>
+                      </div>
+                      <button className="btn btn-sm btn-ghost" onClick={() => {
+                        document.getElementById('adminUnitName').value = g.name;
+                        document.getElementById('adminUnitAmount').value = g.count;
+                      }}>수정</button>
                     </div>
-                    <button className="btn btn-sm btn-ghost" onClick={() => {
-                      document.getElementById('adminUnitName').value = u.name;
-                      document.getElementById('adminUnitAmount').value = u.count;
-                    }}>수정</button>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           </div>
