@@ -232,6 +232,12 @@ export default function AdminCombatSessions({ countries }) {
               맵: {maps.find(m => m.id === s.mapId)?.name} | 
               보급(T1/T2): {s.supplyLimitTeam1 || s.supplyLimit} / {s.supplyLimitTeam2 || s.supplyLimit}
               
+              {s.winner && (
+                <span style={{ color: 'var(--success)', marginLeft: '16px', fontWeight: 'bold' }}>
+                  🏆 승리자: {countries.find(c => c.id === s.winner)?.name || s.winner}
+                </span>
+              )}
+
               {s.battleMode === 'siege' && s.status === 'defense_prep' && (
                 <button className="btn btn-sm btn-warning" style={{marginLeft:'16px'}} onClick={() => handleTriggerInvasion(s.id)}>🔥 침공 개시 (공격측 진입 허용)</button>
               )}

@@ -424,10 +424,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       alert('아군 사령부가 파괴되었습니다! 패배!');
       nextPhase = 'game_over';
       isGameOver = true;
+      resolvedSession.winner = enemyHQ ? enemyHQ.owner : initialSession.opponent;
     } else if (enemyHQ && enemyHQ.status === 'destroyed') {
       alert('적군 사령부를 파괴했습니다! 승리!');
       nextPhase = 'game_over';
       isGameOver = true;
+      resolvedSession.winner = countryId;
     }
 
     if (isGameOver) {
@@ -444,7 +446,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     });
 
     if (onSaveSession) {
-      onSaveSession({
+      const saveData = {
         board: resolvedSession.board,
         units: resolvedSession.units,
         phase: nextPhase,
@@ -452,7 +454,10 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         players: nextPlayers,
         resourceDeductions: resolvedSession.resourceDeductions,
         casualties
-      });
+      };
+      if (isGameOver) saveData.winner = resolvedSession.winner;
+      
+      onSaveSession(saveData);
     }
   };
 
