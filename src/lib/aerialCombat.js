@@ -179,7 +179,7 @@ export function resolveAerialRound(attackCard, defenseCard) {
  * 수동 PvP 공중결전 세션 생성 (글로벌 배틀 상태)
  * @returns {Object} 공중결전 세션 정보
  */
-export function createAerialBattle(attackerId, defenderId, attackerUnits, defenderUnits, atkSupplyLimit, defSupplyLimit) {
+export function createAerialBattle(battleId, type, attackerId, defenderId, attackerUnits, defenderUnits, atkSupplyLimit, defSupplyLimit) {
   const atkResult = generateAerialCards(attackerUnits, 0, 0);
   const defResult = generateAerialCards(defenderUnits, 0, 0);
   
@@ -188,10 +188,15 @@ export function createAerialBattle(attackerId, defenderId, attackerUnits, defend
   const defAA = generateAntiAircraftCards(atkResult.newAces);
 
   return {
+    battleId,
+    type, // 'bombing', 'supremacy'
+    isMajorBattle: false,
+    majorBattleRequest: null, // 'requested_by_attacker', 'requested_by_defender', 'accepted', 'declined'
     attackerId,
     defenderId,
     round: 1,
     status: 'active', // 'active', 'finished'
+    winner: null,
     
     // 공격측 상태
     attackerState: {
@@ -514,52 +519,65 @@ export function tacticalSupplyRaid(targetCountry, supplyReduction) {
 }
 
 /**
- * 상대방이 수락/거절할 때까지 대기
- * @param {string} requesterId - 요청하는 국가 ID
- * @returns {Object} {status: 'pending', requesterId, timestamp}
+ * 상대방에게 공중결전(데스매치) 제안
+ * @param {Object} battleSession - 전체 세션
+ * @param {string} requesterId - 제안하는 국가 ID
+ * @returns {Object} 업데이트된 세션
  */
-export function requestMajorAerialBattle(requesterId) {
-  return {
-    status: 'pending',
+export function requestMajorAerialBattle(battleSession, requesterId) {
+  const isAttacker = battleSession.attackerId === requesterId;
+  battleSession.majorBattleRequest = isAttacker ? 'requested_by_attacker' : 'requested_by_defender';
+  battleSession.history.push({
+    round: battleSession.round,
+    reason: 'major_battle_requested',
     requesterId,
     timestamp: new Date().toISOString()
-  };
+  });
+  return battleSession;
 }
 
 /**
  * 공중결전 동의
  * 이제부터 양측 모든 카드가 소진될 때까지 항복 불가
- * @param {Object} defenderSession - 방어국 세션
- * @returns {Object} {accepted: true, timestamp}
+ * @param {Object} battleSession - 전체 세션
+ * @returns {Object} 업데이트된 세션
  */
-export function acceptMajorAerialBattle(defenderSession) {
-  defenderSession.battleRequest = {
-    status: 'accepted',
+export function acceptMajorAerialBattle(battleSession) {
+  battleSession.majorBattleRequest = 'accepted';
+  battleSession.isMajorBattle = true;
+  battleSession.history.push({
+    round: battleSession.round,
+    reason: 'major_battle_accepted',
     timestamp: new Date().toISOString()
-  };
-  return {
-    accepted: true,
-    message: '공중결전이 수락되었습니다. 양측의 모든 카드가 소진될 때까지 전투가 계속됩니다. (항복 불가)'
-  };
+  });
+  return battleSession;
 }
 
 /**
- * 공중결전 거절 (상대에게 완전 제공권 부여)
- * @param {Object} defenderSession - 거절하는 국가 세션
- * @param {string} attackerId - 공격국 ID
- * @returns {Object} {declined: true, opponentGetsFullSupremacy: true}
+ * 공중결전 거절 (상대에게 완전 제공권 부여 및 패배 처리)
+ * @param {Object} battleSession - 전체 세션
+ * @param {string} declinerId - 거절하는 국가 ID
+ * @returns {Object} 업데이트된 세션
  */
-export function declineMajorAerialBattle(defenderSession, attackerId) {
-  defenderSession.battleRequest = {
-    status: 'declined',
+export function declineMajorAerialBattle(battleSession, declinerId) {
+  const isAttacker = battleSession.attackerId === declinerId;
+  battleSession.majorBattleRequest = 'declined';
+  battleSession.status = 'finished';
+  battleSession.winner = isAttacker ? 'defender' : 'attacker';
+  
+  if (isAttacker) {
+    battleSession.attackerState.status = 'surrendered';
+  } else {
+    battleSession.defenderState.status = 'surrendered';
+  }
+
+  battleSession.history.push({
+    round: battleSession.round,
+    reason: 'major_battle_declined',
+    declinerId,
     timestamp: new Date().toISOString()
-  };
-  return {
-    declined: true,
-    message: '공중결전을 거절했습니다. 상대국이 완전 제공권을 얻습니다.',
-    opponentGetsFullSupremacy: true,
-    opponentId: attackerId
-  };
+  });
+  return battleSession;
 }
 
 /**
@@ -592,8 +610,8 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   const defSess = battleSession.defenderState;
 
   // 보급 한계 초과 여부 계산
-  const atkSupplyStatus = calculateSupplyUsage(atkSess, atkSess.cards, attackerUnits);
-  const defSupplyStatus = calculateSupplyUsage(defSess, defSess.cards, defenderUnits);
+  const atkSupplyStatus = calculateSupplyUsage({ supplyLimit: atkSess.supplyLimit }, atkSess.hand, attackerUnits);
+  const defSupplyStatus = calculateSupplyUsage({ supplyLimit: defSess.supplyLimit }, defSess.hand, defenderUnits);
 
   // 카드 가져오기
   const getCardFromChoice = (sess, choice) => {
@@ -656,12 +674,24 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   battleSession.defenderChoice = null;
   battleSession.round += 1;
 
-  // 승패 판정 (전멸 - 패와 대공포 모두 소진 시)
+  // 승패 판정 (전멸이거나 일반 제공권 단판 승부일 경우)
   const atkEmpty = atkSess.hand.length === 0 && atkSess.antiAircraft.length === 0;
   const defEmpty = defSess.hand.length === 0 && defSess.antiAircraft.length === 0;
+  const isOneShotSupremacy = battleSession.type === 'supremacy' && !battleSession.isMajorBattle;
 
-  if (atkEmpty || defEmpty) {
+  if (atkEmpty || defEmpty || isOneShotSupremacy) {
     battleSession.status = 'finished';
+    if (atkEmpty && defEmpty) {
+      battleSession.winner = 'draw';
+    } else if (atkEmpty) {
+      battleSession.winner = 'defender';
+    } else if (defEmpty) {
+      battleSession.winner = 'attacker';
+    } else if (isOneShotSupremacy) {
+      if (result.winner === 'attack') battleSession.winner = 'attacker';
+      else if (result.winner === 'defense') battleSession.winner = 'defender';
+      else battleSession.winner = 'draw';
+    }
   }
 
   return battleSession;
@@ -714,6 +744,7 @@ export function surrenderAerialBattle(battleSession, surrenderingId) {
   }
   
   battleSession.status = 'finished';
+  battleSession.winner = isAttacker ? 'defender' : 'attacker';
   battleSession.history.push({
     round: battleSession.round,
     reason: 'surrender',
@@ -723,3 +754,30 @@ export function surrenderAerialBattle(battleSession, surrenderingId) {
 
   return battleSession;
 }
+
+/**
+ * 비동기 턴제: 플레이어의 카드 선택을 제출하고, 양측이 모두 선택했다면 라운드를 진행합니다.
+ * @param {Object} battleSession - 전체 세션
+ * @param {string} countryId - 선택하는 국가 ID
+ * @param {Object} choice - { cardId, type }
+ * @param {Array} attackerUnits - 전체 전투기 정보 (보급 계산용)
+ * @param {Array} defenderUnits - 전체 전투기 정보 (보급 계산용)
+ * @returns {Object} 업데이트된 세션
+ */
+export function submitCardChoice(battleSession, countryId, choice, attackerUnits = [], defenderUnits = []) {
+  if (battleSession.status === 'finished') return battleSession;
+
+  if (countryId === battleSession.attackerId) {
+    battleSession.attackerChoice = choice;
+  } else if (countryId === battleSession.defenderId) {
+    battleSession.defenderChoice = choice;
+  }
+
+  // 양측 모두 선택 완료 시 자동 라운드 진행
+  if (battleSession.attackerChoice && battleSession.defenderChoice) {
+    return processBattleRound(battleSession, attackerUnits, defenderUnits);
+  }
+
+  return battleSession;
+}
+

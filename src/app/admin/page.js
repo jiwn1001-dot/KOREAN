@@ -30,7 +30,7 @@ import {
   getGameState, advanceGameState,
   getResearches, createResearch, updateResearch, deleteResearch,
   getResources, upsertResource,
-  saveAerialCombatSession, getAerialCombatSession
+  saveAerialBattleSession, getAerialBattleSession
 } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { processTurnEnd, rollbackTurn, resetToTurnOne, transferTech } from '@/lib/gameLogic';
@@ -74,7 +74,7 @@ export default function AdminPage() {
   const [unitTemplates, setUnitTemplates] = useState([]);
   const [militaryUnits, setMilitaryUnits] = useState([]);
   const [gameSettingsEntry, setGameSettingsEntry] = useState(null);
-  const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0 });
+  const [aerialSessionForm, setAerialSessionForm] = useState({ supplyLimit: 0, defenderCountryId: '' });
   const [testAerialGame, setTestAerialGame] = useState(null); // 테스트 게임 상태
   const [testGameLog, setTestGameLog] = useState([]); // 라운드 로그
   const [adminGenerals, setAdminGenerals] = useState([]);
@@ -2266,6 +2266,28 @@ export default function AdminPage() {
           
           <div className="form-row">
             <div className="form-group" style={{ flex: 1 }}>
+              <label>공격자 국가</label>
+              <div style={{ padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'var(--bg-glass)' }}>
+                {countries.find(c => c.id === selectedCountryId)?.name || '선택된 국가 없음'}
+              </div>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>방어자 국가 (상대국)</label>
+              <select
+                className="form-select"
+                value={aerialSessionForm.defenderCountryId}
+                onChange={(e) => setAerialSessionForm(p => ({...p, defenderCountryId: e.target.value}))}
+              >
+                <option value="">-- 상대 국가 선택 --</option>
+                {countries.filter(c => c.id !== selectedCountryId).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row" style={{ marginTop: '12px' }}>
+            <div className="form-group" style={{ flex: 1 }}>
               <label>보급 한계 (총 보급량)</label>
               <input
                 type="number"
@@ -2282,28 +2304,50 @@ export default function AdminPage() {
 
           <button className="btn btn-primary" style={{ marginTop: '12px' }} onClick={async () => {
             if (!selectedCountryId) {
-              showToast('국가를 선택해주세요.', 'error');
+              showToast('공격자 국가를 선택해주세요.', 'error');
+              return;
+            }
+            if (!aerialSessionForm.defenderCountryId) {
+              showToast('방어자 국가를 선택해주세요.', 'error');
               return;
             }
 
             try {
-              // 현재 국가의 전투기 유닛 정보 가져오기 (economy에서)
-              const ecoEntry = await getDataEntry('economy', selectedCountryId);
-              const aircraftUnits = []; // TODO: unitTemplates 중 공군 전투기만 선택
+              // 각 국가의 공군 유닛 가져오기
+              const getAirUnits = async (cId) => {
+                const milData = await getDataEntry('military_units', cId);
+                const allUnits = milData?.data?.units || [];
+                return allUnits.map(u => {
+                  const tmpl = unitTemplates.find(t => t.id === u.templateId);
+                  if (tmpl && tmpl.majorCategory === '공군') {
+                    return { id: u.id, name: tmpl.name, speed: tmpl.speed || 1, quantity: u.operational || u.count, supplyConsumption: tmpl.supplyConsumption || 0 };
+                  }
+                  return null;
+                }).filter(Boolean);
+              };
 
-              const session = createAerialCombatSession(
+              const atkUnits = await getAirUnits(selectedCountryId);
+              const defUnits = await getAirUnits(aerialSessionForm.defenderCountryId);
+
+              const battleId = `bombing_${Date.now()}`;
+              const session = createAerialBattle(
+                battleId,
+                'bombing',
                 selectedCountryId,
-                aircraftUnits,
+                aerialSessionForm.defenderCountryId,
+                atkUnits,
+                defUnits,
+                aerialSessionForm.supplyLimit,
                 aerialSessionForm.supplyLimit
               );
 
-              await saveAerialCombatSession(selectedCountryId, session);
-              showToast('공중전 세션이 초기화되었습니다.', 'success');
+              await saveAerialBattleSession(session);
+              showToast('폭격전(공중전) 세션이 생성되었습니다.', 'success');
             } catch (err) {
               console.error(err);
-              showToast('공중전 세션 초기화 실패', 'error');
+              showToast('공중전 세션 생성 실패', 'error');
             }
-          }}>초기화</button>
+          }}>폭격전 세션 생성</button>
         </div>
 
         {/* 테스트 플레이 UI */}

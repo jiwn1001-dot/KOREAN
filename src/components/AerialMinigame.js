@@ -9,8 +9,8 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    // 세션 초기화
-    const newBattle = createAerialBattle(countryId, 'enemy', myPlanes, enemyPlanes, 10, 10);
+    // 세션 초기화 (로컬 미니게임 테스트용이므로 임의의 id 사용)
+    const newBattle = createAerialBattle(`local_${Date.now()}`, 'supremacy', countryId, 'enemy', myPlanes, enemyPlanes, 10, 10);
     setBattle(newBattle);
 
     if (autoMode) {
@@ -25,8 +25,8 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     // 자동 전투 진행 루프 (100번 이상 도는 것 방지)
     let maxIter = 100;
     while (currentBattle.status === 'active' && maxIter-- > 0) {
-      const atkCard = aiChooseCard(currentBattle.defenderState, currentBattle.attackerState);
-      const defCard = aiChooseCard(currentBattle.attackerState, currentBattle.defenderState);
+      const atkCard = aiChooseCard(currentBattle.attackerState, currentBattle.defenderState);
+      const defCard = aiChooseCard(currentBattle.defenderState, currentBattle.attackerState);
 
       currentBattle.attackerChoice = atkCard ? { cardId: atkCard.cardId, type: atkCard.canBlock ? 'aa' : (atkCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
       currentBattle.defenderChoice = defCard ? { cardId: defCard.cardId, type: defCard.canBlock ? 'aa' : (defCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };

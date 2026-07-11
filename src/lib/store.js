@@ -414,7 +414,7 @@ export async function saveAerialCombatSession(countryId, sessionData) {
 }
 
 /**
- * 공중전 세션 로드
+ * 공중전 세션 로드 (호환성 유지용)
  * @param {string} countryId - 국가 ID
  */
 export async function getAerialCombatSession(countryId) {
@@ -428,45 +428,68 @@ export async function getAerialCombatSession(countryId) {
 }
 
 /**
- * 모든 국가의 제공권 상태 조회
+ * 신규 구조: 개별 공중전 배틀 저장
+ * @param {Object} battleData - 배틀 데이터 (battleId 포함 필수)
  */
-export async function getAllAirSupremacyStatus() {
+export async function saveAerialBattleSession(battleData) {
+  if (!battleData || !battleData.battleId) return null;
+  
   try {
-    const { data, error } = await supabase
-      .from('data_entries')
-      .select('country_id, data')
-      .eq('category', 'aerial_combat_session');
+    // battleId를 country_id 자리에 저장하여 고유 레코드로 식별
+    const { data, error } = await upsertDataEntry(
+      'aerial_battle',
+      battleData.battleId,
+      battleData
+    );
     if (error) throw error;
-
-    const statuses = {};
-    (data || []).forEach(entry => {
-      if (entry.country_id && entry.data) {
-        statuses[entry.country_id] = entry.data.airSupremacy || null;
-      }
-    });
-    return statuses;
+    return data;
   } catch (err) {
-    console.error('Failed to get air supremacy statuses:', err);
-    return {};
+    console.error('Failed to save aerial battle:', err);
+    return null;
   }
 }
 
-export async function getAerialBattleSessionsForCountry(countryId) {
+/**
+ * 신규 구조: 단일 배틀 로드
+ * @param {string} battleId - 배틀 ID
+ */
+export async function getAerialBattleSession(battleId) {
+  try {
+    const entry = await getDataEntry('aerial_battle', battleId);
+    return entry?.data || null;
+  } catch (err) {
+    console.error('Failed to load aerial battle:', err);
+    return null;
+  }
+}
+
+/**
+ * 신규 구조: 특정 국가가 포함된(공격/방어) 모든 배틀 로드
+ * @param {string} countryId - 국가 ID
+ */
+export async function getAerialBattlesForCountry(countryId) {
   try {
     const { data, error } = await supabase
       .from('data_entries')
       .select('id, country_id, data')
-      .eq('category', 'aerial_combat_session');
+      .eq('category', 'aerial_battle');
     
     if (error) throw error;
     
-    // Filter manually since OR query with JSONB might be complex in Supabase JS v1 depending on setup
-    return data.filter(d => d.data?.attackerId === countryId || d.data?.defenderId === countryId)
-               .map(d => ({ entryId: d.id, battleId: d.country_id, ...d.data }));
+    return data
+      .filter(d => d.data?.attackerId === countryId || d.data?.defenderId === countryId)
+      .map(d => d.data);
   } catch (err) {
-    console.error('Failed to get aerial battle sessions:', err);
+    console.error('Failed to get aerial battles:', err);
     return [];
   }
+}
+
+/**
+ * 이전 버전 호환: getAerialBattleSessionsForCountry
+ */
+export async function getAerialBattleSessionsForCountry(countryId) {
+  return await getAerialBattlesForCountry(countryId);
 }
 
 /**

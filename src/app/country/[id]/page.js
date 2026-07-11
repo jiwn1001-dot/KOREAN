@@ -13,6 +13,7 @@ import ParliamentArch from '@/components/ParliamentArch';
 import SupportPieChart from '@/components/SupportPieChart';
 import CorpsFormation from '@/components/CorpsFormation';
 import CombatLobby from '@/components/CombatLobby';
+import AerialBattleUI from '@/components/AerialBattleUI';
 
 export default function CountryPage() {
   const params = useParams();
@@ -164,6 +165,7 @@ export default function CountryPage() {
     { id: 'formation', label: '편제', icon: '🎖️' },
     { id: 'corps', label: '작전/군단', icon: '🏕️' },
     { id: 'land_combat', label: '지상전', icon: '🗺️' },
+    { id: 'aerial', label: '공중전', icon: '✈️' },
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
   ];
 
@@ -1353,6 +1355,40 @@ export default function CountryPage() {
     );
   };
 
+  const renderAerial = () => {
+    return (
+      <div className="slide-up">
+        <h2>✈️ 공중전 세션</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
+          진행 중인 폭격전 및 제공권 확보 세션 목록입니다.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {aerialBattles.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🕊️</div>
+              <div className="empty-state-text">현재 진행 중인 공중전이 없습니다.</div>
+            </div>
+          ) : (
+            aerialBattles.map(battle => (
+              <AerialBattleUI 
+                key={battle.battleId} 
+                battleSession={battle} 
+                countryId={countryId} 
+                militaryUnits={militaryUnits}
+                unitTemplates={unitTemplates}
+                onUpdate={async (updatedBattle) => {
+                  const newBattles = aerialBattles.map(b => b.battleId === updatedBattle.battleId ? updatedBattle : b);
+                  setAerialBattles(newBattles);
+                }}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // Calculate stats from tech trees
   const completedTechs = researches.filter(r => r.status === 'completed');
   let penetrationBonus = 0;
@@ -1431,6 +1467,8 @@ export default function CountryPage() {
         );
       case 'transfers':
         return renderTransfers();
+      case 'aerial':
+        return renderAerial();
       default:
         return null;
     }
