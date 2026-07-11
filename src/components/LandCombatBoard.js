@@ -628,13 +628,23 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 className="cyber-btn"
                 style={{ background: hasAirSupremacy ? uiColors.neonGreen : 'rgba(30,41,59,0.8)', borderColor: hasAirSupremacy ? uiColors.neonGreen : '#3b82f6', color: hasAirSupremacy ? '#fff' : '#60a5fa' }}
                 onClick={() => {
+                  // If autoAirCombat is enabled, resolve locally. Otherwise require opponent readiness before opening aerial UI.
                   if (autoAirCombat) {
                     const win = Math.random() > 0.5;
                     setHasAirSupremacy(win);
                     alert(win ? '자동 주사위 판정 승리! 제공권을 장악했습니다.' : '자동 주사위 판정 패배. 제공권 확보에 실패했습니다.');
-                  } else {
-                    setPhase('aerial_combat');
+                    return;
                   }
+
+                  // If there's a multiplayer session, require all players to be ready before starting the aerial minigame.
+                  const players = initialSession?.players;
+                  const allReady = players ? Object.values(players).every(p => p.ready) : true;
+                  if (!allReady) {
+                    alert('상대방이 아직 준비되지 않았습니다. 상대의 선택을 기다려 주세요.');
+                    return;
+                  }
+
+                  setPhase('aerial_combat');
                 }}
               >
                 {hasAirSupremacy ? '☁️ 제공권 장악' : '✈️ 제공권 시도'}
