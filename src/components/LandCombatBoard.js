@@ -154,8 +154,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       const unitToDeploy = unitsOnBoard.find(u => u.id === selectedStandbyUnitId);
       if (!unitToDeploy) return;
 
-      // Check supply limit (HQ is 0)
-      const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
+      // Check supply limit (HQ is 0, Air units in standby also consume supply)
+      const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
       if (currentSupply + (unitToDeploy.supplyConsumption || 0) > mySupplyLimit) {
         return alert(`보급 한계(${mySupplyLimit})를 초과하여 배치할 수 없습니다.`);
       }
@@ -177,7 +177,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         if (unitsOnBoard.some(u => u.x === x && u.y === y && u.status === 'field')) return alert('이미 유닛이 있는 자리입니다.');
 
         const unitToDeploy = unitsOnBoard.find(u => u.id === selectedStandbyUnitId);
-        const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
+        const currentSupply = unitsOnBoard.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((acc, u) => acc + (u.supplyConsumption || 0), 0);
         const queuedSpawns = orders.filter(o => o.type === 'spawn').reduce((acc, o) => {
           const su = unitsOnBoard.find(u => u.id === o.unitId);
           return acc + (su?.supplyConsumption || 0);
@@ -887,8 +887,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '8px' }}>
                     보급 사용량: 
-                    <span style={{ color: unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0) >= mySupplyLimit ? uiColors.neonRed : '#fff', fontWeight: 'bold', marginLeft: '8px' }}>
-                      {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0)} / {mySupplyLimit}
+                    <span style={{ color: unitsOnBoard.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((a, b) => a + (b.supplyConsumption || 0), 0) >= mySupplyLimit ? uiColors.neonRed : '#fff', fontWeight: 'bold', marginLeft: '8px' }}>
+                      {unitsOnBoard.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((a, b) => a + (b.supplyConsumption || 0), 0)} / {mySupplyLimit}
                     </span>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
@@ -899,28 +899,33 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
-                  {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby').map(u => (
+                  {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby').map(u => {
+                    const isAir = u.majorCategory === '공군';
+                    return (
                     <div 
                       key={u.id}
-                      onClick={() => setSelectedStandbyUnitId(u.id)}
+                      onClick={() => {
+                        if (!isAir) setSelectedStandbyUnitId(u.id);
+                      }}
                       style={{
                         padding: '12px',
                         backgroundColor: selectedStandbyUnitId === u.id ? 'rgba(59, 130, 246, 0.4)' : 'rgba(0,0,0,0.4)',
                         border: `1px solid ${selectedStandbyUnitId === u.id ? uiColors.neonBlue : '#334155'}`,
                         borderRadius: '6px',
-                        cursor: 'pointer',
+                        cursor: isAir ? 'not-allowed' : 'pointer',
                         display: 'flex',
                         justifyContent: 'space-between',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        opacity: isAir ? 0.6 : 1
                       }}
                     >
                       <div>
-                        <div style={{ color: '#fff', fontWeight: 'bold' }}>{u.isHQ ? '⭐ 야전사령부 (HQ)' : u.name}</div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급 소모: {u.supplyConsumption || 0}</div>
+                        <div style={{ color: '#fff', fontWeight: 'bold' }}>{u.isHQ ? '⭐ 야전사령부 (HQ)' : u.name} <span style={{fontSize:'0.7rem', color: uiColors.neonYellow}}>[{u.subCategory}]</span></div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급 소모: {u.supplyConsumption || 0} {isAir && '(비행장 대기)'}</div>
                       </div>
                       <div style={{ color: uiColors.neonYellow, fontSize: '0.8rem' }}>대기 중</div>
                     </div>
-                  ))}
+                  )})}
                   {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby').length === 0 && (
                     <div style={{ color: '#64748b', textAlign: 'center', padding: '20px 0' }}>대기 중인 유닛이 없습니다.</div>
                   )}
@@ -993,11 +998,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '8px' }}>
               {unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby' && !u.isHQ).map(u => {
                 const isQueued = orders.some(o => o.type === 'spawn' && o.unitId === u.id);
+                const isAir = u.majorCategory === '공군';
                 return (
                 <div 
                   key={u.id}
                   onClick={() => {
-                    if (!isQueued) {
+                    if (!isQueued && !isAir) {
                       setSelectedStandbyUnitId(selectedStandbyUnitId === u.id ? null : u.id);
                       setSelectedUnit(null);
                     }
@@ -1007,15 +1013,16 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                     backgroundColor: selectedStandbyUnitId === u.id ? 'rgba(59, 130, 246, 0.4)' : isQueued ? 'rgba(16, 185, 129, 0.2)' : 'rgba(0,0,0,0.4)',
                     border: `1px solid ${selectedStandbyUnitId === u.id ? uiColors.neonBlue : isQueued ? uiColors.neonGreen : '#334155'}`,
                     borderRadius: '6px',
-                    cursor: isQueued ? 'not-allowed' : 'pointer',
+                    cursor: (isQueued || isAir) ? 'not-allowed' : 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    opacity: isAir ? 0.6 : 1
                   }}
                 >
                   <div>
-                    <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>{u.name}</div>
-                    <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급: {u.supplyConsumption || 0} | 체력: {u.hp}/{u.maxHp || 100}</div>
+                    <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>{u.name} <span style={{fontSize:'0.7rem', color: uiColors.neonYellow}}>[{u.subCategory}]</span></div>
+                    <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>보급: {u.supplyConsumption || 0} | 체력: {u.hp}/{u.maxHp || 100} {isAir && '(비행장 대기)'}</div>
                   </div>
                   <div style={{ color: isQueued ? uiColors.neonGreen : uiColors.neonYellow, fontSize: '0.8rem' }}>
                     {isQueued ? '투입 대기' : '대기 중'}

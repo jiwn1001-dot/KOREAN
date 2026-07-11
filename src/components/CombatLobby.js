@@ -43,8 +43,17 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       const mapEntry = await getDataEntry('combat_maps', null);
       if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
 
-      const sessionEntry = await getDataEntry('combat_sessions', null);
-      if (sessionEntry?.data?.sessions) setSessions(sessionEntry.data.sessions);
+      const cSessions = await getDataEntry('combat_sessions');
+      const latestSessions = cSessions?.sessions || [];
+      setSessions(latestSessions);
+      
+      // Update activeSession with real-time data
+      if (activeSession) {
+         const updatedActive = latestSessions.find(s => s.id === activeSession.id);
+         if (updatedActive) {
+            setActiveSession(updatedActive);
+         }
+      }
       
       const clist = await getCountries();
       setCountries(clist || []);
@@ -156,10 +165,11 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
           if (u) {
             const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
             
-            // 세션 카테고리 필터링 (폭격전이면 공군만, 해전이면 해군만, 육전이면 육군만 참전 가능)
-            if (session.sessionCategory === 'bombing' && tmpl.majorCategory !== '공군') return;
-            if (session.sessionCategory === 'naval' && tmpl.majorCategory !== '해군') return;
-            if (session.sessionCategory === 'land' && tmpl.majorCategory !== '육군') return;
+            const isAir = tmpl.majorCategory === '공군';
+            // 세션 카테고리 필터링 (폭격전이면 공군만, 해전이면 해군/공군만, 육전이면 육군/공군만 참전 가능)
+            if (session.sessionCategory === 'bombing' && !isAir) return;
+            if (session.sessionCategory === 'naval' && tmpl.majorCategory !== '해군' && !isAir) return;
+            if (session.sessionCategory === 'land' && tmpl.majorCategory !== '육군' && !isAir) return;
             
             const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
             const startX = isTeam1 ? 0 : 19;
@@ -230,9 +240,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       updatedSession.status = 'deployment';
     }
 
-    // Combine units for the board
+    // Combine units for the board (기존 보드 유닛 유지 + 내 새 유닛 추가)
     updatedSession.units = [
-      ...Object.values(updatedSession.players).flatMap(p => p.units || [])
+      ...(session.units || []),
+      ...myUnits
     ];
 
     const updatedSessions = sessions.map(s => s.id === session.id ? updatedSession : s);
