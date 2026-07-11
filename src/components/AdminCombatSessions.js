@@ -12,6 +12,8 @@ export default function AdminCombatSessions({ countries }) {
   const [sessionName, setSessionName] = useState('');
   const [selectedMapId, setSelectedMapId] = useState('');
   const [supplyLimit, setSupplyLimit] = useState(10);
+  const [sessionCategory, setSessionCategory] = useState('land'); // land, naval, bombing
+  const [battleMode, setBattleMode] = useState('encounter'); // encounter, siege
   
   // Team 1 & Team 2: { countryId, armyId }[]
   const [team1, setTeam1] = useState([]);
@@ -81,9 +83,11 @@ export default function AdminCombatSessions({ countries }) {
       name: sessionName,
       mapId: selectedMapId,
       supplyLimit: parseInt(supplyLimit),
+      sessionCategory,
+      battleMode,
       host: team1[0].countryId, // 첫 번째 국가가 방장 역할 (팀 리더)
       opponent: team2[0].countryId,
-      status: 'waiting', 
+      status: battleMode === 'siege' ? 'defense_prep' : 'waiting', // 방어전은 사전배치 페이즈 대기
       players: {}, // 각 국가의 정보가 들어감
       board: maps.find(m => m.id === selectedMapId)?.board,
       units: [], // 유닛은 각 유저가 접속했을 때 로딩되거나 여기서 계산. 로비에서 알아서 병합됨.
@@ -113,6 +117,17 @@ export default function AdminCombatSessions({ countries }) {
     setTeam2([]);
   };
 
+  const handleTriggerInvasion = async (id) => {
+    if (!confirm('수비측의 사전 배치가 모두 끝났습니까? 공격측의 침공을 허용(개시)하시겠습니까?')) return;
+    const updated = sessions.map(s => {
+      if (s.id === id) return { ...s, status: 'waiting' }; // waiting으로 바꿔 공격측 접속 허용
+      return s;
+    });
+    setSessions(updated);
+    await upsertDataEntry('combat_sessions', 'global', { sessions: updated });
+    alert('침공이 개시되었습니다! 이제 공격측 유저들이 세션에 합류할 수 있습니다.');
+  };
+
   const handleDeleteSession = async (id) => {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     const updated = sessions.filter(s => s.id !== id);
@@ -131,7 +146,22 @@ export default function AdminCombatSessions({ countries }) {
           <input type="text" className="form-input" value={sessionName} onChange={e => setSessionName(e.target.value)} />
         </div>
         <div className="form-group">
-          <label className="form-label">전투 맵 선택</label>
+          <label className="form-label">전장 카테고리</label>
+          <select className="form-select" value={sessionCategory} onChange={e => setSessionCategory(e.target.value)}>
+            <option value="land">지상전 (육전)</option>
+            <option value="naval">해전</option>
+            <option value="bombing">폭격전</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">전투 타입</label>
+          <select className="form-select" value={battleMode} onChange={e => setBattleMode(e.target.value)}>
+            <option value="encounter">조우전 (공격 vs 공격)</option>
+            <option value="siege">방어/공성전 (공격 vs 수비)</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">전투 맵 (전선)</label>
           <select className="form-select" value={selectedMapId} onChange={e => setSelectedMapId(e.target.value)}>
             <option value="">-- 맵 선택 --</option>
             {maps.map(m => (
@@ -192,9 +222,16 @@ export default function AdminCombatSessions({ countries }) {
       <h3>생성된 전체 세션 목록</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {sessions.map(s => (
-          <div key={s.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between' }}>
+          <div key={s.id} className="card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <strong>{s.name}</strong> ({s.isTeamBattle ? '팀전' : '1vs1'}) | 맵: {maps.find(m => m.id === s.mapId)?.name}
+              <strong style={{marginRight:'8px'}}>{s.name}</strong> 
+              <span style={{color:'var(--accent)'}}>[{s.sessionCategory === 'land' ? '육전' : s.sessionCategory === 'naval' ? '해전' : '폭격전'}]</span> 
+              <span style={{color:'var(--danger)', marginLeft:'4px'}}>[{s.battleMode === 'siege' ? '방어전' : '조우전'}]</span> | 
+              맵: {maps.find(m => m.id === s.mapId)?.name}
+              
+              {s.battleMode === 'siege' && s.status === 'defense_prep' && (
+                <button className="btn btn-sm btn-warning" style={{marginLeft:'16px'}} onClick={() => handleTriggerInvasion(s.id)}>🔥 침공 개시 (공격측 진입 허용)</button>
+              )}
             </div>
             <button className="btn btn-sm btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>
           </div>

@@ -117,6 +117,13 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
   };
 
   const handleJoinSession = async (session) => {
+    if (session.battleMode === 'siege' && session.status === 'defense_prep') {
+      const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
+      if (isTeam1) {
+        return alert('현재 수비측(방어팀)이 전선을 사전 배치 중입니다. 관리자가 침공을 허가할 때까지 대기해주세요.');
+      }
+    }
+
     if (!selectedArmyId) {
       return alert('참여하기 전 투입할 야전군을 선택해주세요.');
     }
@@ -318,10 +325,27 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
             
             const isHost = s.host === countryId;
             const isTeamBattle = s.isTeamBattle;
-            const isAssigned = isTeamBattle && (s.team1.includes(countryId) || s.team2.includes(countryId));
+            const isTeam1 = isTeamBattle ? s.team1.includes(countryId) : (s.host === countryId);
+            const isTeam2 = isTeamBattle ? s.team2.includes(countryId) : (s.opponent === countryId);
+            const isAssigned = isTeam1 || isTeam2;
             const isOpponent = s.opponent === countryId || !s.opponent;
-            const canJoin = (s.status === 'waiting' || isTeamBattle) && !s.players[countryId]?.ready && (isOpponent || isAssigned);
-            const isPlaying = (s.status === 'playing' || isTeamBattle) && (s.players[countryId]?.ready);
+            
+            // 입장 허용 조건 판단
+            let canJoin = false;
+            let waitingMessage = '';
+            
+            if (!s.players[countryId]?.ready && (isOpponent || isAssigned)) {
+              if (s.battleMode === 'siege' && s.status === 'defense_prep') {
+                if (isTeam2) canJoin = true; // 수비측은 사전배치를 위해 진입 가능
+                else waitingMessage = '대기 중 (수비측 사전 배치 중)'; // 공격측 대기
+              } else if (s.status === 'waiting') {
+                canJoin = true;
+              } else if (isTeamBattle) {
+                canJoin = true;
+              }
+            }
+            
+            const isPlaying = s.players[countryId]?.ready;
 
             return (
               <div key={s.id} className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: isPlaying ? '4px solid var(--success)' : '4px solid var(--warning)' }}>
@@ -345,14 +369,19 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
                     )}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {waitingMessage && (
+                    <span style={{ color: 'var(--warning)', fontSize: '0.9rem', marginRight: '8px' }}>⏳ {waitingMessage}</span>
+                  )}
                   {isPlaying && (
                     <button className="btn btn-primary" onClick={() => setActiveSession(s)}>⚔️ 전투 입장</button>
                   )}
                   {canJoin && (
-                    <button className="btn btn-success" onClick={() => handleJoinSession(s)}>입장하기 (부대 배치)</button>
+                    <button className="btn btn-success" onClick={() => handleJoinSession(s)}>
+                      {s.battleMode === 'siege' && s.status === 'defense_prep' ? '방어 준비 (사전 배치)' : '입장하기 (부대 투입)'}
+                    </button>
                   )}
-                  {s.status === 'waiting' && isHost && !isTeamBattle && (
+                  {s.status === 'waiting' && isHost && !isTeamBattle && !isPlaying && (
                     <button className="btn btn-primary" onClick={() => setActiveSession(s)}>⚔️ 입장 (대기/AI 플레이)</button>
                   )}
                   {(admin || isHost) && (

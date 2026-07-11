@@ -76,8 +76,13 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       
       // Check deployment zone
       const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
-      if (isTeam1 && x > 9) return alert('배치 구역을 벗어났습니다. (x <= 9)');
-      if (!isTeam1 && x < 10) return alert('배치 구역을 벗어났습니다. (x >= 10)');
+      const isTeam2 = initialSession?.isTeamBattle ? initialSession.team2.includes(countryId) : (initialSession?.opponent === countryId);
+      const isSiegeDefense = initialSession?.battleMode === 'siege' && initialSession?.status === 'defense_prep' && isTeam2;
+      
+      if (!isSiegeDefense) {
+        if (isTeam1 && x > 9) return alert('배치 구역을 벗어났습니다. (x <= 9)');
+        if (!isTeam1 && x < 10) return alert('배치 구역을 벗어났습니다. (x >= 10)');
+      }
 
       // Check if tile is empty
       if (unitsOnBoard.some(u => u.x === x && u.y === y && u.status === 'field')) {
@@ -199,6 +204,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     let updatedUnits = [...unitsOnBoard];
     const myHQ = updatedUnits.find(u => u.owner === countryId && u.isHQ);
     const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1.includes(countryId) : (initialSession?.host === countryId);
+    const isTeam2 = initialSession?.isTeamBattle ? initialSession.team2.includes(countryId) : (initialSession?.opponent === countryId);
+    const isSiegeDefense = initialSession?.battleMode === 'siege' && initialSession?.status === 'defense_prep' && isTeam2;
 
     // HQ 강제 배치 로직
     if (myHQ && myHQ.status === 'standby') {
@@ -239,6 +246,11 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     setUnitsOnBoard(updatedUnits);
     setPhase('combat');
     setSelectedStandbyUnitId(null);
+
+    if (isSiegeDefense) {
+      alert('사전 방어 배치가 완료되었습니다. 로비로 이동하여 침공을 대기하십시오.');
+      if (onSaveSession) onSaveSession({ units: updatedUnits });
+    }
   };
 
   const handleNextTurn = async () => {
@@ -743,7 +755,10 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                     </span>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                    내 진영 반경에 유닛을 배치하세요. 사령부(HQ) 배치는 필수입니다 (미배치 시 강제 배치됨).
+                    {initialSession?.battleMode === 'siege' && initialSession?.status === 'defense_prep' ? 
+                      '🛡️ 방어전 사전 배치 페이즈입니다. 맵 전체에 유닛을 자유롭게 주둔시키세요!' : 
+                      '내 진영 반경에 유닛을 배치하세요.'}
+                    사령부(HQ) 배치는 필수입니다.
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
