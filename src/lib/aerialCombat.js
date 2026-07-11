@@ -171,56 +171,6 @@ export function resolveAerialRound(attackCard, defenseCard) {
   };
 }
 
-export function processBattleRound(session) {
-  const atkChoice = session.attackerChoice;
-  const defChoice = session.defenderChoice;
-  
-  let atkCard = null;
-  if (atkChoice && atkChoice.cardId) {
-    atkCard = atkChoice.type === 'aa' ? session.attackerState.antiAircraft.find(c => c.cardId === atkChoice.cardId) 
-                                      : session.attackerState.hand.find(c => c.cardId === atkChoice.cardId);
-  }
-  
-  let defCard = null;
-  if (defChoice && defChoice.cardId) {
-    defCard = defChoice.type === 'aa' ? session.defenderState.antiAircraft.find(c => c.cardId === defChoice.cardId)
-                                      : session.defenderState.hand.find(c => c.cardId === defChoice.cardId);
-  }
-
-  const roundResult = resolveAerialRound(atkCard, defCard);
-  
-  // 패배한 측 (혹은 무승부시 양측) 카드 소모
-  if (roundResult.attackerLost && atkCard) {
-    if (atkChoice.type === 'aa') session.attackerState.antiAircraft = session.attackerState.antiAircraft.filter(c => c.cardId !== atkCard.cardId);
-    else session.attackerState.hand = session.attackerState.hand.filter(c => c.cardId !== atkCard.cardId);
-  }
-  
-  if (roundResult.defenderLost && defCard) {
-    if (defChoice.type === 'aa') session.defenderState.antiAircraft = session.defenderState.antiAircraft.filter(c => c.cardId !== defCard.cardId);
-    else session.defenderState.hand = session.defenderState.hand.filter(c => c.cardId !== defCard.cardId);
-  }
-
-  session.history.push(roundResult);
-  session.round += 1;
-  
-  // 손패가 비었으면 전투 종료
-  if (session.attackerState.hand.length === 0 || session.defenderState.hand.length === 0) {
-    session.status = 'finished';
-  }
-  
-  return session;
-}
-
-export function surrenderAerialBattle(session, surrenderingId) {
-  if (session.attackerId === surrenderingId || !session.defenderId) {
-    session.attackerState.status = 'surrendered';
-  } else {
-    session.defenderState.status = 'surrendered';
-  }
-  session.status = 'finished';
-  return session;
-}
-
 /**
  * ===== 제공권 관리 =====
  */
