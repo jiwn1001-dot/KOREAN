@@ -10,7 +10,17 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
 
   useEffect(() => {
     // 세션 초기화 (로컬 미니게임 테스트용이므로 임의의 id 사용)
-    const newBattle = createAerialBattle(`local_${Date.now()}`, 'supremacy', countryId, 'enemy', myPlanes, enemyPlanes, 10, 10);
+    // Normalize units so createAerialBattle receives a `quantity` field
+    const normalize = (units) => (units || []).map(u => ({
+      id: u.id || u.unitTemplateId || `unit_${Date.now()}`,
+      name: u.name || u.unitName || '전투기',
+      speed: u.speed || 1,
+      quantity: u.quantity || u.count || 1,
+      image: u.image || u.unitImage || null,
+      supplyConsumption: u.supplyConsumption || 0
+    }));
+
+    const newBattle = createAerialBattle(`local_${Date.now()}`, 'supremacy', countryId, 'enemy', normalize(myPlanes), normalize(enemyPlanes), 10, 10);
     setBattle(newBattle);
 
     if (autoMode) {
