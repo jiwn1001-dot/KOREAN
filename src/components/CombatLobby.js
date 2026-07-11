@@ -110,6 +110,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
         [countryId]: {
           armyId: selectedArmyId,
           ready: false,
+          orders: [],
           units: myUnits,
           stats: countryStats
         }
@@ -206,6 +207,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       ...updatedSession.players[countryId],
       armyId: selectedArmyId,
       ready: false,
+      orders: [],
       units: myUnits,
       stats: countryStats
     };

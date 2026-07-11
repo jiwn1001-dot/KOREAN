@@ -74,6 +74,41 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
   }, [board, unitsOnBoard, hasRecon, countryId]);
 
+  // 동시 턴 동기화 훅
+  useEffect(() => {
+    if (phase !== 'combat' || !initialSession || !initialSession.players) return;
+
+    // 참가자 동기화 로직 (turn이 올랐을 때)
+    if (initialSession.turn && initialSession.turn > turn) {
+      setBoard(initialSession.board);
+      setUnitsOnBoard(initialSession.units);
+      setTurn(initialSession.turn);
+      setPhase(initialSession.phase || 'combat');
+      setOrders([]);
+      setActiveSkills([]);
+      setHasAirSupremacy(false);
+      setHasRecon(false);
+      return;
+    }
+
+    // Host 전용 로직 (AI 혹은 멀티플레이 결산)
+    const isTeam1 = initialSession.isTeamBattle ? initialSession.team1?.includes(countryId) : (initialSession.host === countryId);
+    if (!isTeam1) return; // 호스트만 연산
+
+    let nextPlayers = { ...initialSession.players };
+    
+    // AI 상대방 처리
+    if (initialSession.opponent === 'AI' && nextPlayers['AI']) {
+      nextPlayers['AI'].ready = true;
+    }
+
+    const allReady = Object.values(nextPlayers).every(p => p.ready);
+    
+    if (allReady && (!initialSession.turn || initialSession.turn === turn)) {
+      resolveHostTurn(nextPlayers);
+    }
+  }, [initialSession, phase, turn, unitsOnBoard, countryId]);
+
   const handleTileClick = (x, y) => {
     if (phase === 'deployment') {
       const existingFieldUnit = unitsOnBoard.find(u => u.x === x && u.y === y && u.status === 'field' && u.owner === countryId);
@@ -296,20 +331,40 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
   };
 
-  const handleNextTurn = async () => {
-    let currentOrders = [...orders];
-    
-    // 1. AI 명령 산출 (현재 플레이어 소유가 아닌 유닛들, 그리고 유저가 조작하지 않는 아군 유닛들)
+  const handleNextTurn = () => {
+    let nextPlayers = { ...initialSession.players };
+    if (nextPlayers[countryId]) {
+      nextPlayers[countryId].ready = true;
+      nextPlayers[countryId].orders = [...orders];
+      nextPlayers[countryId].skills = [...activeSkills];
+    }
+    if (onSaveSession) {
+      onSaveSession({ players: nextPlayers });
+    }
+    alert('명령이 하달되었습니다. 상대방의 지시를 기다리는 중입니다...');
+  };
+
+  const resolveHostTurn = async (playersData) => {
+    let currentOrders = [];
     let aiSkillsCombined = [];
-    const opponentIds = [...new Set(unitsOnBoard.map(u => u.owner).filter(o => o !== countryId))];
-    opponentIds.forEach(oppId => {
-      // AI에게 유저의 이동 명령을 전달하여 경로 양보(우회)를 계산하게 함
-      const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, oppId);
-      currentOrders = currentOrders.concat(aiOrders);
-      aiSkillsCombined = aiSkillsCombined.concat(aiSkills);
+
+    // 1. Gather all user orders & skills
+    Object.keys(playersData).forEach(pId => {
+      if (playersData[pId].orders) currentOrders = currentOrders.concat(playersData[pId].orders);
+      if (playersData[pId].skills) aiSkillsCombined = aiSkillsCombined.concat(playersData[pId].skills);
     });
 
-    // 아군이지만 유저가 직접 조작하지 않는 군단 유닛들도 AI가 조작 (autoMode면 전체 아군 AI 조작)
+    // 2. Calculate AI logic (if Opponent is AI)
+    const opponentIds = [...new Set(unitsOnBoard.map(u => u.owner).filter(o => o !== countryId))];
+    opponentIds.forEach(oppId => {
+      if (initialSession.opponent === 'AI' && oppId === 'AI') {
+        const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, oppId);
+        currentOrders = currentOrders.concat(aiOrders);
+        aiSkillsCombined = aiSkillsCombined.concat(aiSkills);
+      }
+    });
+
+    // Allied AI logic for unassigned corps
     const excludeCorps = autoMode ? null : activeCorpsId;
     const { orders: alliedAIOrders, skills: alliedAISkills } = calculateAIOrders({ 
       units: unitsOnBoard, 
@@ -317,78 +372,73 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       corps,
       generals,
       armies
-    }, countryId, excludeCorps); // excludeCorpsId를 넘겨 해당 군단과 사령부는 AI에서 제외
+    }, countryId, excludeCorps); 
     currentOrders = currentOrders.concat(alliedAIOrders);
     aiSkillsCombined = aiSkillsCombined.concat(alliedAISkills);
 
-    // Extract stats for combat logic
+    // 3. Extract Stats
     const countryStatsMap = {};
     if (initialSession && initialSession.players) {
       Object.keys(initialSession.players).forEach(pId => {
         countryStatsMap[pId] = initialSession.players[pId].stats || { penetration: 0, antiAir: 0, vision: 0 };
       });
     }
-    // Set fallback for enemies if not present (AI without stats)
     if (!countryStatsMap['enemy']) countryStatsMap['enemy'] = { penetration: 0, antiAir: 0, vision: 0 };
 
-    // 임시 세션 객체 구성
     const session = {
       board,
-      units: JSON.parse(JSON.stringify(unitsOnBoard)), // 딥카피
+      units: JSON.parse(JSON.stringify(unitsOnBoard)),
       orders: currentOrders,
-      skillsQueue: [...activeSkills, ...aiSkillsCombined],
+      skillsQueue: [...aiSkillsCombined], // combined all skills
       supplyLimitTeam1: initialSession?.supplyLimitTeam1 || 10,
       supplyLimitTeam2: initialSession?.supplyLimitTeam2 || 10,
       penetration: { [countryId]: countryStatsMap[countryId]?.penetration || 0, 'enemy': countryStatsMap['enemy']?.penetration || 0 }, 
       antiAir: { [countryId]: countryStatsMap[countryId]?.antiAir || 0, 'enemy': countryStatsMap['enemy']?.antiAir || 0 }, 
       vision: { [countryId]: countryStatsMap[countryId]?.vision || 0, 'enemy': countryStatsMap['enemy']?.vision || 0 },
-      resourceDeductions: [] // 이번 턴의 자원 소모 기록
+      resourceDeductions: []
     };
     
     let resolvedSession = resolveSimultaneousTurn(session);
-    
-    // 3. 턴 종료 스킬 후처리
     resolvedSession = resolveCommanderSkills(resolvedSession);
     
-    // 승패(사령부 파괴) 판정
     const hqs = resolvedSession.units.filter(u => u.isHQ);
     const myHQ = hqs.find(u => u.owner === countryId);
     const enemyHQ = hqs.find(u => u.owner !== countryId);
     
     let nextPhase = phase;
     let casualties = null;
+    let isGameOver = false;
+
     if (myHQ && myHQ.status === 'destroyed') {
       alert('아군 사령부가 파괴되었습니다! 패배!');
       nextPhase = 'game_over';
-      setPhase('game_over');
-      casualties = calculateCasualties(resolvedSession.units);
-      console.log('최종 사상자/손실 자원:', casualties);
-      await applyCombatCasualties(casualties);
+      isGameOver = true;
     } else if (enemyHQ && enemyHQ.status === 'destroyed') {
       alert('적군 사령부를 파괴했습니다! 승리!');
       nextPhase = 'game_over';
-      setPhase('game_over');
+      isGameOver = true;
+    }
+
+    if (isGameOver) {
       casualties = calculateCasualties(resolvedSession.units);
-      console.log('최종 사상자/손실 자원:', casualties);
       await applyCombatCasualties(casualties);
     }
 
-    setUnitsOnBoard(resolvedSession.units);
-    setBoard(resolvedSession.board);
-    setOrders([]);
-    setActiveSkills([]);
-    setHasAirSupremacy(false); // 매 턴 시작 시 제공권 초기화 (매 턴 시도 가능)
-    setHasRecon(false); // 정찰 스킬도 초기화
-    setTurn(t => t + 1);
-    
+    // Reset players ready state and orders
+    let nextPlayers = { ...playersData };
+    Object.keys(nextPlayers).forEach(pId => {
+      nextPlayers[pId].ready = false;
+      nextPlayers[pId].orders = [];
+      nextPlayers[pId].skills = [];
+    });
+
     if (onSaveSession) {
       onSaveSession({
         board: resolvedSession.board,
         units: resolvedSession.units,
         phase: nextPhase,
         turn: turn + 1,
-        usedSkills,
-        nukeUses,
+        players: nextPlayers,
         resourceDeductions: resolvedSession.resourceDeductions,
         casualties
       });
@@ -518,9 +568,9 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             <button
               className="cyber-btn"
               onClick={handleNextTurn}
-              disabled={phase === 'aerial_combat' || phase === 'game_over'}
+              disabled={phase === 'aerial_combat' || phase === 'game_over' || initialSession?.players?.[countryId]?.ready}
             >
-              ▶ 턴 넘기기 (실행)
+              {initialSession?.players?.[countryId]?.ready ? '⏳ 상대방 대기 중...' : '▶ 턴 넘기기 (명령 하달)'}
             </button>
             <button
               className="cyber-btn"
@@ -557,11 +607,17 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 className="cyber-btn"
                 style={{ background: hasAirSupremacy ? uiColors.neonGreen : 'rgba(30,41,59,0.8)', borderColor: hasAirSupremacy ? uiColors.neonGreen : '#3b82f6', color: hasAirSupremacy ? '#fff' : '#60a5fa' }}
                 onClick={() => {
-                  const enemyAircrafts = unitsOnBoard.filter(u => u.owner !== countryId && u.status === 'field' && ['전투기', '요격기'].includes(u.subCategory));
-                  const enemyAttempted = enemyAircrafts.length > 0;
+                  // 적군이 보유한 공군력/방공망 스탯이 존재하는지 검사
+                  let enemyAntiAir = 0;
+                  const opponentId = initialSession?.opponent;
+                  if (opponentId && initialSession?.players?.[opponentId]?.stats) {
+                    enemyAntiAir = initialSession.players[opponentId].stats.antiAir || 0;
+                  }
                   
-                  if (!enemyAttempted) {
-                    alert('적군의 공중전 병력이나 시도가 감지되지 않았습니다. 무혈입성으로 제공권을 즉시 장악합니다!');
+                  const enemyAircrafts = unitsOnBoard.filter(u => u.owner !== countryId && u.status === 'field' && ['전투기', '요격기'].includes(u.subCategory));
+                  
+                  if (enemyAntiAir === 0 && enemyAircrafts.length === 0) {
+                    alert('적군의 공군력(방공망)이 감지되지 않았습니다. 무혈입성으로 제공권을 즉시 장악합니다!');
                     setHasAirSupremacy(true);
                   } else {
                     if (autoAirCombat) {
