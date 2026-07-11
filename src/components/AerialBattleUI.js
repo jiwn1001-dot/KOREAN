@@ -15,6 +15,16 @@ export default function AerialBattleUI({ battleSession, countryId, onUpdate }) {
 
   const myState = isAttacker ? battleSession.attackerState : battleSession.defenderState;
   const enemyState = isAttacker ? battleSession.defenderState : battleSession.attackerState;
+
+  if (!myState || !enemyState) return <div style={{ color: 'red' }}>배틀 데이터 로드 오류: 상태 정보를 찾을 수 없습니다.</div>;
+
+  const myHand = myState.hand || [];
+  const myAA = myState.antiAircraft || [];
+  const myLost = myState.lost || [];
+  
+  const enemyHand = enemyState.hand || [];
+  const enemyAA = enemyState.antiAircraft || [];
+  const enemyLost = enemyState.lost || [];
   
   const myChoice = isAttacker ? battleSession.attackerChoice : battleSession.defenderChoice;
   const enemyChoice = isAttacker ? battleSession.defenderChoice : battleSession.attackerChoice;
@@ -114,13 +124,13 @@ export default function AerialBattleUI({ battleSession, countryId, onUpdate }) {
         <div style={{ border: '1px solid var(--primary)', padding: '12px', borderRadius: '4px' }}>
           <h4>내 상태</h4>
           <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            <div>패 남음: {myState.hand.length}</div>
-            <div>대공포: {myState.antiAircraft.length}</div>
-            <div>손실: {myState.lost.length}</div>
+            <div>패 남음: {myHand.length}</div>
+            <div>대공포: {myAA.length}</div>
+            <div>손실: {myLost.length}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '4px 0' }}>
-            {myState.hand.map(c => <AerialCardUI key={c.cardId} card={c} />)}
-            {myState.antiAircraft.map(c => <AerialCardUI key={c.cardId} card={c} />)}
+            {myHand.map(c => <AerialCardUI key={c.cardId} card={c} />)}
+            {myAA.map(c => <AerialCardUI key={c.cardId} card={c} />)}
           </div>
         </div>
 
@@ -128,9 +138,9 @@ export default function AerialBattleUI({ battleSession, countryId, onUpdate }) {
         <div style={{ border: '1px solid var(--border-color)', padding: '12px', borderRadius: '4px', background: 'rgba(0,0,0,0.2)' }}>
           <h4>상대 상태</h4>
           <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            <div>패 남음: {enemyState.hand.length}</div>
-            <div>대공포: {enemyState.antiAircraft.length}</div>
-            <div>손실: {enemyState.lost.length}</div>
+            <div>패 남음: {enemyHand.length}</div>
+            <div>대공포: {enemyAA.length}</div>
+            <div>손실: {enemyLost.length}</div>
           </div>
           <div style={{ marginTop: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
             {enemyChoice ? "상대방이 카드를 선택했습니다." : "상대방이 아직 선택하지 않았습니다."}
@@ -144,7 +154,7 @@ export default function AerialBattleUI({ battleSession, countryId, onUpdate }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {(() => {
               const groups = {};
-              myState.hand.forEach(c => {
+              myHand.forEach(c => {
                 const key = `${c.speed}_${c.isAce}_${c.canBlock}`;
                 if (!groups[key]) groups[key] = { ...c, count: 0, cardIds: [] };
                 groups[key].count++;
@@ -163,12 +173,12 @@ export default function AerialBattleUI({ battleSession, countryId, onUpdate }) {
               ));
             })()}
 
-            {myState.antiAircraft.length > 0 && (
+            {myAA.length > 0 && (
               <button 
                 className="btn btn-sm btn-danger"
-                onClick={() => handleChoice({ cardId: myState.antiAircraft[0].cardId, type: 'aa' })}
+                onClick={() => handleChoice({ cardId: myAA[0].cardId, type: 'aa' })}
               >
-                🚀 대공포 x{myState.antiAircraft.length}
+                🚀 대공포 x{myAA.length}
               </button>
             )}
 

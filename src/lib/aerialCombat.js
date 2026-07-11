@@ -1,5 +1,5 @@
-import { supabase } from './supabase';
-import { saveAerialCombatSession, getAerialCombatSession } from './store';
+import { supabase } from './supabase.js';
+import { saveAerialCombatSession, getAerialCombatSession } from './store.js';
 
 /**
  * ===== 카드 관리 =====
@@ -674,12 +674,12 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   battleSession.defenderChoice = null;
   battleSession.round += 1;
 
-  // 승패 판정 (전멸이거나 일반 제공권 단판 승부일 경우)
+  // 승패 판정
+  // 제공권 전투는 양측 카드가 모두 소진되거나 항복/포기될 때까지 계속 진행한다.
   const atkEmpty = atkSess.hand.length === 0 && atkSess.antiAircraft.length === 0;
   const defEmpty = defSess.hand.length === 0 && defSess.antiAircraft.length === 0;
-  const isOneShotSupremacy = battleSession.type === 'supremacy' && !battleSession.isMajorBattle;
 
-  if (atkEmpty || defEmpty || isOneShotSupremacy) {
+  if (atkEmpty || defEmpty) {
     battleSession.status = 'finished';
     if (atkEmpty && defEmpty) {
       battleSession.winner = 'draw';
@@ -687,10 +687,6 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
       battleSession.winner = 'defender';
     } else if (defEmpty) {
       battleSession.winner = 'attacker';
-    } else if (isOneShotSupremacy) {
-      if (result.winner === 'attack') battleSession.winner = 'attacker';
-      else if (result.winner === 'defense') battleSession.winner = 'defender';
-      else battleSession.winner = 'draw';
     }
   }
 
