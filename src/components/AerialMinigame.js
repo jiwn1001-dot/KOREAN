@@ -111,8 +111,9 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 1000,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px'
+      backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 1000,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 20px',
+      overflowY: 'auto'
     }}>
       <h2 style={{ color: '#60a5fa', marginBottom: '8px' }}>✈️ 제공권 쟁탈 결전 (미니게임)</h2>
       <p style={{ color: '#cbd5e1', marginBottom: '24px' }}>이번 턴의 제공권을 확보하기 위해 전투기를 투입하십시오.</p>
@@ -120,7 +121,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
       {autoMode ? (
         <div style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '24px' }}>🤖 AUTO 시뮬레이션 진행 중...</div>
       ) : (
-        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '800px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: '1000px', marginBottom: '32px' }}>
           {groupedCards.map(g => (
             <div key={g.cardIds[0]} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <AerialCardUI card={g} />
@@ -139,14 +140,14 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', marginLeft: '24px' }}>
-            <button className="btn btn-warning" onClick={() => handleManualChoice(null)}>💤 이번 라운드 패스 (아끼기)</button>
-            <button className="btn btn-danger" onClick={handleSurrender}>🏳️ 항복 (제공권 포기)</button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', minWidth: '200px', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
+            <button className="btn btn-warning" style={{ width: '100%' }} onClick={() => handleManualChoice(null)}>💤 패스 (아끼기)</button>
+            <button className="btn btn-danger" style={{ width: '100%' }} onClick={handleSurrender}>🏳️ 항복 (포기)</button>
           </div>
         </div>
       )}
 
-      <div style={{ width: '100%', maxWidth: '600px', backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+      <div style={{ width: '100%', maxWidth: '800px', backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', minHeight: '150px', maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)' }}>
         <h4 style={{ marginBottom: '12px' }}>📜 교전 기록</h4>
         {logs.map((log, idx) => (
           <div key={idx} style={{ fontSize: '0.9rem', marginBottom: '4px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>

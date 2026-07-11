@@ -218,7 +218,7 @@ export function deployAIUnits(units, initialSession, userCountryId) {
     
     // 이 국가의 스탠바이 유닛들 가져오기
     const standbyUnits = updatedUnits.filter(u => u.owner === countryId && u.status === 'standby');
-    let currentSupply = updatedUnits.filter(u => u.owner === countryId && u.status === 'field').reduce((a, b) => a + (b.supplyConsumption || 0), 0);
+    let currentSupply = updatedUnits.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((a, b) => a + (b.supplyConsumption || 0), 0);
 
     // 먼저 사령부(HQ)부터 배치 (필드에 없다면)
     const hq = standbyUnits.find(u => u.isHQ);
@@ -237,8 +237,8 @@ export function deployAIUnits(units, initialSession, userCountryId) {
       }
     }
 
-    // 나머지 유닛들 보급 한계 내에서 무작위 배치
-    const nonHqStandby = standbyUnits.filter(u => !u.isHQ);
+    // 나머지 유닛들 보급 한계 내에서 무작위 배치 (공군은 제외!)
+    const nonHqStandby = standbyUnits.filter(u => !u.isHQ && u.majorCategory !== '공군');
     // 무작위로 섞음 (다양한 유닛이 배치되도록)
     nonHqStandby.sort(() => Math.random() - 0.5);
 
