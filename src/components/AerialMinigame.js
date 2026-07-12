@@ -50,9 +50,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     setBattle(currentBattle);
     setLogs(newLogs);
     
-    // 결과 판정 (동반 전멸 시 무승부이므로 공격측(유저) 패배로 간주)
-    const isWin = (currentBattle.defenderState.status === 'surrendered' || currentBattle.defenderState.hand.length === 0) 
-                  && currentBattle.attackerState.hand.length > 0;
+    const isWin = currentBattle.winner === 'attacker';
     setTimeout(() => {
       onComplete(isWin);
     }, 2000);
@@ -86,8 +84,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     setTimeout(() => setInputLocked(false), 700);
 
     if (currentBattle.status === 'finished' || currentBattle.attackerState.status === 'surrendered' || currentBattle.defenderState.status === 'surrendered') {
-       const isWin = (currentBattle.defenderState.status === 'surrendered' || currentBattle.defenderState.hand.length === 0) 
-                     && currentBattle.attackerState.hand.length > 0;
+       const isWin = currentBattle.winner === 'attacker';
        setTimeout(() => {
          onComplete(isWin);
        }, 2000);
@@ -96,10 +93,6 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
 
   const handleSurrender = () => {
     if (!battle) return;
-    if (battle.isMajorBattle) {
-      alert('공중결전(전면전) 도중에는 항복할 수 없습니다.');
-      return;
-    }
 
     const currentBattle = JSON.parse(JSON.stringify(battle));
     surrenderAerialBattle(currentBattle, countryId);

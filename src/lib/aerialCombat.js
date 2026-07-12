@@ -538,7 +538,7 @@ export function requestMajorAerialBattle(battleSession, requesterId) {
 
 /**
  * 공중결전 동의
- * 이제부터 양측 모든 카드가 소진될 때까지 항복 불가
+ * 이제부터 양측 모든 카드가 소진되거나 항복으로 종료될 때까지 전투가 이어집니다.
  * @param {Object} battleSession - 전체 세션
  * @returns {Object} 업데이트된 세션
  */
@@ -673,6 +673,19 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   battleSession.attackerChoice = null;
   battleSession.defenderChoice = null;
   battleSession.round += 1;
+
+  // 비공중결전(일반 모드)의 경우 한 라운드만 진행하고 결과를 확정합니다.
+  if (!battleSession.isMajorBattle) {
+    battleSession.status = 'finished';
+    if (result.winner === 'attack') {
+      battleSession.winner = 'attacker';
+    } else if (result.winner === 'defense') {
+      battleSession.winner = 'defender';
+    } else {
+      battleSession.winner = 'draw';
+    }
+    return battleSession;
+  }
 
   // 승패 판정
   // 제공권 전투는 양측 카드가 모두 소진되거나 항복/포기될 때까지 계속 진행한다.
