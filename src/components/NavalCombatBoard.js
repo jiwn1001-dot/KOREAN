@@ -196,7 +196,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     const localOrders = Object.values(ordersByUnit).filter(o => directSet.has(o.unitId));
 
     const aiAssistOrders = calculateNavalAIOrders(
-      { units: unitsOnBoard },
+      { units: unitsOnBoard, manualOrders: localOrders },
       countryId,
       selectedDirect,
       flagshipId || null
@@ -220,6 +220,20 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
   };
 
   const queueTorpedoBomber = () => {
+    const isTeam1Owner = (ownerId) => {
+      if (initialSession?.isTeamBattle) return (initialSession.team1 || []).includes(ownerId);
+      return initialSession?.host === ownerId;
+    };
+    const allowAir = isTeam1Owner(countryId) ? (initialSession?.allowAirTeam1 !== false) : (initialSession?.allowAirTeam2 !== false);
+    if (!allowAir) {
+      const carriers = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'field' && u.majorCategory === '해군' && (u.subCategory || '').includes('항공모함')).length;
+      const usedSorties = queuedSkills.filter(s => s.type === 'torpedo_bomber').length;
+      if (usedSorties >= carriers) {
+        alert(`공군 사용 제한 중입니다. 항모 ${carriers}척으로 이번 턴 출격 가능한 뇌격기 수를 모두 사용했습니다.`);
+        return;
+      }
+    }
+
     const candidates = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby' && (u.subCategory === '뇌격기' || u.minorCategory === '뇌격기'));
     if (candidates.length === 0) {
       alert('대기 상태 뇌격기가 없습니다.');
