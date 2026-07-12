@@ -16,6 +16,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
       id: u.id || u.unitTemplateId || `unit_${Date.now()}`,
       name: u.name || u.unitName || '전투기',
       speed: u.speed || 1,
+      aiLevel: u.aiLevel || 1,
       quantity: u.quantity || u.count || 1,
       image: u.image || u.unitImage || null,
       supplyConsumption: u.supplyConsumption || 0
@@ -71,7 +72,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     }
 
     // 방어측(AI) 선택
-    const defCard = aiChooseCard(currentBattle.attackerState, currentBattle.defenderState);
+    const defCard = aiChooseCard(currentBattle.defenderState, currentBattle.attackerState);
     currentBattle.defenderChoice = defCard ? { cardId: defCard.cardId, type: defCard.canBlock ? 'aa' : (defCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
 
     processBattleRound(currentBattle);

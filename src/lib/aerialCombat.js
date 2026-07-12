@@ -21,6 +21,7 @@ export function generateAerialCards(aircraftUnits, cumulativeUnitsDeployed = 0, 
     const speed = unit.speed || 1;
     const quantity = unit.quantity || 0;
     const unitImage = unit.image || null;
+    const aiLevel = Math.max(1, parseInt(unit.aiLevel || 1, 10));
 
     addedQuantity += quantity;
 
@@ -31,6 +32,7 @@ export function generateAerialCards(aircraftUnits, cumulativeUnitsDeployed = 0, 
         cardId: `${unitId}_${Date.now()}_${i}`, // Ensure unique ID for reinforcements
         speed,
         unitImage,
+        aiLevel,
         isAce: false,
         canBlock: false,
         status: 'hand'
@@ -187,6 +189,15 @@ export function createAerialBattle(battleId, type, attackerId, defenderId, attac
   const atkAA = generateAntiAircraftCards(defResult.newAces);
   const defAA = generateAntiAircraftCards(atkResult.newAces);
 
+  const averageLevel = (arr) => {
+    if (!arr || arr.length === 0) return 1;
+    const sum = arr.reduce((acc, u) => acc + Math.max(1, parseInt(u.aiLevel || 1, 10)), 0);
+    return Math.max(1, Math.min(5, Math.round(sum / arr.length)));
+  };
+
+  const attackerAiLevel = averageLevel(attackerUnits || []);
+  const defenderAiLevel = averageLevel(defenderUnits || []);
+
   return {
     battleId,
     type, // 'bombing', 'supremacy'
@@ -206,6 +217,7 @@ export function createAerialBattle(battleId, type, attackerId, defenderId, attac
       lost: [],
       cumulativeUnitsDeployed: atkResult.cumulativeUnitsDeployed,
       cumulativeAcesGenerated: atkResult.cumulativeAcesGenerated,
+      aiLevel: attackerAiLevel,
       supplyLimit: atkSupplyLimit,
       status: 'fighting' // 'fighting', 'surrendered'
     },
@@ -218,6 +230,7 @@ export function createAerialBattle(battleId, type, attackerId, defenderId, attac
       lost: [],
       cumulativeUnitsDeployed: defResult.cumulativeUnitsDeployed,
       cumulativeAcesGenerated: defResult.cumulativeAcesGenerated,
+      aiLevel: defenderAiLevel,
       supplyLimit: defSupplyLimit,
       status: 'fighting'
     },
@@ -289,39 +302,56 @@ export function calculateSupplyUsage(session, cardsInUse, aircraftUnits) {
  */
 
 export function aiChooseCard(aiSession, opponentSession) {
+  const effectiveSpeed = (c) => (c?.isAce ? (c.speed || 1) * 5 : (c?.speed || 1));
+
+  const resolveAILevel = () => {
+    if (aiSession?.aiLevel) return Math.max(1, Math.min(5, parseInt(aiSession.aiLevel, 10) || 1));
+    const sample = (aiSession?.hand || []).slice(0, 5);
+    if (!sample.length) return 1;
+    const avg = sample.reduce((acc, c) => acc + Math.max(1, parseInt(c.aiLevel || 1, 10)), 0) / sample.length;
+    return Math.max(1, Math.min(5, Math.round(avg)));
+  };
+
+  const aiLevel = resolveAILevel();
   const hand = aiSession.hand || [];
   const aa = aiSession.antiAircraft || [];
   const availableCards = [...hand, ...aa];
   
   if (availableCards.length === 0) return null;
 
-  const aiAces = hand.filter(c => c.isAce);
   const aiNormals = hand.filter(c => !c.isAce);
   const oppHand = opponentSession.hand || [];
   const oppAces = oppHand.filter(c => c.isAce).length;
   const oppAA = opponentSession.antiAircraft?.length || 0;
+  const oppLikely = oppHand.length > 0
+    ? [...oppHand].sort((a, b) => effectiveSpeed(a) - effectiveSpeed(b))[Math.max(0, Math.floor((oppHand.length - 1) * (aiLevel >= 4 ? 0.75 : aiLevel >= 2 ? 0.5 : 0.25)))]
+    : null;
+  const oppLikelySpeed = effectiveSpeed(oppLikely);
   
   // 1. 상대방이 에이스가 많고 내가 대공포(AA)가 있다면, 일정 확률로 대공포 투척 (에이스 저격)
-  if (aa.length > 0 && oppAces > 0 && oppHand.length > 0) {
-     const aaChance = (oppAces / oppHand.length) * 0.8; // 상대 에이스 비율에 비례
+    if (aa.length > 0 && oppAces > 0 && oppHand.length > 0) {
+      const aaChance = Math.min(0.95, (oppAces / oppHand.length) * (0.35 + aiLevel * 0.12));
      if (Math.random() < aaChance) {
        return aa[0];
      }
   }
   
   // 2. 상대방이 대공포가 많다면 에이스를 내는 것을 꺼림 (일반 카드를 미끼로 던져 대공포 소진 유도)
-  if (oppAA > 0 && aiNormals.length > 0) {
-     if (Math.random() < 0.7) { 
+    if (oppAA > 0 && aiNormals.length > 0) {
+      const baitChance = aiLevel >= 4 ? 0.8 : 0.6;
+      if (Math.random() < baitChance) {
         // 가장 속도가 낮은 미끼 투척
-        const sortedNormals = [...aiNormals].sort((a,b) => a.speed - b.speed);
+        const sortedNormals = [...aiNormals].sort((a,b) => effectiveSpeed(a) - effectiveSpeed(b));
         return sortedNormals[0];
      }
   }
 
   // 3. 카드를 아낄 확률 계산
   const cardRatio = hand.length / (aiSession.cards?.length || 1);
-  let passChance = 0.5 - (cardRatio * 0.4); // 카드가 적으면 최대 50% 패스 확률
+  const basePassChance = [0.42, 0.32, 0.2, 0.12, 0.08][aiLevel - 1] || 0.2;
+  let passChance = basePassChance - (cardRatio * 0.2);
   if (oppHand.length === 0 && oppAA === 0) passChance = 0; // 상대 카드가 없으면 무조건 공격
+  passChance = Math.max(0, Math.min(0.65, passChance));
 
   if (Math.random() < passChance) return null; // 아낀다
 
@@ -330,14 +360,20 @@ export function aiChooseCard(aiSession, opponentSession) {
   }
 
   // 4. 일반적인 교전: 상대 평균 스피드 기반으로 효율적인 카드 선택
-  let avgOppSpeed = oppHand.reduce((acc, c) => acc + (c.isAce ? c.speed * 5 : c.speed), 0) / (oppHand.length || 1);
+  let avgOppSpeed = oppHand.reduce((acc, c) => acc + effectiveSpeed(c), 0) / (oppHand.length || 1);
   if (isNaN(avgOppSpeed)) avgOppSpeed = 1;
 
   // 내 카드를 위력순 정렬
-  const sortedHand = [...hand].sort((a,b) => (a.isAce ? a.speed * 5 : a.speed) - (b.isAce ? b.speed * 5 : b.speed));
+  const sortedHand = [...hand].sort((a,b) => effectiveSpeed(a) - effectiveSpeed(b));
+
+  // 고레벨은 상대 예상 카드보다 근소 우위 카드를 우선 (효율 교환)
+  if (aiLevel >= 3 && oppLikely) {
+    const efficientWin = sortedHand.find(c => effectiveSpeed(c) > oppLikelySpeed);
+    if (efficientWin) return efficientWin;
+  }
   
   // 상대 평균 스피드의 80% 이상인 것 중 가장 약한(가성비) 카드를 낸다
-  const efficientCard = sortedHand.find(c => (c.isAce ? c.speed * 5 : c.speed) > avgOppSpeed * 0.8);
+  const efficientCard = sortedHand.find(c => effectiveSpeed(c) > avgOppSpeed * (aiLevel >= 4 ? 0.95 : 0.8));
   if (efficientCard) return efficientCard;
 
   // 마땅한게 없으면 그냥 제일 쎈 카드
@@ -350,8 +386,10 @@ export function aiChooseCard(aiSession, opponentSession) {
  * @returns {boolean} true = 제안, false = 제안 안 함
  */
 export function aiRequestBattle(aiSession) {
-  // AI는 카드가 충분하면 50% 확률로 제안
-  return aiSession.hand.length > (aiSession.cards?.length || 1) * 0.5 && Math.random() < 0.5;
+  const aiLevel = Math.max(1, Math.min(5, parseInt(aiSession?.aiLevel || 1, 10) || 1));
+  const threshold = aiLevel >= 4 ? 0.4 : 0.55;
+  const chance = aiLevel >= 4 ? 0.75 : aiLevel >= 3 ? 0.6 : 0.4;
+  return aiSession.hand.length > (aiSession.cards?.length || 1) * threshold && Math.random() < chance;
 }
 
 /**
@@ -365,8 +403,9 @@ export function aiRespondToBattle(aiSession, opponentSession) {
   const aiCardStrength = aiSession.hand.length / (aiSession.cards?.length || 1);
   const opponentCardStrength = opponentSession.hand.length / (opponentSession.cards?.length || 1);
 
-  // 상대보다 카드가 많으면 수락, 적으면 거절 (자신감 기반)
-  return aiCardStrength > opponentCardStrength ? Math.random() < 0.8 : Math.random() < 0.3;
+  const aiLevel = Math.max(1, Math.min(5, parseInt(aiSession?.aiLevel || 1, 10) || 1));
+  const bias = aiLevel >= 4 ? 0.15 : aiLevel >= 3 ? 0.05 : -0.05;
+  return aiCardStrength + bias > opponentCardStrength ? Math.random() < 0.85 : Math.random() < 0.25;
 }
 
 /**
@@ -375,9 +414,11 @@ export function aiRespondToBattle(aiSession, opponentSession) {
  * @returns {boolean} true = 항복, false = 계속
  */
 export function aiShouldSurrender(aiSession) {
+  const aiLevel = Math.max(1, Math.min(5, parseInt(aiSession?.aiLevel || 1, 10) || 1));
   const remainingRatio = aiSession.hand.length / (aiSession.cards?.length || 1);
-  // 카드가 10% 이하 남으면 항복 고려
-  return remainingRatio < 0.1 && Math.random() < 0.6;
+  const threshold = aiLevel >= 4 ? 0.05 : 0.1;
+  const surrenderChance = aiLevel >= 4 ? 0.35 : 0.6;
+  return remainingRatio < threshold && Math.random() < surrenderChance;
 }
 
 /**
@@ -780,6 +821,23 @@ export function submitCardChoice(battleSession, countryId, choice, attackerUnits
     battleSession.attackerChoice = choice;
   } else if (countryId === battleSession.defenderId) {
     battleSession.defenderChoice = choice;
+  }
+
+  const isAttackerAI = battleSession.attackerId === 'AI' || battleSession.attackerState?.isAI;
+  const isDefenderAI = battleSession.defenderId === 'AI' || battleSession.defenderState?.isAI;
+
+  if (battleSession.attackerChoice && !battleSession.defenderChoice && isDefenderAI) {
+    const aiCard = aiChooseCard(battleSession.defenderState, battleSession.attackerState);
+    battleSession.defenderChoice = aiCard
+      ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') }
+      : { cardId: null, type: 'pass' };
+  }
+
+  if (battleSession.defenderChoice && !battleSession.attackerChoice && isAttackerAI) {
+    const aiCard = aiChooseCard(battleSession.attackerState, battleSession.defenderState);
+    battleSession.attackerChoice = aiCard
+      ? { cardId: aiCard.cardId, type: aiCard.canBlock ? 'aa' : (aiCard.isAce ? 'ace' : 'normal') }
+      : { cardId: null, type: 'pass' };
   }
 
   // 양측 모두 선택 완료 시 자동 라운드 진행
