@@ -28,6 +28,20 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   const [orderMode, setOrderMode] = useState('move'); // 'move' | 'attack'
   const [selectedStandbyUnitId, setSelectedStandbyUnitId] = useState(null);
 
+  const resolveAutoAirSupremacy = React.useCallback(() => {
+    const myAir = unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군' && (u.status === 'standby' || u.status === 'field'));
+    const enemyAir = unitsOnBoard.filter(u => u.owner !== countryId && u.majorCategory === '공군' && (u.status === 'standby' || u.status === 'field'));
+
+    const airScore = (arr) => arr.reduce((acc, u) => acc + ((u.attack || 0) + ((u.speed || 1) * 8) + (u.hp || 100) * 0.1), 0);
+    const myScore = airScore(myAir);
+    const enemyScore = airScore(enemyAir);
+    const total = myScore + enemyScore;
+
+    if (total <= 0) return false;
+    const winChance = myScore / total;
+    return Math.random() < winChance;
+  }, [unitsOnBoard, countryId]);
+
   const hasMainSkillQueued = activeSkills.some(s => s.type !== 'recon');
 
   const getStandbySkillUnits = React.useCallback((skillType) => {
@@ -102,7 +116,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       damage: Math.max(1, selected.attack || 1),
       duration: Math.max(1, selected.effectDuration || 1),
       aircraftSpeed: Math.max(1, selected.speed || 1),
-      radius
+      radius,
+      attackerId: countryId
     };
 
     setTargetingSkill(skillData);
@@ -432,7 +447,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       userOrders: orders,
       corps,
       generals,
-      armies
+      armies,
+      sessionCategory: initialSession?.sessionCategory
     }, countryId, excludeCorps); 
     
     const finalOrders = [...orders, ...alliedAIOrders];
@@ -463,7 +479,14 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     Object.keys(playersData).forEach(pId => {
       const player = playersData[pId];
       if (player && player.isAI) {
-        const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, pId);
+        const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({
+          units: unitsOnBoard,
+          userOrders: currentOrders,
+          corps,
+          generals,
+          armies,
+          sessionCategory: initialSession?.sessionCategory
+        }, pId);
         currentOrders = currentOrders.concat(aiOrders);
         aiSkillsCombined = aiSkillsCombined.concat(aiSkills);
       }
@@ -478,7 +501,14 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         countryStatsMap[pId] = initialSession.players[pId].stats || { penetration: 0, antiAir: 0, vision: 0 };
       });
     }
-    if (!countryStatsMap['enemy']) countryStatsMap['enemy'] = { penetration: 0, antiAir: 0, vision: 0 };
+    const penetrationMap = {};
+    const antiAirMap = {};
+    const visionMap = {};
+    Object.keys(countryStatsMap).forEach(pId => {
+      penetrationMap[pId] = countryStatsMap[pId]?.penetration || 0;
+      antiAirMap[pId] = countryStatsMap[pId]?.antiAir || 0;
+      visionMap[pId] = countryStatsMap[pId]?.vision || 0;
+    });
 
     const session = {
       board,
@@ -487,9 +517,9 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       skillsQueue: [...aiSkillsCombined], // combined all skills
       supplyLimitTeam1: initialSession?.supplyLimitTeam1 || 10,
       supplyLimitTeam2: initialSession?.supplyLimitTeam2 || 10,
-      penetration: { [countryId]: countryStatsMap[countryId]?.penetration || 0, 'enemy': countryStatsMap['enemy']?.penetration || 0 }, 
-      antiAir: { [countryId]: countryStatsMap[countryId]?.antiAir || 0, 'enemy': countryStatsMap['enemy']?.antiAir || 0 }, 
-      vision: { [countryId]: countryStatsMap[countryId]?.vision || 0, 'enemy': countryStatsMap['enemy']?.vision || 0 },
+      penetration: penetrationMap,
+      antiAir: antiAirMap,
+      vision: visionMap,
       resourceDeductions: []
     };
     
@@ -709,7 +739,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 onClick={() => {
                   // If autoAirCombat is enabled, resolve locally. Otherwise require opponent readiness before opening aerial UI.
                   if (autoAirCombat) {
-                    const win = Math.random() > 0.5;
+                    const win = resolveAutoAirSupremacy();
                     setHasAirSupremacy(win);
                     alert(win ? '자동 주사위 판정 승리! 제공권을 장악했습니다.' : '자동 주사위 판정 패배. 제공권 확보에 실패했습니다.');
                     return;
@@ -794,7 +824,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                 alert('정찰을 제외한 스킬은 턴당 1종류만 사용할 수 있습니다.');
                 return;
               }
-              setTargetingSkill({ type: 'naval_bombardment', damage: 0, duration: 1, radius: 1 });
+              setTargetingSkill({ type: 'naval_bombardment', damage: 0, duration: 1, radius: 1, attackerId: countryId });
             }}
             disabled={!initialSession.allowNavalBombardment || usedSkills.includes('naval_bombardment') || hasMainSkillQueued}
           >🚢 해안포격</button>

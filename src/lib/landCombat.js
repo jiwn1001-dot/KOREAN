@@ -315,7 +315,7 @@ export function deployAIUnits(units, initialSession, userCountryId) {
  * AI 군단의 턴 자동 명령 생성 (매 턴 시작 시 호출)
  */
 export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
-  const { units, userOrders = [], corps = [], generals = [], armies = [] } = session;
+  const { units, userOrders = [], corps = [], generals = [], armies = [], sessionCategory } = session;
   
   // excludeCorpsId가 있으면 (유저가 직접 조작하는 주 군단 및 사령부는 제외)
   // 추가로: 유저가 다른 군단 유닛에 개입하여 이미 명령을 내린 경우(userOrders 존재) AI 조작에서 제외
@@ -334,17 +334,26 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
 
   // 야전군 사령관 지능 추출
   let armyAiLevel = 1;
-  const army = armies.find(a => a.corpsIds.some(cid => units.some(u => u.owner === aiCountryId && u.corpsId === cid)));
+  const army = armies.find(a => (a.corpsIds || []).some(cid => units.some(u => u.owner === aiCountryId && u.corpsId === cid)));
   if (army && army.commanderId) {
     const armyGen = generals.find(g => g.id === army.commanderId);
     if (armyGen) armyAiLevel = parseInt(armyGen.aiLevel, 10);
   }
 
+  // 해전에서는 제독(해군) 지능을 우선 반영
+  if (sessionCategory === 'naval') {
+    const admirals = generals.filter(g => (g.category || '').includes('해군') || (g.role || '').includes('제독'));
+    if (admirals.length > 0) {
+      armyAiLevel = Math.max(armyAiLevel, ...admirals.map(g => parseInt(g.aiLevel || 1, 10)));
+    }
+  }
+
   // AI 스킬 사용 로직 (사령관 지능 레벨 2 이상일 때)
   if (armyAiLevel >= 2 && enemies.length > 0) {
-    const myUnits = units.filter(u => u.owner === aiCountryId && u.status === 'field');
-    const myMissiles = myUnits.filter(u => u.subCategory === '미사일');
-    const myCas = myUnits.filter(u => u.subCategory === '근접항공지원기');
+    const myFieldUnits = units.filter(u => u.owner === aiCountryId && u.status === 'field');
+    const myStandbyUnits = units.filter(u => u.owner === aiCountryId && u.status === 'standby');
+    const myMissiles = myStandbyUnits.filter(u => u.subCategory === '미사일' || u.minorCategory === '미사일');
+    const myCas = myStandbyUnits.filter(u => u.subCategory === '근접항공지원기' || u.minorCategory === '근접항공지원기');
     
     // 무작위 적 하나 타겟팅
     const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
@@ -352,11 +361,24 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     if (myCas.length > 0 && Math.random() < 0.3) {
       // 30% 확률로 CAS 사용
       const maxAttackCas = myCas.reduce((prev, curr) => (prev.attack > curr.attack) ? prev : curr);
-      skills.push({ type: 'cas', target: { x: targetEnemy.x, y: targetEnemy.y }, damage: maxAttackCas.attack || 10, consumerId: null });
+      skills.push({
+        type: 'cas',
+        target: { x: targetEnemy.x, y: targetEnemy.y },
+        damage: maxAttackCas.attack || 10,
+        consumerId: maxAttackCas.id,
+        aircraftSpeed: Math.max(1, maxAttackCas.speed || 1),
+        attackerId: aiCountryId
+      });
     } else if (myMissiles.length > 0 && Math.random() < 0.3) {
       // 30% 확률로 미사일 사용
       const missile = myMissiles[0];
-      skills.push({ type: 'missile', target: { x: targetEnemy.x, y: targetEnemy.y }, damage: missile.attack || 50, consumerId: missile.id });
+      skills.push({
+        type: 'missile',
+        target: { x: targetEnemy.x, y: targetEnemy.y },
+        damage: missile.attack || 50,
+        consumerId: missile.id,
+        attackerId: aiCountryId
+      });
     }
   }
 
@@ -398,12 +420,15 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     let aiLevel = 1;
     if (aiUnit.corpsId) {
       const unitCorps = corps.find(c => c.id === aiUnit.corpsId);
-      if (unitCorps && unitCorps.generalId) {
-        const general = generals.find(g => g.id === unitCorps.generalId);
+      const corpsCommanderId = unitCorps?.commanderId || unitCorps?.generalId;
+      if (unitCorps && corpsCommanderId) {
+        const general = generals.find(g => g.id === corpsCommanderId);
         if (general && general.aiLevel) {
           aiLevel = parseInt(general.aiLevel, 10);
         }
       }
+    } else if (aiUnit.majorCategory === '해군' || sessionCategory === 'naval') {
+      aiLevel = Math.max(aiLevel, armyAiLevel);
     }
 
     // 2. [Level 3 지능] 체력이 20% 미만이면 후퇴(Retreat) 결단
@@ -857,7 +882,11 @@ export function resolveCommanderSkills(session) {
       aaChecked = true;
       const targetUnit = units.find(u => u.x === skill.target.x && u.y === skill.target.y && u.status === 'field');
       // 타겟에 유닛이 없더라도 일단 적국의 기본 대공능력으로 방어 시도한다고 가정 (또는 타겟 유닛의 소유주)
-      const defenderId = targetUnit ? targetUnit.owner : 'enemy'; 
+      let defenderId = targetUnit ? targetUnit.owner : null;
+      if (!defenderId) {
+        const attackerId = skill.attackerId;
+        defenderId = units.find(u => u.owner !== attackerId && u.status === 'field')?.owner || 'enemy';
+      }
       const defenderAA = antiAir[defenderId] || 0;
 
       let aircraftSpeed = skill.aircraftSpeed || 3;
@@ -918,13 +947,19 @@ export function resolveCommanderSkills(session) {
     // missile: 항상 소모 / bombing, cas: 요격 실패(공격 성공) 시에는 소모 없음
     if (skill.consumerId) {
       const consumer = units.find(u => u.id === skill.consumerId);
-      const shouldConsume = skill.type === 'missile' || skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'poison' || (skill.type === 'cas' && !aaChecked) || (skill.type === 'bombing' && !aaChecked);
+      const shouldConsume = skill.type === 'missile' || skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'poison';
       if (consumer && shouldConsume) {
         consumer.hp = 0;
         consumer.status = 'destroyed';
       }
     }
     // EMP는 턴 처리 전에 모든 기계화 이동/스킬 큐를 막는 로직으로 별도 사전 적용됨
+  });
+
+  units.forEach(u => {
+    if (!u.isHQ && u.status === 'field' && u.hp <= 0) {
+      u.status = 'destroyed';
+    }
   });
 
   // 스킬 큐 비우기
