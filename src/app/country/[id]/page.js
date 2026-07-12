@@ -240,6 +240,16 @@ export default function CountryPage() {
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
   ];
 
+  const espionageMode = !!espionageSourceCountryId && !canAccessCountry(countryId);
+  const espionageAllowedTabs = espionageMode ? getEspionageAllowedTabs(espionageLevel) : tabs.map(t => t.id);
+
+  useEffect(() => {
+    if (!espionageMode) return;
+    if (!espionageAllowedTabs.includes(activeTab)) {
+      setActiveTab(espionageAllowedTabs[0] || 'politics');
+    }
+  }, [espionageMode, espionageLevel, activeTab, espionageAllowedTabs]);
+
   if (loading) {
     return (
       <div className="loading">
@@ -293,16 +303,6 @@ export default function CountryPage() {
       </div>
     );
   }
-
-  const espionageMode = !!espionageSourceCountryId && !canAccessCountry(countryId);
-  const espionageAllowedTabs = espionageMode ? getEspionageAllowedTabs(espionageLevel) : tabs.map(t => t.id);
-
-  useEffect(() => {
-    if (!espionageMode) return;
-    if (!espionageAllowedTabs.includes(activeTab)) {
-      setActiveTab(espionageAllowedTabs[0] || 'politics');
-    }
-  }, [espionageMode, espionageLevel]);
 
   const politicsData = data.politics?.data || {};
   const economyData = data.economy?.data || {};
