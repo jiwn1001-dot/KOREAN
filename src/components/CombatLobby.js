@@ -297,20 +297,25 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     }
 
     const isNavalSession = session.sessionCategory === 'naval';
-    if (!isNavalSession && !selectedArmyId) {
+    const assignedArmyId = session?.players?.[countryId]?.armyId || '';
+    const assignedFleetId = session?.players?.[countryId]?.fleetId || '';
+    const effectiveArmyId = selectedArmyId || assignedArmyId;
+    const effectiveFleetId = selectedFleetId || assignedFleetId;
+
+    if (!isNavalSession && !effectiveArmyId) {
       return alert('참여하기 전 투입할 야전군을 선택해주세요.');
     }
-    if (isNavalSession && !selectedFleetId) {
+    if (isNavalSession && !effectiveFleetId) {
       return alert('해전 참여 전 투입할 함대를 선택해주세요.');
     }
 
     let myUnits = [];
     if (isNavalSession) {
-      const fleet = navalFleets.find(f => f.id === selectedFleetId);
+      const fleet = navalFleets.find(f => f.id === effectiveFleetId);
       if (!fleet) return alert('함대를 찾을 수 없습니다.');
       myUnits = buildUnitsFromFleet(fleet, session);
     } else {
-      const army = armies.find(a => a.id === selectedArmyId);
+      const army = armies.find(a => a.id === effectiveArmyId);
       if (!army) return alert('야전군을 찾을 수 없습니다.');
 
       army.corpsIds.forEach(cid => {
@@ -382,24 +387,27 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     
     updatedSession.players[countryId] = {
       ...updatedSession.players[countryId],
-      armyId: isNavalSession ? null : selectedArmyId,
-      fleetId: isNavalSession ? selectedFleetId : null,
+      armyId: isNavalSession ? null : effectiveArmyId,
+      fleetId: isNavalSession ? effectiveFleetId : null,
       ready: false,
       orders: [],
       units: myUnits,
       stats: countryStats
     };
 
-    // If 1v1, it goes to deployment when opponent joins. For team battles, it goes to deployment as well.
-    if (!session.isTeamBattle) {
+    // 공성전 수비 사전배치 페이즈에서는 상태를 유지해야 한다.
+    const isDefensePrepJoin = session.battleMode === 'siege' && session.status === 'defense_prep';
+    if (isDefensePrepJoin) {
+      updatedSession.status = 'defense_prep';
+    } else if (!session.isTeamBattle) {
       updatedSession.status = 'deployment';
     } else {
       updatedSession.status = 'deployment';
     }
 
-    // Combine units for the board (기존 보드 유닛 유지 + 내 새 유닛 추가)
+    // 기존 내 유닛은 치환하고, 타국 유닛은 유지한다.
     updatedSession.units = [
-      ...(session.units || []),
+      ...(session.units || []).filter(u => u.owner !== countryId),
       ...myUnits
     ];
 

@@ -2,11 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { getDataEntry, upsertDataEntry } from '@/lib/store';
+import { deployAIUnits } from '@/lib/landCombat';
 
 export default function AdminCombatSessions({ countries }) {
   const [sessions, setSessions] = useState([]);
   const [maps, setMaps] = useState([]);
   const [fieldArmiesMap, setFieldArmiesMap] = useState({}); // { countryId: [armies] }
+  const [navalFleetsMap, setNavalFleetsMap] = useState({}); // { countryId: [fleets] }
+  const [corpsMap, setCorpsMap] = useState({}); // { countryId: [corps] }
+  const [militaryUnitsMap, setMilitaryUnitsMap] = useState({}); // { countryId: [units] }
+  const [generalsMap, setGeneralsMap] = useState({}); // { countryId: [generals] }
+  const [unitTemplates, setUnitTemplates] = useState([]);
 
   // Form State
   const [sessionName, setSessionName] = useState('');
@@ -19,7 +25,7 @@ export default function AdminCombatSessions({ countries }) {
   const [allowAirTeam1, setAllowAirTeam1] = useState(true);
   const [allowAirTeam2, setAllowAirTeam2] = useState(true);
   
-  // Team 1 & Team 2: { countryId, armyId }[]
+  // Team 1 & Team 2: { countryId, armyId, fleetId, controlMode }[]
   const [team1, setTeam1] = useState([]);
   const [team2, setTeam2] = useState([]);
 
@@ -36,32 +42,71 @@ export default function AdminCombatSessions({ countries }) {
     const mapEntry = await getDataEntry('combat_maps', null);
     if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
 
+    const settingsEntry = await getDataEntry('game_settings', null);
+    setUnitTemplates(settingsEntry?.data?.unitTemplates || []);
+
     const fArmies = {};
+    const nFleets = {};
+    const cMap = {};
+    const uMap = {};
+    const gMap = {};
     for (const c of countries) {
       const armyEntry = await getDataEntry('field_armies', c.id);
       fArmies[c.id] = armyEntry?.data?.armies || [];
+
+      const fleetEntry = await getDataEntry('naval_fleets', c.id);
+      nFleets[c.id] = fleetEntry?.data?.fleets || [];
+
+      const corpsEntry = await getDataEntry('corps', c.id);
+      cMap[c.id] = corpsEntry?.data?.corps || [];
+
+      const unitsEntry = await getDataEntry('military_units', c.id);
+      uMap[c.id] = unitsEntry?.data?.units || [];
+
+      const generalsEntry = await getDataEntry('generals', c.id);
+      gMap[c.id] = generalsEntry?.data?.generals || [];
     }
     setFieldArmiesMap(fArmies);
+    setNavalFleetsMap(nFleets);
+    setCorpsMap(cMap);
+    setMilitaryUnitsMap(uMap);
+    setGeneralsMap(gMap);
+  };
+
+  const updateTeamEntry = (team, index, updates) => {
+    const next = [...team];
+    next[index] = { ...(next[index] || {}), ...updates };
+    return next;
   };
 
   const handleAddToTeam = (teamNum) => {
     const defaultCountry = countries[0]?.id;
     if (!defaultCountry) return;
-    const newEntry = { countryId: defaultCountry };
+    const defaultArmyId = (fieldArmiesMap[defaultCountry] || [])[0]?.id || '';
+    const defaultFleetId = (navalFleetsMap[defaultCountry] || [])[0]?.id || '';
+    const newEntry = {
+      countryId: defaultCountry,
+      armyId: defaultArmyId,
+      fleetId: defaultFleetId,
+      controlMode: 'user'
+    };
     if (teamNum === 1) setTeam1([...team1, newEntry]);
     else setTeam2([...team2, newEntry]);
   };
 
   const handleUpdateTeam = (teamNum, index, field, value) => {
-    if (teamNum === 1) {
-      const newTeam = [...team1];
-      newTeam[index][field] = value;
-      setTeam1(newTeam);
-    } else {
-      const newTeam = [...team2];
-      newTeam[index][field] = value;
-      setTeam2(newTeam);
-    }
+    const apply = (team, setTeam) => {
+      if (field === 'countryId') {
+        const defaultArmyId = (fieldArmiesMap[value] || [])[0]?.id || '';
+        const defaultFleetId = (navalFleetsMap[value] || [])[0]?.id || '';
+        setTeam(updateTeamEntry(team, index, { countryId: value, armyId: defaultArmyId, fleetId: defaultFleetId }));
+        return;
+      }
+      setTeam(updateTeamEntry(team, index, { [field]: value }));
+    };
+
+    if (teamNum === 1) apply(team1, setTeam1);
+    else apply(team2, setTeam2);
   };
 
   const handleRemoveFromTeam = (teamNum, index) => {
@@ -72,9 +117,148 @@ export default function AdminCombatSessions({ countries }) {
     }
   };
 
+  const buildArmyUnits = (countryId, armyId, isTeam1Side) => {
+    const armies = fieldArmiesMap[countryId] || [];
+    const corps = corpsMap[countryId] || [];
+    const units = militaryUnitsMap[countryId] || [];
+    const generals = generalsMap[countryId] || [];
+    const army = armies.find(a => a.id === armyId);
+    if (!army) return [];
+
+    const startX = isTeam1Side ? 0 : 19;
+    const built = [];
+
+    (army.corpsIds || []).forEach(cid => {
+      const c = corps.find(co => co.id === cid);
+      if (!c) return;
+      (c.units || []).forEach(uid => {
+        const u = units.find(mu => mu.id === uid);
+        if (!u) return;
+        const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+        const major = tmpl.majorCategory || u.majorCategory;
+        const isAir = major === '공군';
+        if (sessionCategory === 'bombing' && !isAir) return;
+        if (sessionCategory === 'land' && major !== '육군' && !isAir) return;
+
+        built.push({
+          ...u,
+          name: u.customName || tmpl.name || u.name || '유닛',
+          image: tmpl.image || u.image || null,
+          attack: u.attack || tmpl.attack || 0,
+          defense: u.defense || tmpl.defense || 0,
+          speed: u.speed || tmpl.speed || 0,
+          hp: u.hp || tmpl.hp || 100,
+          maxHp: u.maxHp || u.hp || tmpl.hp || 100,
+          vision: u.vision || tmpl.vision || 0,
+          supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
+          majorCategory: major || '육군',
+          minorCategory: tmpl.minorCategory || u.minorCategory || '보병',
+          subCategory: tmpl.subCategory || u.subCategory || '보병',
+          x: startX,
+          y: startX,
+          status: 'standby',
+          owner: countryId,
+          corpsId: c.id,
+          aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
+          isHQ: false
+        });
+      });
+    });
+
+    if (sessionCategory !== 'naval') {
+      built.push({
+        id: `hq_${countryId}`,
+        name: '야전사령부',
+        subCategory: 'HQ',
+        x: startX,
+        y: startX,
+        status: 'standby',
+        owner: countryId,
+        isHQ: true,
+        hp: 100,
+        maxHp: 100,
+        vision: 0,
+        supplyConsumption: 0
+      });
+    }
+
+    return built;
+  };
+
+  const buildFleetUnits = (countryId, fleetId, isTeam1Side) => {
+    const fleets = navalFleetsMap[countryId] || [];
+    const units = militaryUnitsMap[countryId] || [];
+    const generals = generalsMap[countryId] || [];
+    const fleet = fleets.find(f => f.id === fleetId);
+    if (!fleet) return [];
+
+    const startX = isTeam1Side ? 0 : 19;
+    const built = [];
+
+    (fleet.shipIds || []).forEach(uid => {
+      const u = units.find(mu => mu.id === uid);
+      if (!u) return;
+      const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+      const major = tmpl.majorCategory || u.majorCategory;
+      if (major !== '해군') return;
+
+      built.push({
+        ...u,
+        name: u.customName || tmpl.name || u.name || '함선',
+        image: tmpl.image || u.image || null,
+        attack: u.attack || tmpl.attack || 0,
+        defense: u.defense || tmpl.defense || 0,
+        speed: u.speed || tmpl.speed || 0,
+        hp: u.hp || tmpl.hp || 100,
+        maxHp: u.maxHp || u.hp || tmpl.hp || 100,
+        vision: u.vision || tmpl.vision || 0,
+        supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
+        majorCategory: '해군',
+        minorCategory: tmpl.minorCategory || u.minorCategory,
+        subCategory: tmpl.subCategory || u.subCategory,
+        slotCount: tmpl.slotCount || u.slotCount || 1,
+        x: startX,
+        y: startX,
+        status: 'standby',
+        owner: countryId,
+        fleetId,
+        aiLevel: generals.find(g => g.id === fleet.admiralId)?.aiLevel || 1
+      });
+    });
+
+    return built;
+  };
+
+  const autoDeployNavalUnits = (units, session) => {
+    const next = [...units];
+    const owners = [...new Set(next.map(u => u.owner))];
+    owners.forEach(ownerId => {
+      const isTeam1Side = session.isTeamBattle ? session.team1.includes(ownerId) : session.host === ownerId;
+      const x = isTeam1Side ? 2 : 17;
+      let yCursor = 0;
+      next
+        .filter(u => u.owner === ownerId && u.status === 'standby' && u.majorCategory === '해군')
+        .forEach(u => {
+          u.x = x;
+          u.y = yCursor % 20;
+          u.status = 'field';
+          yCursor += 2;
+        });
+    });
+    return next;
+  };
+
   const handleCreateSession = async () => {
     if (!sessionName || !selectedMapId) return alert('세션 이름과 맵을 지정하세요.');
     if (team1.length === 0 || team2.length === 0) return alert('각 팀에 최소 한 명 이상의 국가가 배정되어야 합니다.');
+
+    const allEntries = [...team1, ...team2];
+    const missingFormation = allEntries.find(t =>
+      sessionCategory === 'naval' ? !t.fleetId : !t.armyId
+    );
+    if (missingFormation) {
+      return alert(sessionCategory === 'naval' ? '모든 국가에 함대를 지정하세요.' : '모든 국가에 집단군을 지정하세요.');
+    }
 
     const newSession = {
       id: 'session_' + Date.now(),
@@ -100,18 +284,46 @@ export default function AdminCombatSessions({ countries }) {
       isActive: true // 기본적으로 세션은 활성화 상태로 생성됨
     };
 
-    // 각 팀 멤버들의 players 데이터 초기화 (유닛 데이터 및 야전군은 유저가 로비에서 입장시 세팅)
+    // 각 팀 멤버들의 players 데이터 초기화 (선택한 집단군/함대를 즉시 연결)
     [...team1, ...team2].forEach(t => {
+      const isTeam1Side = team1.some(m => m.countryId === t.countryId);
+      const isAI = t.controlMode === 'ai';
+      const playerUnits = sessionCategory === 'naval'
+        ? buildFleetUnits(t.countryId, t.fleetId, isTeam1Side)
+        : buildArmyUnits(t.countryId, t.armyId, isTeam1Side);
+
       newSession.players[t.countryId] = {
-        armyId: null,
-        isAI: false,
-        ready: false, // 유저가 개별적으로 준비 완료(입장) 해야 함
+        armyId: t.armyId || null,
+        fleetId: t.fleetId || null,
+        isAI,
+        ready: isAI,
         orders: [],
         skills: [],
-        units: [],
+        units: playerUnits,
         stats: { penetration: 0, antiAir: 0, vision: 0 } // 접속 시 갱신됨
       };
+
+      newSession.units.push(...playerUnits);
     });
+
+    const allPlayersAI = Object.values(newSession.players).every(p => p?.isAI);
+    if (allPlayersAI) {
+      newSession.sessionMode = 'ai_vs_ai';
+      if (sessionCategory === 'naval') {
+        newSession.units = autoDeployNavalUnits(newSession.units, newSession);
+      } else {
+        newSession.units = deployAIUnits(newSession.units, newSession, null);
+      }
+
+      Object.keys(newSession.players).forEach(pid => {
+        newSession.players[pid].ready = true;
+        newSession.players[pid].units = newSession.units.filter(u => u.owner === pid);
+      });
+
+      newSession.status = 'playing';
+      newSession.phase = 'combat';
+      newSession.turn = 1;
+    }
 
     const updatedSessions = [...sessions, newSession];
     setSessions(updatedSessions);
@@ -242,9 +454,24 @@ export default function AdminCombatSessions({ countries }) {
         <div className="card" style={{ padding: '16px', border: '1px solid var(--accent)' }}>
           <h3 style={{ color: 'var(--accent)', marginBottom: '16px' }}>Team 1 (공격 측 - 좌측 배치)</h3>
           {team1.map((t, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.2fr 1fr auto', gap: '8px', marginBottom: '8px' }}>
               <select className="form-select" value={t.countryId} onChange={e => handleUpdateTeam(1, idx, 'countryId', e.target.value)}>
                 {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {sessionCategory === 'naval' ? (
+                <select className="form-select" value={t.fleetId || ''} onChange={e => handleUpdateTeam(1, idx, 'fleetId', e.target.value)}>
+                  <option value="">-- 함대 선택 --</option>
+                  {(navalFleetsMap[t.countryId] || []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              ) : (
+                <select className="form-select" value={t.armyId || ''} onChange={e => handleUpdateTeam(1, idx, 'armyId', e.target.value)}>
+                  <option value="">-- 집단군 선택 --</option>
+                  {(fieldArmiesMap[t.countryId] || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              )}
+              <select className="form-select" value={t.controlMode || 'user'} onChange={e => handleUpdateTeam(1, idx, 'controlMode', e.target.value)}>
+                <option value="user">유저 조작</option>
+                <option value="ai">AI 조작</option>
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => handleRemoveFromTeam(1, idx)}>X</button>
             </div>
@@ -256,9 +483,24 @@ export default function AdminCombatSessions({ countries }) {
         <div className="card" style={{ padding: '16px', border: '1px solid var(--danger)' }}>
           <h3 style={{ color: 'var(--danger)', marginBottom: '16px' }}>Team 2 (방어 측 - 우측 배치)</h3>
           {team2.map((t, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.2fr 1fr auto', gap: '8px', marginBottom: '8px' }}>
               <select className="form-select" value={t.countryId} onChange={e => handleUpdateTeam(2, idx, 'countryId', e.target.value)}>
                 {countries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {sessionCategory === 'naval' ? (
+                <select className="form-select" value={t.fleetId || ''} onChange={e => handleUpdateTeam(2, idx, 'fleetId', e.target.value)}>
+                  <option value="">-- 함대 선택 --</option>
+                  {(navalFleetsMap[t.countryId] || []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              ) : (
+                <select className="form-select" value={t.armyId || ''} onChange={e => handleUpdateTeam(2, idx, 'armyId', e.target.value)}>
+                  <option value="">-- 집단군 선택 --</option>
+                  {(fieldArmiesMap[t.countryId] || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              )}
+              <select className="form-select" value={t.controlMode || 'user'} onChange={e => handleUpdateTeam(2, idx, 'controlMode', e.target.value)}>
+                <option value="user">유저 조작</option>
+                <option value="ai">AI 조작</option>
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => handleRemoveFromTeam(2, idx)}>X</button>
             </div>
