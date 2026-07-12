@@ -48,6 +48,31 @@ async function validateSeaTrade(fromCountryId, toCountryId) {
   return { ok: true };
 }
 
+function aggregateSpiritEffects(spirits = []) {
+  const sum = {
+    unitAttackPct: 0,
+    unitDefensePct: 0,
+    unitHpPct: 0,
+    unitAntiAirPct: 0,
+    unitObservationPct: 0,
+    unitPenetrationPct: 0,
+    foodProdPct: 0,
+    resourceProdPct: 0,
+    consumerGoodsProdPct: 0,
+    heavyCoinProdPct: 0
+  };
+
+  (spirits || []).forEach((s) => {
+    if (s?.enabled === false) return;
+    const e = s?.effects || {};
+    Object.keys(sum).forEach((k) => {
+      sum[k] += Number(e[k] || 0);
+    });
+  });
+
+  return sum;
+}
+
 /**
  * 게임의 현재 상태(연구, 자원, 경제)를 스냅샷으로 저장
  */
@@ -157,6 +182,16 @@ export async function processTurnEnd(newTurn) {
       });
     }
 
+    // 국가별 국민정신 효과 로드
+    const { data: spiritEntries } = await supabase
+      .from('data_entries')
+      .select('country_id, data')
+      .eq('category', 'national_spirits');
+    const countrySpiritEffects = {};
+    (spiritEntries || []).forEach((entry) => {
+      countrySpiritEffects[entry.country_id] = aggregateSpiritEffects(entry?.data?.spirits || []);
+    });
+
     // 1. 진행 중인 연구 remaining_turns 감소 및 완료/실패 판정
     const { data: activeResearches, error: resError } = await supabase
       .from('researches')
@@ -203,9 +238,16 @@ export async function processTurnEnd(newTurn) {
     if (!resourceError && resources) {
       for (const res of resources) {
         if (res.production_per_turn > 0) {
+          let amountToAdd = Number(res.production_per_turn);
+          if (res.resource_type !== 'food' && res.resource_type !== 'consumer_goods') {
+            const spirit = countrySpiritEffects[res.country_id] || {};
+            const resourceMult = 1 + (Number(spirit.resourceProdPct || 0) / 100);
+            amountToAdd = Math.floor(amountToAdd * resourceMult);
+          }
+
           await supabase
             .from('resources')
-            .update({ amount: Number(res.amount) + Number(res.production_per_turn) })
+            .update({ amount: Number(res.amount) + amountToAdd })
             .eq('id', res.id);
         }
       }
@@ -243,9 +285,13 @@ export async function processTurnEnd(newTurn) {
         const nonBudget = currentGdp - budget;
         
         const alloc = data.allocation || { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 };
+        const spirit = countrySpiritEffects[entry.country_id] || {};
+        const foodSpiritMult = 1 + (Number(spirit.foodProdPct || 0) / 100);
+        const cgSpiritMult = 1 + (Number(spirit.consumerGoodsProdPct || 0) / 100);
+        const heavyCoinSpiritMult = 1 + (Number(spirit.heavyCoinProdPct || 0) / 100);
         
         // 3-3. 코인 산정
-        data.heavyIndustryCoins = Math.floor(budget / 50000);
+        data.heavyIndustryCoins = Math.floor((budget / 50000) * heavyCoinSpiritMult);
         data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 2000);
         data.lightIndustryCoins = Math.floor((nonBudget * (alloc.lightIndustry / 100)) / 50000);
         
@@ -365,8 +411,8 @@ export async function processTurnEnd(newTurn) {
           const adminMults = data.multipliers || { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 };
           const techMults = countryTechMultipliers[entry.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
           
-          const foodAmount = Math.floor(data.agricultureCoins * 5 * (adminMults.food || 1) * techMults.agri);
-          const cgAmount = Math.floor(data.lightIndustryCoins * 100 * (adminMults.consumerGoods || 1) * techMults.light);
+          const foodAmount = Math.floor(data.agricultureCoins * 5 * (adminMults.food || 1) * techMults.agri * foodSpiritMult);
+          const cgAmount = Math.floor(data.lightIndustryCoins * 100 * (adminMults.consumerGoods || 1) * techMults.light * cgSpiritMult);
           const population = data.population?.total || 0;
           
           const { data: cRes2 } = await supabase.from('resources').select('id, resource_type, amount, production_per_turn').eq('country_id', entry.country_id);

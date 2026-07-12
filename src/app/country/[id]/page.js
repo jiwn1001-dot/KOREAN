@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { getCountry, getDataEntry, upsertDataEntry, getAllImages, getResearches, getResources, getCountries, createResearch, deleteResearch, upsertResource, updateResearch, getAerialBattleSessionsForCountry, saveAerialCombatSession } from '@/lib/store';
 import { transferTech, transferItems, acceptTransfer, rejectTransfer, getPendingTransfers } from '@/lib/gameLogic';
-import { canAccessCountry, isAdminOrSub } from '@/lib/auth';
+import { canAccessCountry, isAdminOrSub, getAuth } from '@/lib/auth';
 import { createAerialBattle, processBattleRound, surrenderAerialBattle, addReinforcements } from '@/lib/aerialCombat';
 import LoginModal from '@/components/LoginModal';
 import ReactMarkdown from 'react-markdown';
@@ -49,13 +49,68 @@ export default function CountryPage() {
   const [generals, setGenerals] = useState([]);
   const [navalFleets, setNavalFleets] = useState([]);
   const [airWings, setAirWings] = useState([]);
+  const [nationalSpirits, setNationalSpirits] = useState([]);
+  const [espionageSourceCountryId, setEspionageSourceCountryId] = useState('');
+  const [espionageLevel, setEspionageLevel] = useState(0);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
-    const access = canAccessCountry(countryId);
-    setHasAccess(access);
+    resolveAccess();
     loadCountry();
   }, [countryId]);
+
+  const getEspionageAllowedTabs = (level) => {
+    const allowed = [];
+    if (level >= 10) allowed.push('politics');
+    if (level >= 20) allowed.push('economy');
+    if (level >= 30) allowed.push('social');
+    if (level >= 40) allowed.push('diplomacy');
+    if (level >= 50) allowed.push('research');
+    if (level >= 60) allowed.push('resource');
+    if (level >= 70) allowed.push('military');
+    if (level >= 80) allowed.push('formation', 'fleet', 'air_wing');
+    if (level >= 90) allowed.push('corps');
+    return [...new Set(allowed)];
+  };
+
+  const resolveAccess = async () => {
+    const direct = canAccessCountry(countryId);
+    if (direct) {
+      setHasAccess(true);
+      setEspionageSourceCountryId('');
+      setEspionageLevel(0);
+      return;
+    }
+
+    try {
+      const auth = getAuth();
+      const myCountryId = auth?.assignedCountryId;
+      if (!myCountryId || myCountryId === countryId) {
+        setHasAccess(false);
+        return;
+      }
+
+      const [myEcoEntry, targetEcoEntry] = await Promise.all([
+        getDataEntry('economy', myCountryId),
+        getDataEntry('economy', countryId)
+      ]);
+      const myIntel = Number(myEcoEntry?.data?.intelPoints || 0);
+      const targetIntel = Number(targetEcoEntry?.data?.intelPoints || 0);
+      const denominator = Math.max(1, targetIntel);
+      const level = Math.floor(myIntel / denominator);
+
+      if (level >= 10) {
+        setHasAccess(true);
+        setEspionageSourceCountryId(myCountryId);
+        setEspionageLevel(level);
+      } else {
+        setHasAccess(false);
+      }
+    } catch (err) {
+      console.error('Failed to resolve espionage access:', err);
+      setHasAccess(false);
+    }
+  };
 
   useEffect(() => {
     if (hasAccess && country) {
@@ -143,6 +198,9 @@ export default function CountryPage() {
 
       const airWingsEntry = await getDataEntry('air_wings', countryId);
       if (airWingsEntry && airWingsEntry.data) setAirWings(airWingsEntry.data.wings || []);
+
+      const spiritEntry = await getDataEntry('national_spirits', countryId);
+      setNationalSpirits(spiritEntry?.data?.spirits || []);
     } catch(err) {
       console.error('Failed to load military units/corps', err);
     }
@@ -167,6 +225,7 @@ export default function CountryPage() {
   const tabs = [
     { id: 'politics', label: '정치', icon: '🏛️' },
     { id: 'economy', label: '경제', icon: '💰' },
+    { id: 'national_spirit', label: '국민정신', icon: '🪖' },
     { id: 'social', label: '사회문제', icon: '📢' },
     { id: 'diplomacy', label: '외교관계', icon: '🤝' },
     { id: 'research', label: '연구', icon: '🔬' },
@@ -235,10 +294,27 @@ export default function CountryPage() {
     );
   }
 
+  const espionageMode = !!espionageSourceCountryId && !canAccessCountry(countryId);
+  const espionageAllowedTabs = espionageMode ? getEspionageAllowedTabs(espionageLevel) : tabs.map(t => t.id);
+
+  useEffect(() => {
+    if (!espionageMode) return;
+    if (!espionageAllowedTabs.includes(activeTab)) {
+      setActiveTab(espionageAllowedTabs[0] || 'politics');
+    }
+  }, [espionageMode, espionageLevel]);
+
   const politicsData = data.politics?.data || {};
   const economyData = data.economy?.data || {};
   const socialData = data.social?.data || {};
   const diplomacyData = data.diplomacy?.data || {};
+  const spiritEffects = (nationalSpirits || []).filter(s => s.enabled !== false).reduce((acc, s) => {
+    const e = s.effects || {};
+    Object.keys(e).forEach((k) => {
+      acc[k] = (acc[k] || 0) + Number(e[k] || 0);
+    });
+    return acc;
+  }, {});
 
   const renderPolitics = () => (
     <div className="slide-up">
@@ -419,6 +495,23 @@ export default function CountryPage() {
     const budget = (economyData.gdp || 0) * ((economyData.taxRate || 0) / 100);
     const nonBudget = (economyData.gdp || 0) - budget;
 
+    const handleConvertIntel = async () => {
+      const raw = Number(document.getElementById('intelConvertAmount')?.value || 0);
+      const amount = Math.max(0, Math.floor(raw));
+      const currentHeavy = Number(economyData.heavyIndustryCoins || 0);
+      const currentIntel = Number(economyData.intelPoints || 0);
+      if (amount <= 0) return alert('전환 수량을 입력하세요.');
+      if (currentHeavy < amount) return alert('중공업코인이 부족합니다.');
+      const nextEco = {
+        ...economyData,
+        heavyIndustryCoins: currentHeavy - amount,
+        intelPoints: currentIntel + amount
+      };
+      await upsertDataEntry('economy', countryId, nextEco);
+      setData(prev => ({ ...prev, economy: { ...prev.economy, data: nextEco } }));
+      alert(`중공업코인 ${amount}개를 첩보력으로 전환했습니다.`);
+    };
+
     return (
       <div className="slide-up">
         {warning && (
@@ -499,6 +592,16 @@ export default function CountryPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>(턴 종료 시 식량 및 소비재로 자동 변환)</div>
             </div>
           </div>
+          <div className="card stat-card">
+            <div className="stat-label">첩보력 (Intel)</div>
+            <div className="stat-value">{Number(economyData.intelPoints || 0).toLocaleString()}</div>
+            {!espionageMode && (
+              <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
+                <input id="intelConvertAmount" type="number" className="form-input" placeholder="전환 수량" style={{ width: '100px' }} />
+                <button className="btn btn-sm btn-primary" onClick={handleConvertIntel}>중공업→첩보</button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="card-grid card-grid-3" style={{ marginBottom: '20px' }}>
@@ -517,6 +620,34 @@ export default function CountryPage() {
             <div className="stat-label">경제 투자 (누적)</div>
             <div className="stat-value">{economyData.economicInvestment || 0}</div>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderNationalSpirit = () => {
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h3 className="content-section-title">🪖 국민정신</h3>
+          {(nationalSpirits || []).length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>적용 중인 국민정신이 없습니다.</p>
+          ) : (
+            <div className="card-grid card-grid-2">
+              {nationalSpirits.map((s) => (
+                <div key={s.id} className="card" style={{ padding: '16px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    {s.image && <img src={s.image} alt={s.name} style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover' }} />}
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{s.name}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{s.enabled === false ? '비활성' : '활성'}</div>
+                    </div>
+                  </div>
+                  <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>{s.description || '설명 없음'}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1437,9 +1568,10 @@ export default function CountryPage() {
   });
 
   const countryStats = {
-    penetration: penetrationBonus,
-    antiAir: antiairBonus,
-    vision: observationBonus
+    penetration: Math.floor(penetrationBonus * (1 + Number(spiritEffects.unitPenetrationPct || 0) / 100)),
+    antiAir: Math.floor(antiairBonus * (1 + Number(spiritEffects.unitAntiAirPct || 0) / 100)),
+    vision: Math.floor(observationBonus * (1 + Number(spiritEffects.unitObservationPct || 0) / 100)),
+    spiritEffects
   };
 
   const renderTab = () => {
@@ -1448,6 +1580,8 @@ export default function CountryPage() {
         return renderPolitics();
       case 'economy':
         return renderEconomy();
+      case 'national_spirit':
+        return renderNationalSpirit();
       case 'social':
         return renderTextSection('social', socialData, images.social);
       case 'diplomacy':
@@ -1461,6 +1595,7 @@ export default function CountryPage() {
       case 'formation':
         return renderFormation();
       case 'land_combat':
+        if (espionageMode) return <p style={{ color: 'var(--text-muted)' }}>첩보 열람 모드에서는 전투 입장이 제한됩니다.</p>;
         return (
           <CombatLobby 
             countryId={countryId} 
@@ -1476,6 +1611,14 @@ export default function CountryPage() {
           />
         );
       case 'fleet':
+        if (espionageMode) {
+          return (
+            <div className="card" style={{ padding: '24px' }}>
+              <h3>함대 편제 열람</h3>
+              {(navalFleets || []).map(f => <div key={f.id} style={{ marginBottom: '8px' }}>{f.name} ({(f.shipIds || []).length}척)</div>)}
+            </div>
+          );
+        }
         return (
           <FleetFormation
             countryId={countryId}
@@ -1490,6 +1633,14 @@ export default function CountryPage() {
           />
         );
       case 'corps':
+        if (espionageMode) {
+          return (
+            <div className="card" style={{ padding: '24px' }}>
+              <h3>군단 편제 열람</h3>
+              {(corps || []).map(c => <div key={c.id} style={{ marginBottom: '8px' }}>{c.name} ({(c.units || []).length}기)</div>)}
+            </div>
+          );
+        }
         return (
           <CorpsFormation 
             countryId={countryId} 
@@ -1509,6 +1660,14 @@ export default function CountryPage() {
           />
         );
       case 'air_wing':
+        if (espionageMode) {
+          return (
+            <div className="card" style={{ padding: '24px' }}>
+              <h3>비행단 편제 열람</h3>
+              {(airWings || []).map(w => <div key={w.id} style={{ marginBottom: '8px' }}>{w.name} ({(w.unitIds || []).length}기)</div>)}
+            </div>
+          );
+        }
         return (
           <AirWingFormation
             militaryUnits={militaryUnits}
@@ -1522,8 +1681,10 @@ export default function CountryPage() {
           />
         );
       case 'transfers':
+        if (espionageMode) return <p style={{ color: 'var(--text-muted)' }}>첩보 열람 모드에서는 수송 기능을 사용할 수 없습니다.</p>;
         return renderTransfers();
       case 'aerial':
+        if (espionageMode) return <p style={{ color: 'var(--text-muted)' }}>첩보 열람 모드에서는 공중전 조작이 제한됩니다.</p>;
         return renderAerial();
       default:
         return null;
@@ -1553,8 +1714,14 @@ export default function CountryPage() {
         )}
       </div>
 
+      {espionageMode && (
+        <div className="card" style={{ padding: '12px', marginBottom: '12px', border: '1px solid var(--warning)' }}>
+          첩보 열람 모드: 내 국가({espionageSourceCountryId})의 첩보력 배수 {espionageLevel}x 기준으로 허용된 탭만 열람 가능합니다.
+        </div>
+      )}
+
       <div className="tabs" style={{ flexWrap: 'wrap' }}>
-        {tabs.map((tab) => (
+        {tabs.filter(tab => !espionageMode || espionageAllowedTabs.includes(tab.id)).map((tab) => (
           <button
             key={tab.id}
             className={`tab ${activeTab === tab.id ? 'active' : ''}`}

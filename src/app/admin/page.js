@@ -78,6 +78,7 @@ export default function AdminPage() {
   const [testAerialGame, setTestAerialGame] = useState(null); // 테스트 게임 상태
   const [testGameLog, setTestGameLog] = useState([]); // 라운드 로그
   const [adminGenerals, setAdminGenerals] = useState([]);
+  const [nationalSpiritData, setNationalSpiritData] = useState({ spirits: [] });
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -222,6 +223,9 @@ export default function AdminPage() {
       });
       if (eco) setEconomyImages(await getAllImages(eco.id));
       else setEconomyImages([]);
+
+      const spiritEntry = await getDataEntry('national_spirits', cId);
+      setNationalSpiritData(spiritEntry?.data || { spirits: [] });
 
       // Social
       const soc = await getDataEntry('social', cId);
@@ -887,6 +891,7 @@ export default function AdminPage() {
     const countryTabs = [
       { id: 'politics', label: '🏛️ 정치' },
       { id: 'economy', label: '💰 경제' },
+      { id: 'national-spirit', label: '🪖 국민정신' },
       { id: 'social', label: '📢 사회문제' },
       { id: 'diplomacy', label: '🤝 외교관계' },
       { id: 'admin-research', label: '🔬 연구 관리' },
@@ -931,6 +936,7 @@ export default function AdminPage() {
               <>
                 {countryTab === 'politics' && renderPoliticsEditor()}
                 {countryTab === 'economy' && renderEconomyEditor()}
+                {countryTab === 'national-spirit' && renderNationalSpiritEditor()}
                 {countryTab === 'social' && renderTextEditor('social', socialData, setSocialData, socialEntry, socialImages)}
                 {countryTab === 'diplomacy' && renderTextEditor('diplomacy', diplomacyData, setDiplomacyData, diplomacyEntry, diplomacyImages)}
                 {countryTab === 'admin-research' && renderAdminResearchEditor()}
@@ -1588,6 +1594,88 @@ export default function AdminPage() {
         </button>
 
         {economyEntry && <ImageSection imgs={economyImages} entryId={economyEntry.id} />}
+      </div>
+    );
+  };
+
+  const renderNationalSpiritEditor = () => {
+    const spirits = nationalSpiritData?.spirits || [];
+    const updateSpirit = (idx, patch) => {
+      const next = [...spirits];
+      next[idx] = { ...next[idx], ...patch };
+      setNationalSpiritData({ spirits: next });
+    };
+
+    return (
+      <div className="slide-up">
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">🪖 국민정신 편집</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '12px' }}>
+            국가별 국민정신을 생성/수정하고 전투 및 경제 퍼센트 효과를 설정합니다.
+          </p>
+
+          {(spirits || []).map((s, idx) => (
+            <div key={s.id || idx} className="card" style={{ padding: '16px', marginBottom: '12px' }}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">이름</label>
+                  <input className="form-input" value={s.name || ''} onChange={(e) => updateSpirit(idx, { name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">이미지 URL</label>
+                  <input className="form-input" value={s.image || ''} onChange={(e) => updateSpirit(idx, { image: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input type="checkbox" checked={s.enabled !== false} onChange={(e) => updateSpirit(idx, { enabled: e.target.checked })} />
+                    활성화
+                  </label>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">설명</label>
+                <textarea className="form-textarea" value={s.description || ''} onChange={(e) => updateSpirit(idx, { description: e.target.value })} style={{ minHeight: '70px' }} />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">공격력 %</label><input type="number" className="form-input" value={s.effects?.unitAttackPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitAttackPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">방어력 %</label><input type="number" className="form-input" value={s.effects?.unitDefensePct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitDefensePct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">체력 %</label><input type="number" className="form-input" value={s.effects?.unitHpPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitHpPct: Number(e.target.value) } })} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">대공능력 %</label><input type="number" className="form-input" value={s.effects?.unitAntiAirPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitAntiAirPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">관찰력 %</label><input type="number" className="form-input" value={s.effects?.unitObservationPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitObservationPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">관통력 %</label><input type="number" className="form-input" value={s.effects?.unitPenetrationPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), unitPenetrationPct: Number(e.target.value) } })} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">식량 생산 %</label><input type="number" className="form-input" value={s.effects?.foodProdPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), foodProdPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">자원 생산 %</label><input type="number" className="form-input" value={s.effects?.resourceProdPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), resourceProdPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">소비재 생산 %</label><input type="number" className="form-input" value={s.effects?.consumerGoodsProdPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), consumerGoodsProdPct: Number(e.target.value) } })} /></div>
+                <div className="form-group"><label className="form-label">중공업코인 생산 %</label><input type="number" className="form-input" value={s.effects?.heavyCoinProdPct || 0} onChange={(e) => updateSpirit(idx, { effects: { ...(s.effects || {}), heavyCoinProdPct: Number(e.target.value) } })} /></div>
+              </div>
+
+              <button className="btn btn-sm btn-danger" onClick={() => setNationalSpiritData({ spirits: spirits.filter((_, i) => i !== idx) })}>삭제</button>
+            </div>
+          ))}
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-sm btn-ghost" onClick={() => setNationalSpiritData({
+              spirits: [
+                ...spirits,
+                {
+                  id: `spirit_${Date.now()}`,
+                  name: '신규 국민정신',
+                  description: '',
+                  image: '',
+                  enabled: true,
+                  effects: {}
+                }
+              ]
+            })}>➕ 국민정신 추가</button>
+            <button className="btn btn-primary" onClick={() => handleSaveCountryData('national_spirits', nationalSpiritData)}>💾 국민정신 저장</button>
+          </div>
+        </div>
       </div>
     );
   };

@@ -66,6 +66,33 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   const [selectedAirWingId, setSelectedAirWingId] = useState('');
   const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
 
+  const applySpiritToUnit = (unit) => {
+    const e = countryStats?.spiritEffects || {};
+    const atkPct = Number(e.unitAttackPct || 0);
+    const defPct = Number(e.unitDefensePct || 0);
+    const hpPct = Number(e.unitHpPct || 0);
+    const aaPct = Number(e.unitAntiAirPct || 0);
+    const obPct = Number(e.unitObservationPct || 0);
+    const penPct = Number(e.unitPenetrationPct || 0);
+
+    const baseMaxHp = Number(unit.maxHp || unit.hp || 100);
+    const nextMaxHp = Math.max(1, Math.floor(baseMaxHp * (1 + hpPct / 100)));
+    const baseHp = Number(unit.hp || baseMaxHp);
+    const hpRatio = baseMaxHp > 0 ? (baseHp / baseMaxHp) : 1;
+    const nextHp = Math.max(1, Math.min(nextMaxHp, Math.floor(nextMaxHp * hpRatio)));
+
+    return {
+      ...unit,
+      attack: Math.max(0, Math.floor(Number(unit.attack || 0) * (1 + atkPct / 100))),
+      defense: Math.max(0, Math.floor(Number(unit.defense || 0) * (1 + defPct / 100))),
+      maxHp: nextMaxHp,
+      hp: nextHp,
+      antiAir: Math.max(0, Math.floor(Number(unit.antiAir || 0) * (1 + aaPct / 100))),
+      vision: Math.max(0, Math.floor(Number(unit.vision || 0) * (1 + obPct / 100))),
+      penetration: Math.max(0, Math.floor(Number(unit.penetration || 0) * (1 + penPct / 100)))
+    };
+  };
+
   const buildUnitsFromFleet = (fleet, session = null) => {
     const myUnits = [];
     (fleet?.shipIds || []).forEach(uid => {
@@ -80,7 +107,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
         : true;
       const startX = isTeam1 ? 0 : 19;
 
-      myUnits.push({
+      myUnits.push(applySpiritToUnit({
         ...u,
         name: u.customName || tmpl.name || u.name || '함선',
         image: tmpl.image || u.image || null,
@@ -101,7 +128,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
         owner: countryId,
         fleetId: fleet.id,
         aiLevel: generals.find(g => g.id === fleet.admiralId)?.aiLevel || 1
-      });
+      }));
     });
 
     return myUnits;
@@ -121,7 +148,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
         : true;
       const startX = isTeam1 ? 0 : 19;
 
-      myUnits.push({
+      myUnits.push(applySpiritToUnit({
         ...u,
         name: u.customName || tmpl.name || u.name || '항공기',
         image: tmpl.image || u.image || null,
@@ -141,7 +168,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
         owner: countryId,
         wingId: wing.id,
         aiLevel: generals.find(g => g.id === wing.commanderId)?.aiLevel || 1
-      });
+      }));
     });
 
     return myUnits;
@@ -351,7 +378,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             const u = militaryUnits.find(mu => mu.id === uid);
             if (u) {
               const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
-              myUnits.push({
+              myUnits.push(applySpiritToUnit({
                 ...u,
                 name: u.customName || tmpl.name || u.name || '유닛',
                 image: tmpl.image || u.image || null,
@@ -372,7 +399,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
                 corpsId: c.id,
                 aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
                 isHQ: false
-              });
+              }));
             }
           });
         }
@@ -517,7 +544,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
 
               const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
               const startX = isTeam1 ? 0 : 19;
-              myUnits.push({
+              myUnits.push(applySpiritToUnit({
                 ...u,
                 name: u.customName || tmpl.name || '알 수 없는 유닛',
                 image: tmpl.image || null,
@@ -538,7 +565,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
                 corpsId: c.id,
                 aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
                 isHQ: false
-              });
+              }));
             }
           });
         }
