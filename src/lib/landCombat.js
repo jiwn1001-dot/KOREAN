@@ -674,15 +674,17 @@ export function resolveSimultaneousTurn(session) {
     });
 
     const winner = contenders[0];
-    
-    // 이동 완료 처리 및 지형 디버프 부여
-    winner.unit.x = targetX;
-    winner.unit.y = targetY;
-    applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
+    const originalX = winner.unit.x;
+    const originalY = winner.unit.y;
 
-    // 도착한 곳에 적이 있다면 근접 교전 발생
-    const occupant = units.find(u => u.x === targetX && u.y === targetY && u.status === 'field' && u.id !== winner.unit.id);
-    if (occupant && occupant.owner !== winner.unit.owner) {
+    // 목표 타일에 기존 적 점유 유닛이 있으면, 우선 제자리에서 공격 판정을 수행한다.
+    // 적을 격파하지 못하면 전진하지 않고 제자리에 남는다.
+    const occupant = units.find(u => u.x === targetX && u.y === targetY && u.status === 'field' && u.owner !== winner.unit.owner);
+    if (!occupant) {
+      winner.unit.x = targetX;
+      winner.unit.y = targetY;
+      applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
+    } else {
       // winner가 occupant를 공격, occupant가 winner를 반격
       if (occupant.isHQ) {
         if (winner.order && winner.order.isAirdrop && winner.unit.subCategory === '공수부대') {
@@ -713,6 +715,17 @@ export function resolveSimultaneousTurn(session) {
         const occupantEffects = applyTileEffects(occupant, board[occupant.y]?.[occupant.x]);
         const dmgToWinner = calculateDamage(Math.floor(defenderDmg * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
         winner.unit.hp -= dmgToWinner;
+      }
+
+      const occupantAlive = occupant.status === 'field' && (occupant.hp || 0) > 0;
+      const winnerAlive = winner.unit.status === 'field' && (winner.unit.hp || 0) > 0;
+      if (!occupantAlive && winnerAlive) {
+        winner.unit.x = targetX;
+        winner.unit.y = targetY;
+        applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
+      } else {
+        winner.unit.x = originalX;
+        winner.unit.y = originalY;
       }
     }
     
