@@ -531,13 +531,17 @@ export async function applyCombatCasualties(casualties) {
         if (ecoEntry && ecoEntry.data) {
           const currentEco = ecoEntry.data;
           const currentMob = currentEco.population?.mobilizable || 0;
+          const usablePct = Math.max(0, Math.min(100, Number(currentEco.population?.usableMobilizablePct ?? 100)));
           const newMob = Math.max(0, currentMob - loss.manpower);
+          const newMobilized = Math.floor(newMob * (usablePct / 100));
           
           await upsertDataEntry('economy', countryId, {
             ...currentEco,
             population: {
               ...(currentEco.population || {}),
-              mobilizable: newMob
+              mobilizable: newMob,
+              usableMobilizablePct: usablePct,
+              mobilized: newMobilized
             }
           });
         }

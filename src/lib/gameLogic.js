@@ -1,5 +1,53 @@
 import { supabase } from './supabase';
 
+function normalizePopulation(population = {}) {
+  const total = Number(population.total || 0);
+  const mobilizable = Number(population.mobilizable || 0);
+  const usablePctRaw = Number(population.usableMobilizablePct ?? 100);
+  const usableMobilizablePct = Math.max(0, Math.min(100, usablePctRaw));
+  const mobilized = Math.floor(mobilizable * (usableMobilizablePct / 100));
+
+  return {
+    ...population,
+    total,
+    mobilizable,
+    usableMobilizablePct,
+    mobilized
+  };
+}
+
+async function getEconomyData(countryId) {
+  const { data } = await supabase
+    .from('data_entries')
+    .select('id, data')
+    .eq('category', 'economy')
+    .eq('country_id', countryId)
+    .single();
+  return data?.data || {};
+}
+
+function isBlockedAgainst(economyData, otherCountryId) {
+  const policy = economyData?.tradePolicy || {};
+  const blocked = !!policy.seaBlockaded;
+  const exceptions = Array.isArray(policy.blockadeExceptions) ? policy.blockadeExceptions : [];
+  return blocked && !exceptions.includes(otherCountryId);
+}
+
+async function validateSeaTrade(fromCountryId, toCountryId) {
+  const [fromEco, toEco] = await Promise.all([
+    getEconomyData(fromCountryId),
+    getEconomyData(toCountryId)
+  ]);
+
+  if (isBlockedAgainst(fromEco, toCountryId)) {
+    return { ok: false, message: '해상봉쇄 상태로 인해 전송할 수 없습니다. (예외 교역국 아님)' };
+  }
+  if (isBlockedAgainst(toEco, fromCountryId)) {
+    return { ok: false, message: '상대국이 해상봉쇄 상태이며 예외 교역국으로 지정되지 않았습니다.' };
+  }
+  return { ok: true };
+}
+
 /**
  * 게임의 현재 상태(연구, 자원, 경제)를 스냅샷으로 저장
  */
@@ -172,6 +220,7 @@ export async function processTurnEnd(newTurn) {
     if (!ecoError && ecoEntries) {
       for (const entry of ecoEntries) {
         let data = entry.data || {};
+        data.population = normalizePopulation(data.population || {});
         
         // 3-1. 상업 코인 및 경제 투자에 의한 GDP 증가
         let currentGdp = Number(data.gdp || 0);
@@ -349,6 +398,9 @@ export async function processTurnEnd(newTurn) {
           const gRate = data.population.growthRate;
           data.population.total = Math.floor(data.population.total + (data.population.total * gRate / 100));
           data.population.mobilizable = Math.floor(data.population.mobilizable + (data.population.mobilizable * gRate / 100));
+          data.population = normalizePopulation(data.population);
+        } else {
+          data.population = normalizePopulation(data.population);
         }
 
         // DB 업데이트
@@ -398,12 +450,16 @@ export async function processTurnEnd(newTurn) {
 
               let possibleRatio = 1;
               let availableMob = 0;
+              let availableMobilized = 0;
 
               if (manpowerBase > 0) {
                 const ecoEntry = ecoEntries.find(e => e.country_id === uEntry.country_id);
                 const ecoData = ecoEntry?.data || {};
+                ecoData.population = normalizePopulation(ecoData.population || {});
                 availableMob = Number(ecoData.population?.mobilizable || 0);
+                availableMobilized = Number(ecoData.population?.mobilized || 0);
                 possibleRatio = Math.min(possibleRatio, availableMob / manpowerBase);
+                possibleRatio = Math.min(possibleRatio, availableMobilized / manpowerBase);
               }
 
               for (const rw of reqWeapons) {
@@ -422,15 +478,18 @@ export async function processTurnEnd(newTurn) {
                 if (manpowerBase > 0) {
                   const ecoEntry = ecoEntries.find(e => e.country_id === uEntry.country_id);
                   if (ecoEntry?.data) {
+                    ecoEntry.data.population = normalizePopulation(ecoEntry.data.population || {});
                     const manpowerSpend = Math.min(
                       Number(ecoEntry.data.population?.mobilizable || 0),
+                      Number(ecoEntry.data.population?.mobilized || 0),
                       Math.max(0, Math.ceil(manpowerBase * actualRatio))
                     );
                     ecoEntry.data = {
                       ...ecoEntry.data,
                       population: {
                         ...(ecoEntry.data.population || {}),
-                        mobilizable: Math.max(0, Number(ecoEntry.data.population?.mobilizable || 0) - manpowerSpend)
+                        mobilizable: Math.max(0, Number(ecoEntry.data.population?.mobilizable || 0) - manpowerSpend),
+                        mobilized: Math.max(0, Number(ecoEntry.data.population?.mobilized || 0) - manpowerSpend)
                       }
                     };
                     if (manpowerSpend > 0) {
@@ -631,9 +690,16 @@ export async function transferItem(senderId, receiverId, category, itemKey, amou
   if (senderId === receiverId) return { success: false, error: '자기 자신에게 보낼 수 없습니다.' };
 
   try {
+    const tradeCheck = await validateSeaTrade(senderId, receiverId);
+    if (!tradeCheck.ok) return { success: false, error: tradeCheck.message };
+
     if (category === 'coin') {
-      const { data: sData } = await supabase.from('data_entries').select('data').eq('category', `economy_${senderId}`).eq('country_id', senderId).single();
-      const { data: rData } = await supabase.from('data_entries').select('data').eq('category', `economy_${receiverId}`).eq('country_id', receiverId).single();
+      if (itemKey !== 'heavyIndustryCoins') {
+        return { success: false, error: '국가 간 코인 이전은 중공업코인만 허용됩니다.' };
+      }
+
+      const { data: sData } = await supabase.from('data_entries').select('id, data').eq('category', 'economy').eq('country_id', senderId).single();
+      const { data: rData } = await supabase.from('data_entries').select('id, data').eq('category', 'economy').eq('country_id', receiverId).single();
       
       const senderEcon = sData?.data || {};
       const receiverEcon = rData?.data || {};
@@ -643,8 +709,8 @@ export async function transferItem(senderId, receiverId, category, itemKey, amou
       senderEcon[itemKey] = (senderEcon[itemKey] || 0) - amount;
       receiverEcon[itemKey] = (receiverEcon[itemKey] || 0) + amount;
       
-      await supabase.from('data_entries').upsert({ category: `economy_${senderId}`, country_id: senderId, data: senderEcon }, { onConflict: 'country_id,category' });
-      await supabase.from('data_entries').upsert({ category: `economy_${receiverId}`, country_id: receiverId, data: receiverEcon }, { onConflict: 'country_id,category' });
+      await supabase.from('data_entries').update({ data: senderEcon }).eq('id', sData.id);
+      await supabase.from('data_entries').update({ data: receiverEcon }).eq('id', rData.id);
       
       return { success: true };
     } else if (category === 'resource' || category === 'weapon') {
@@ -682,6 +748,13 @@ export async function transferItem(senderId, receiverId, category, itemKey, amou
 
 export async function transferItems(fromCountryId, toCountryId, itemType, itemKey, amount) {
   if (amount <= 0) return { success: false, message: '수량은 1 이상이어야 합니다.' };
+
+  const tradeCheck = await validateSeaTrade(fromCountryId, toCountryId);
+  if (!tradeCheck.ok) return { success: false, message: tradeCheck.message };
+
+  if (itemType === 'coin' && itemKey !== 'heavyIndustryCoins') {
+    return { success: false, message: '국가 간 코인 이전은 중공업코인만 허용됩니다.' };
+  }
   
   // 1. Check if sender currently has enough before even creating the request
   if (itemType === 'resource' || itemType === 'weapon') {
@@ -693,7 +766,7 @@ export async function transferItems(fromCountryId, toCountryId, itemType, itemKe
       return { success: false, message: '보낼 물자가 부족합니다.' };
     }
   } else if (itemType === 'coin') {
-    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', fromCountryId).single();
+    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'economy').eq('country_id', fromCountryId).single();
     if (!senderData || !senderData.data[itemKey] || senderData.data[itemKey] < amount) {
       return { success: false, message: '보낼 코인이 부족합니다.' };
     }
@@ -737,6 +810,13 @@ export async function acceptTransfer(transferId, receiverCountryId) {
   const transfer = transfers[transferIndex];
   const { from: fromCountryId, type: itemType, key: itemKey, amount } = transfer;
 
+  const tradeCheck = await validateSeaTrade(fromCountryId, receiverCountryId);
+  if (!tradeCheck.ok) return { success: false, message: tradeCheck.message };
+
+  if (itemType === 'coin' && itemKey !== 'heavyIndustryCoins') {
+    return { success: false, message: '국가 간 코인 이전은 중공업코인만 허용됩니다.' };
+  }
+
   // 1. Perform the actual transfer
   if (itemType === 'resource' || itemType === 'weapon') {
     let query = supabase.from('resources').select('*').eq('country_id', fromCountryId);
@@ -767,12 +847,12 @@ export async function acceptTransfer(transferId, receiverCountryId) {
       });
     }
   } else if (itemType === 'coin') {
-    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', fromCountryId).single();
+    const { data: senderData } = await supabase.from('data_entries').select('*').eq('category', 'economy').eq('country_id', fromCountryId).single();
     if (!senderData || !senderData.data[itemKey] || senderData.data[itemKey] < amount) {
       return { success: false, message: '상대방의 잔여 코인이 부족하여 수락할 수 없습니다.' };
     }
     
-    const { data: receiverData } = await supabase.from('data_entries').select('*').eq('category', 'country_stats').eq('country_id', receiverCountryId).single();
+    const { data: receiverData } = await supabase.from('data_entries').select('*').eq('category', 'economy').eq('country_id', receiverCountryId).single();
     if (!receiverData) return { success: false, message: '수신국 데이터를 찾을 수 없습니다.' };
     
     senderData.data[itemKey] -= amount;

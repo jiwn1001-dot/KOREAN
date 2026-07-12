@@ -100,11 +100,12 @@ export default function AdminPage() {
     taxRate: 0,
     researchSlots: 1,
     multipliers: { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 },
-    population: { total: 0, mobilizable: 0 },
+    population: { total: 0, mobilizable: 0, mobilized: 0, usableMobilizablePct: 100 },
     allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
     commerceCoins: 0,
     heavyIndustryComplexes: 0,
     shipyards: 0,
+    tradePolicy: { seaBlockaded: false, blockadeExceptions: [] },
     customFields: [],
   });
   const [economyImages, setEconomyImages] = useState([]);
@@ -211,11 +212,12 @@ export default function AdminPage() {
         taxRate: 0,
         researchSlots: 1,
         multipliers: { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 },
-        population: { total: 0, mobilizable: 0, growthRate: 0 },
+        population: { total: 0, mobilizable: 0, mobilized: 0, usableMobilizablePct: 100, growthRate: 0 },
         allocation: { mining: 0, agriculture: 0, commerce: 0, lightIndustry: 0 },
         commerceCoins: 0,
         heavyIndustryComplexes: 0,
         shipyards: 0,
+        tradePolicy: { seaBlockaded: false, blockadeExceptions: [] },
         customFields: [],
       });
       if (eco) setEconomyImages(await getAllImages(eco.id));
@@ -462,7 +464,27 @@ export default function AdminPage() {
   const handleSaveCountryData = async (category, entryData) => {
     if (!selectedCountryId) return;
     try {
-      const entry = await upsertDataEntry(category, selectedCountryId, entryData);
+      let payload = entryData;
+      if (category === 'economy') {
+        const pop = payload?.population || {};
+        const mobilizable = Number(pop.mobilizable || 0);
+        const usablePct = Math.max(0, Math.min(100, Number(pop.usableMobilizablePct ?? 100)));
+        payload = {
+          ...payload,
+          population: {
+            ...pop,
+            mobilizable,
+            usableMobilizablePct: usablePct,
+            mobilized: Math.floor(mobilizable * (usablePct / 100))
+          },
+          tradePolicy: {
+            seaBlockaded: !!payload?.tradePolicy?.seaBlockaded,
+            blockadeExceptions: Array.isArray(payload?.tradePolicy?.blockadeExceptions) ? payload.tradePolicy.blockadeExceptions : []
+          }
+        };
+      }
+
+      const entry = await upsertDataEntry(category, selectedCountryId, payload);
       showToast('저장되었습니다');
 
       // Refresh the entry reference
@@ -1219,12 +1241,15 @@ export default function AdminPage() {
                     const newTotal = Number(e.target.value);
                     const oldTotal = economyData.population?.total || 0;
                     const delta = newTotal - oldTotal;
+                    const usablePct = Math.max(0, Math.min(100, Number(economyData.population?.usableMobilizablePct ?? 100)));
+                    const nextMobilizable = (economyData.population?.mobilizable || 0) + (delta * 0.4);
                     setEconomyData(p => ({
                       ...p,
                       population: {
                         ...p.population,
                         total: newTotal,
-                        mobilizable: (p.population?.mobilizable || 0) + (delta * 0.4)
+                        mobilizable: nextMobilizable,
+                        mobilized: Math.floor(nextMobilizable * (usablePct / 100))
                       }
                     }));
                   }}
@@ -1246,14 +1271,17 @@ export default function AdminPage() {
                 <button id="btnApplyTotalPop" type="button" className="btn btn-sm btn-secondary" onClick={() => {
                   const delta = Number(document.getElementById('totalPopDelta').value) || 0;
                   if (delta === 0) return;
+                  const usablePct = Math.max(0, Math.min(100, Number(economyData.population?.usableMobilizablePct ?? 100)));
                   const oldTotal = economyData.population?.total || 0;
                   const newTotal = oldTotal + delta;
+                  const nextMobilizable = (economyData.population?.mobilizable || 0) + (delta * 0.4);
                   setEconomyData(p => ({
                     ...p,
                     population: {
                       ...p.population,
                       total: newTotal,
-                      mobilizable: (p.population?.mobilizable || 0) + (delta * 0.4)
+                      mobilizable: nextMobilizable,
+                      mobilized: Math.floor(nextMobilizable * (usablePct / 100))
                     }
                   }));
                   document.getElementById('totalPopDelta').value = '';
@@ -1267,9 +1295,18 @@ export default function AdminPage() {
                   type="number"
                   className="form-input"
                   value={economyData.population?.mobilizable || 0}
-                  onChange={(e) => setEconomyData(p => ({
-                    ...p, population: { ...p.population, mobilizable: Number(e.target.value) }
-                  }))}
+                  onChange={(e) => {
+                    const nextMobilizable = Number(e.target.value);
+                    const usablePct = Math.max(0, Math.min(100, Number(economyData.population?.usableMobilizablePct ?? 100)));
+                    setEconomyData(p => ({
+                      ...p,
+                      population: {
+                        ...p.population,
+                        mobilizable: nextMobilizable,
+                        mobilized: Math.floor(nextMobilizable * (usablePct / 100))
+                      }
+                    }));
+                  }}
                   style={{ flex: 1 }}
                 />
                 <input 
@@ -1288,13 +1325,54 @@ export default function AdminPage() {
                 <button id="btnApplyMobPop" type="button" className="btn btn-sm btn-secondary" onClick={() => {
                   const delta = Number(document.getElementById('mobPopDelta').value) || 0;
                   if (delta === 0) return;
+                  const usablePct = Math.max(0, Math.min(100, Number(economyData.population?.usableMobilizablePct ?? 100)));
                   setEconomyData(p => ({
-                    ...p, population: { ...p.population, mobilizable: (p.population?.mobilizable || 0) + delta }
+                    ...p,
+                    population: {
+                      ...p.population,
+                      mobilizable: (p.population?.mobilizable || 0) + delta,
+                      mobilized: Math.floor(((p.population?.mobilizable || 0) + delta) * (usablePct / 100))
+                    }
                   }));
                   document.getElementById('mobPopDelta').value = '';
                 }}>적용</button>
               </div>
-              <small style={{ color: 'var(--text-muted)' }}>초기 1회 40% 산정 후 수동/증감치로 관리</small>
+              <small style={{ color: 'var(--text-muted)' }}>동원인구는 설정된 사용 비율에 따라 자동 계산됩니다.</small>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">동원가능 인구 사용 비율 (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                className="form-input"
+                value={economyData.population?.usableMobilizablePct ?? 100}
+                onChange={(e) => {
+                  const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                  const mobilizable = Number(economyData.population?.mobilizable || 0);
+                  setEconomyData(p => ({
+                    ...p,
+                    population: {
+                      ...p.population,
+                      usableMobilizablePct: pct,
+                      mobilized: Math.floor(mobilizable * (pct / 100))
+                    }
+                  }));
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">동원인구 (자동 계산)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={economyData.population?.mobilized ?? Math.floor((economyData.population?.mobilizable || 0) * ((economyData.population?.usableMobilizablePct ?? 100) / 100))}
+                readOnly
+              />
+              <small style={{ color: 'var(--text-muted)' }}>생산/회복 시 동원가능인구와 함께 동시에 차감됩니다.</small>
             </div>
           </div>
 
@@ -1445,6 +1523,62 @@ export default function AdminPage() {
               <input type="number" className="form-input" value={economyData.shipyards || 0} onChange={e => setEconomyData(p => ({ ...p, shipyards: Number(e.target.value) }))} />
             </div>
           </div>
+        </div>
+
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">🚫 해상봉쇄 / 예외 교역국</h3>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">해상봉쇄 상태</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={!!economyData.tradePolicy?.seaBlockaded}
+                  onChange={(e) => setEconomyData(p => ({
+                    ...p,
+                    tradePolicy: {
+                      ...(p.tradePolicy || {}),
+                      seaBlockaded: e.target.checked,
+                      blockadeExceptions: Array.isArray(p.tradePolicy?.blockadeExceptions) ? p.tradePolicy.blockadeExceptions : []
+                    }
+                  }))}
+                />
+                <span>봉쇄 적용</span>
+              </div>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">예외 교역국 (봉쇄 중에도 교역 허용)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {countries.filter(c => c.id !== selectedCountryId).map(c => {
+                const checked = (economyData.tradePolicy?.blockadeExceptions || []).includes(c.id);
+                return (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const current = Array.isArray(economyData.tradePolicy?.blockadeExceptions) ? economyData.tradePolicy.blockadeExceptions : [];
+                        const next = e.target.checked ? [...current, c.id] : current.filter(id => id !== c.id);
+                        setEconomyData(p => ({
+                          ...p,
+                          tradePolicy: {
+                            ...(p.tradePolicy || {}),
+                            seaBlockaded: !!p.tradePolicy?.seaBlockaded,
+                            blockadeExceptions: [...new Set(next)]
+                          }
+                        }));
+                      }}
+                    />
+                    {c.name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <small style={{ color: 'var(--text-muted)' }}>
+            봉쇄국은 자원/무기/코인 송수신이 금지됩니다. 단 예외 교역국과는 허용됩니다. 코인은 중공업코인만 국가 간 이전 가능합니다.
+          </small>
         </div>
 
         {renderCustomFields(economyData, setEconomyData)}

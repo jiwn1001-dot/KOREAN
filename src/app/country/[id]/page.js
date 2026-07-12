@@ -970,7 +970,9 @@ export default function CountryPage() {
 
   const renderFormation = () => {
     const mobilizableRaw = economyData.population?.mobilizable || 0;
+    const mobilizedRaw = economyData.population?.mobilized || 0;
     const totalMobilizable = typeof mobilizableRaw === 'string' ? Number(mobilizableRaw.replace(/,/g, '')) : Number(mobilizableRaw);
+    const totalMobilized = typeof mobilizedRaw === 'string' ? Number(mobilizedRaw.replace(/,/g, '')) : Number(mobilizedRaw);
 
     return (
       <div className="slide-up">
@@ -1018,12 +1020,16 @@ export default function CountryPage() {
                 if (!template) return null;
                 const totalManpowerCost = (template.manpowerCost || 0) * createUnitCount;
                 const isManpowerShort = totalMobilizable < totalManpowerCost;
+                const isMobilizedShort = totalMobilized < totalManpowerCost;
                 
                 return (
                   <div style={{ marginBottom: '16px', padding: '12px', background: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
                     <h4 style={{ marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>소모 자원 미리보기</h4>
                     <div style={{ fontSize: '0.9rem', marginBottom: '4px', color: isManpowerShort ? 'var(--error)' : 'inherit' }}>
                       <strong>동원가능인구:</strong> {totalManpowerCost.toLocaleString()} 필요 / {totalMobilizable.toLocaleString()} 보유
+                    </div>
+                    <div style={{ fontSize: '0.9rem', marginBottom: '4px', color: isMobilizedShort ? 'var(--error)' : 'inherit' }}>
+                      <strong>동원인구:</strong> {totalManpowerCost.toLocaleString()} 필요 / {totalMobilized.toLocaleString()} 보유
                     </div>
                     {template.requiredWeapons?.map(rw => {
                       const needed = rw.amount * createUnitCount;
@@ -1054,6 +1060,9 @@ export default function CountryPage() {
                 if (totalMobilizable < totalManpowerCost) {
                   return alert(`동원가능인구가 부족합니다. (필요: ${totalManpowerCost}, 현재: ${totalMobilizable})`);
                 }
+                if (totalMobilized < totalManpowerCost) {
+                  return alert(`동원인구가 부족합니다. (필요: ${totalManpowerCost}, 현재: ${totalMobilized})`);
+                }
 
                 // 무기 확인
                 const reqWeapons = template.requiredWeapons || [];
@@ -1076,7 +1085,11 @@ export default function CountryPage() {
                 
                 // 2. 동원가능인구 차감
                 const newEcoData = { ...economyData };
-                newEcoData.population = { ...newEcoData.population, mobilizable: totalMobilizable - totalManpowerCost };
+                newEcoData.population = {
+                  ...newEcoData.population,
+                  mobilizable: totalMobilizable - totalManpowerCost,
+                  mobilized: Math.max(0, Number(newEcoData.population?.mobilized || 0) - totalManpowerCost)
+                };
                 await upsertDataEntry('economy', countryId, newEcoData);
 
                 // 3. 편제 유닛 추가
@@ -1166,7 +1179,11 @@ export default function CountryPage() {
                               
                               // 2. Return manpower
                               const newEcoData = { ...economyData };
-                              newEcoData.population = { ...(newEcoData.population || {}), mobilizable: Number(newEcoData.population?.mobilizable || 0) + manpowerToReturn };
+                              newEcoData.population = {
+                                ...(newEcoData.population || {}),
+                                mobilizable: Number(newEcoData.population?.mobilizable || 0) + manpowerToReturn,
+                                mobilized: Number(newEcoData.population?.mobilized || 0) + manpowerToReturn
+                              };
                               await upsertDataEntry('economy', countryId, newEcoData);
                               
                               // 3. Update unit count
@@ -1322,9 +1339,7 @@ export default function CountryPage() {
               <select id="transferItem" className="form-select" style={{ flex: 1, minWidth: '150px' }}>
                 <option value="">-- 보낼 물자 선택 --</option>
                 <optgroup label="코인">
-                  <option value="coin:agricultureCoins">농업 코인</option>
                   <option value="coin:heavyIndustryCoins">중공업 코인</option>
-                  <option value="coin:lightIndustryCoins">경공업 코인</option>
                 </optgroup>
                 <optgroup label="자원">
                   {resources.filter(r => r.resource_type !== 'weapon' && r.amount > 0).map(r => (
