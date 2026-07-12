@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import ParliamentArch from '@/components/ParliamentArch';
 import SupportPieChart from '@/components/SupportPieChart';
 import CorpsFormation from '@/components/CorpsFormation';
+import FleetFormation from '@/components/FleetFormation';
 import CombatLobby from '@/components/CombatLobby';
 import AerialBattleUI from '@/components/AerialBattleUI';
 
@@ -45,6 +46,7 @@ export default function CountryPage() {
   const [corps, setCorps] = useState([]);
   const [fieldArmies, setFieldArmies] = useState([]);
   const [generals, setGenerals] = useState([]);
+  const [navalFleets, setNavalFleets] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -133,6 +135,9 @@ export default function CountryPage() {
 
       const genEntry = await getDataEntry('generals', countryId);
       if (genEntry && genEntry.data) setGenerals(genEntry.data.generals || []);
+
+      const fleetEntry = await getDataEntry('naval_fleets', countryId);
+      if (fleetEntry && fleetEntry.data) setNavalFleets(fleetEntry.data.fleets || []);
     } catch(err) {
       console.error('Failed to load military units/corps', err);
     }
@@ -164,6 +169,7 @@ export default function CountryPage() {
     { id: 'military', label: '군수', icon: '⚔️' },
     { id: 'formation', label: '편제', icon: '🎖️' },
     { id: 'corps', label: '작전/군단', icon: '🏕️' },
+    { id: 'fleet', label: '함대 편제', icon: '🚢' },
     { id: 'land_combat', label: '지상전', icon: '🗺️' },
     { id: 'aerial', label: '공중전', icon: '✈️' },
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
@@ -1440,10 +1446,25 @@ export default function CountryPage() {
             militaryUnits={militaryUnits} 
             corps={corps} 
             armies={fieldArmies} 
+            navalFleets={navalFleets}
             generals={generals}
             admin={admin}
             countryStats={countryStats}
             unitTemplates={unitTemplates}
+          />
+        );
+      case 'fleet':
+        return (
+          <FleetFormation
+            countryId={countryId}
+            militaryUnits={militaryUnits}
+            unitTemplates={unitTemplates}
+            fleets={navalFleets}
+            admirals={generals}
+            onUpdateFleets={async (nextFleets) => {
+              setNavalFleets(nextFleets);
+              await upsertDataEntry('naval_fleets', countryId, { fleets: nextFleets });
+            }}
           />
         );
       case 'corps':
