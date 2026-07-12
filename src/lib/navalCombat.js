@@ -113,6 +113,16 @@ function getShipType(unit) {
   return 'ship';
 }
 
+function isSubDetectedByOwner(targetSub, ownerId, units) {
+  if (!isSubmarine(targetSub)) return true;
+  const myShips = units.filter(u => u.owner === ownerId && u.status === 'field' && u.majorCategory === '해군');
+  return myShips.some(u => {
+    const detectRadius = Math.floor((u.vision || 0) / 3);
+    if (detectRadius <= 0) return false;
+    return getOccupiedTiles(targetSub).some(t => Math.max(Math.abs(u.x - t.x), Math.abs(u.y - t.y)) <= detectRadius);
+  });
+}
+
 export function getVisibleNavalUnits(units, viewerId) {
   const myShips = units.filter(u => u.owner === viewerId && u.status === 'field' && u.majorCategory === '해군');
   const visible = new Set();
@@ -348,6 +358,10 @@ export function resolveNavalTurn(session) {
 
     if (action.type === 'missile') {
       if (action.targetShipId) {
+        const target = units.find(u => u.id === action.targetShipId && u.status === 'field');
+        if (target && isSubmarine(target) && !isSubDetectedByOwner(target, ship.owner, units)) {
+          continue;
+        }
         pendingMissiles.push({
           id: `ms_${ship.id}_${Date.now()}`,
           owner: ship.owner,
@@ -370,6 +384,7 @@ export function resolveNavalTurn(session) {
         if (!candidate) continue;
         if (action.type === 'depth_charge' && !isSubmarine(candidate.unit)) continue;
         if (action.type === 'torpedo' && action.onlySubmarineTargets && !isSubmarine(candidate.unit)) continue;
+        if (isSubmarine(candidate.unit) && !isSubDetectedByOwner(candidate.unit, ship.owner, units) && action.type !== 'depth_charge') continue;
         hit = candidate.unit;
         break;
       }
@@ -382,6 +397,7 @@ export function resolveNavalTurn(session) {
       const ty = action.target?.y;
       const victim = enemyShips.find(u => getOccupiedTiles(u).some(t => t.x === tx && t.y === ty));
       if (!victim) continue;
+      if (isSubmarine(victim)) continue; // 함포는 잠수함 타격 불가
 
       let damage = selfAttack;
       if (shipType === 'destroyer' || shipType === 'modern_destroyer') {
