@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getDataEntry, upsertDataEntry, getCountries } from '@/lib/store';
 import { deployAIUnits } from '@/lib/landCombat';
 import LandCombatBoard from '@/components/LandCombatBoard';
+import NavalCombatBoard from '@/components/NavalCombatBoard';
 
 function cloneUnitForAI(unit, aiOwnerId, isTeam1, aiLevel = 2) {
   const uniqueId = `${unit.id || 'unit'}_ai_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -365,21 +366,35 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
         <button className="btn btn-secondary" style={{ marginBottom: '16px' }} onClick={() => setActiveSession(null)}>
           ⬅️ 로비로 돌아가기
         </button>
-        <LandCombatBoard 
-          countryId={countryId} 
-          militaryUnits={militaryUnits} 
-          corps={corps} 
-          armies={armies} 
-          generals={generals}
-          initialSession={activeSession}
-          onSaveSession={async (updatedData) => {
-             const updatedSession = { ...activeSession, ...updatedData };
-             const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
-             setSessions(updatedSessions);
-             await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
-             setActiveSession(updatedSession);
-          }}
-        />
+        {activeSession.sessionCategory === 'naval' ? (
+          <NavalCombatBoard
+            countryId={countryId}
+            initialSession={activeSession}
+            onSaveSession={async (updatedData) => {
+              const updatedSession = { ...activeSession, ...updatedData };
+              const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
+              setSessions(updatedSessions);
+              await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
+              setActiveSession(updatedSession);
+            }}
+          />
+        ) : (
+          <LandCombatBoard 
+            countryId={countryId} 
+            militaryUnits={militaryUnits} 
+            corps={corps} 
+            armies={armies} 
+            generals={generals}
+            initialSession={activeSession}
+            onSaveSession={async (updatedData) => {
+               const updatedSession = { ...activeSession, ...updatedData };
+               const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
+               setSessions(updatedSessions);
+               await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
+               setActiveSession(updatedSession);
+            }}
+          />
+        )}
       </div>
     );
   }
