@@ -57,6 +57,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   const [showCreate, setShowCreate] = useState(false);
   const [sessionName, setSessionName] = useState('');
   const [selectedMapId, setSelectedMapId] = useState('');
+  const [sessionCategory, setSessionCategory] = useState('land');
   const [sessionMode, setSessionMode] = useState('human_vs_ai');
   const [supplyLimit, setSupplyLimit] = useState(10);
   const [opponentId, setOpponentId] = useState('');
@@ -149,63 +150,75 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   };
 
   const handleCreateSession = async () => {
-    if (!sessionName || !selectedMapId || !selectedArmyId) {
-      return alert('세션 이름, 맵, 그리고 투입할 야전군을 모두 선택해주세요.');
+    if (!sessionName || !selectedMapId) {
+      return alert('세션 이름과 맵을 선택해주세요.');
     }
-    
-    // Find the deployed army and its corps/units
-    const army = armies.find(a => a.id === selectedArmyId);
-    if (!army) return alert('야전군을 찾을 수 없습니다.');
-    
-    const myUnits = [];
-    army.corpsIds.forEach(cid => {
-      const c = corps.find(co => co.id === cid);
-      if (c) {
-        c.units.forEach(uid => {
-          const u = militaryUnits.find(mu => mu.id === uid);
-          if (u) {
-            const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
-            myUnits.push({
-              ...u,
-              name: u.customName || tmpl.name || u.name || '유닛',
-              image: tmpl.image || u.image || null,
-              attack: u.attack || tmpl.attack || 0,
-              defense: u.defense || tmpl.defense || 0,
-              speed: u.speed || tmpl.speed || 0,
-              hp: u.hp || tmpl.hp || 100,
-              maxHp: u.maxHp || u.hp || tmpl.hp || 100,
-              vision: u.vision || tmpl.vision || 0,
-              supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
-              majorCategory: tmpl.majorCategory || u.majorCategory || '육군',
-              minorCategory: tmpl.minorCategory || u.minorCategory || tmpl.minorCategory || '보병',
-              subCategory: tmpl.subCategory || u.subCategory || '보병',
-              x: 0,
-              y: 0,
-              status: 'standby',
-              owner: countryId,
-              corpsId: c.id,
-              aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
-              isHQ: false
-            });
-          }
-        });
-      }
-    });
 
-    myUnits.push({
-      id: 'hq_' + countryId,
-      name: '야전사령부',
-      subCategory: 'HQ',
-      x: 0,
-      y: 0,
-      status: 'standby',
-      owner: countryId,
-      isHQ: true,
-      hp: 100,
-      maxHp: 100,
-      vision: countryStats?.vision || 0,
-      supplyConsumption: 0
-    });
+    if (sessionCategory === 'naval' && !selectedFleetId) {
+      return alert('해전 세션 생성 시 투입할 함대를 선택해주세요.');
+    }
+    if (sessionCategory !== 'naval' && !selectedArmyId) {
+      return alert('해전 이외 세션 생성 시 투입할 야전군을 선택해주세요.');
+    }
+
+    let myUnits = [];
+    if (sessionCategory === 'naval') {
+      const fleet = navalFleets.find(f => f.id === selectedFleetId);
+      if (!fleet) return alert('함대를 찾을 수 없습니다.');
+      myUnits = buildUnitsFromFleet(fleet);
+    } else {
+      const army = armies.find(a => a.id === selectedArmyId);
+      if (!army) return alert('야전군을 찾을 수 없습니다.');
+
+      army.corpsIds.forEach(cid => {
+        const c = corps.find(co => co.id === cid);
+        if (c) {
+          c.units.forEach(uid => {
+            const u = militaryUnits.find(mu => mu.id === uid);
+            if (u) {
+              const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+              myUnits.push({
+                ...u,
+                name: u.customName || tmpl.name || u.name || '유닛',
+                image: tmpl.image || u.image || null,
+                attack: u.attack || tmpl.attack || 0,
+                defense: u.defense || tmpl.defense || 0,
+                speed: u.speed || tmpl.speed || 0,
+                hp: u.hp || tmpl.hp || 100,
+                maxHp: u.maxHp || u.hp || tmpl.hp || 100,
+                vision: u.vision || tmpl.vision || 0,
+                supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
+                majorCategory: tmpl.majorCategory || u.majorCategory || '육군',
+                minorCategory: tmpl.minorCategory || u.minorCategory || tmpl.minorCategory || '보병',
+                subCategory: tmpl.subCategory || u.subCategory || '보병',
+                x: 0,
+                y: 0,
+                status: 'standby',
+                owner: countryId,
+                corpsId: c.id,
+                aiLevel: generals.find(g => g.id === c.commanderId)?.aiLevel || 1,
+                isHQ: false
+              });
+            }
+          });
+        }
+      });
+
+      myUnits.push({
+        id: 'hq_' + countryId,
+        name: '야전사령부',
+        subCategory: 'HQ',
+        x: 0,
+        y: 0,
+        status: 'standby',
+        owner: countryId,
+        isHQ: true,
+        hp: 100,
+        maxHp: 100,
+        vision: countryStats?.vision || 0,
+        supplyConsumption: 0
+      });
+    }
 
     const hostIsAI = sessionMode === 'ai_vs_ai';
     const finalOpponent = sessionMode === 'ai_vs_ai'
@@ -215,7 +228,8 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     const aiPlayer = isAIEnemy ? buildAIPlayerData(myUnits, false) : null;
 
     const hostPlayerData = {
-      armyId: selectedArmyId,
+      armyId: sessionCategory === 'naval' ? null : selectedArmyId,
+      fleetId: sessionCategory === 'naval' ? selectedFleetId : null,
       ready: hostIsAI ? true : false,
       isAI: hostIsAI,
       orders: [],
@@ -233,6 +247,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       host: countryId,
       opponent: finalOpponent,
       sessionMode,
+      sessionCategory,
       allowNavalBombardment,
       status: (sessionMode === 'human_vs_human' || (sessionMode === 'human_vs_ai' && !isAIEnemy))
         ? 'waiting'
@@ -247,7 +262,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       createdAt: new Date().toISOString()
     };
 
-    if (sessionMode === 'ai_vs_ai') {
+    if (sessionMode === 'ai_vs_ai' && sessionCategory !== 'naval') {
       const deployedUnits = deployAIUnits(newSession.units, { ...newSession, armies, generals }, null);
       newSession.units = deployedUnits;
       newSession.players[countryId].units = deployedUnits.filter(u => u.owner === countryId);
@@ -480,6 +495,14 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
           </div>
           <div className="form-row">
             <div className="form-group">
+              <label className="form-label">세션 카테고리</label>
+              <select className="form-select" value={sessionCategory} onChange={e => setSessionCategory(e.target.value)}>
+                <option value="land">육전</option>
+                <option value="naval">해전</option>
+                <option value="bombing">폭격전</option>
+              </select>
+            </div>
+            <div className="form-group">
               <label className="form-label">전투 타입</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label><input type="radio" name="sessionMode" value="human_vs_human" checked={sessionMode === 'human_vs_human'} onChange={() => setSessionMode('human_vs_human')} /> 유저 vs 유저</label>
@@ -505,7 +528,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             </div>
           </div>
           <div className="form-group">
-            <label className="form-label">투입할 야전군 (필수)</label>
+            <label className="form-label">투입할 야전군 ({sessionCategory === 'naval' ? '선택' : '필수'})</label>
             <select className="form-select" value={selectedArmyId} onChange={e => setSelectedArmyId(e.target.value)}>
               <option value="">-- 내 야전군 선택 --</option>
               {armies.map(a => (
@@ -514,7 +537,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">해전 참여용 함대 (선택)</label>
+            <label className="form-label">해전 참여용 함대 ({sessionCategory === 'naval' ? '필수' : '선택'})</label>
             <select className="form-select" value={selectedFleetId} onChange={e => setSelectedFleetId(e.target.value)}>
               <option value="">-- 내 함대 선택 --</option>
               {navalFleets.map(f => (
