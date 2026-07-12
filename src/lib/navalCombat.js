@@ -174,6 +174,25 @@ function chebyshevStep(fromX, fromY, toX, toY, speed) {
   return { x, y };
 }
 
+function chebyshevStepAway(fromX, fromY, threatX, threatY, speed, size = 20) {
+  let x = fromX;
+  let y = fromY;
+  let left = Math.max(1, parseInt(speed || 1, 10));
+
+  while (left-- > 0) {
+    if (x < threatX) x -= 1;
+    else if (x > threatX) x += 1;
+
+    if (y < threatY) y -= 1;
+    else if (y > threatY) y += 1;
+
+    x = Math.max(0, Math.min(size - 1, x));
+    y = Math.max(0, Math.min(size - 1, y));
+  }
+
+  return { x, y };
+}
+
 function nearestEnemy(unit, enemies) {
   let best = null;
   let bestDist = Infinity;
@@ -217,6 +236,18 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
 
   const chooseTarget = (ship) => {
     if (!enemies.length) return null;
+    const shipType = getShipType(ship);
+
+    if (shipType === 'carrier') {
+      const prioritized = enemies.slice().sort((a, b) => {
+        const pa = getPriority(a);
+        const pb = getPriority(b);
+        if (pb !== pa) return pb - pa;
+        return distance(ship, a) - distance(ship, b);
+      });
+      return prioritized[0] || nearestEnemy(ship, enemies);
+    }
+
     if (aiLevel <= 1) return nearestEnemy(ship, enemies);
     if (aiLevel === 2) {
       return enemies.slice().sort((a, b) => hpRatio(a) - hpRatio(b))[0] || nearestEnemy(ship, enemies);
@@ -233,10 +264,14 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
 
   const orders = [];
   for (const ship of aiShips) {
+    const shipType = getShipType(ship);
     const target = chooseTarget(ship);
     if (!target) continue;
 
-    const moved = chebyshevStep(ship.x, ship.y, target.x, target.y, ship.speed || 1);
+    const d = distance(ship, target);
+    const moved = shipType === 'carrier' && d <= 4
+      ? chebyshevStepAway(ship.x, ship.y, target.x, target.y, ship.speed || 1)
+      : chebyshevStep(ship.x, ship.y, target.x, target.y, ship.speed || 1);
     const movedKey = `${moved.x},${moved.y}`;
     const moveBlockedByManual = manualTiles.includes(movedKey) || occupiedByAi.has(movedKey);
 
@@ -251,8 +286,6 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
       }
     };
 
-    const shipType = getShipType(ship);
-    const d = distance(ship, target);
     if (shipType === 'torpedo_boat' || shipType === 'submarine' || shipType === 'modern_submarine') {
       order.action.type = 'torpedo';
     }
@@ -285,6 +318,15 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
     }
     if (shipType === 'battleship') {
       order.action.type = 'gunfire';
+    }
+    if (shipType === 'carrier') {
+      if (d >= 4 && aiLevel >= 2) {
+        order.action.type = 'missile';
+      } else if (d <= 2) {
+        order.action.type = 'gunfire';
+      } else {
+        order.action.type = aiLevel >= 3 ? 'missile' : 'gunfire';
+      }
     }
 
     if (flagshipId && ship.id === flagshipId) {
