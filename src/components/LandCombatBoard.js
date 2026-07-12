@@ -745,14 +745,6 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
                     return;
                   }
 
-                  // If there's a multiplayer session, require all players to be ready before starting the aerial minigame.
-                  const players = initialSession?.players;
-                  const allReady = players ? Object.values(players).every(p => p.ready) : true;
-                  if (!allReady) {
-                    alert('상대방이 아직 준비되지 않았습니다. 상대의 선택을 기다려 주세요.');
-                    return;
-                  }
-
                   setPhase('aerial_combat');
                 }}
               >
