@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { createAerialBattle, processBattleRound, aiChooseCard, surrenderAerialBattle } from '@/lib/aerialCombat';
+import { createAerialBattle, processBattleRound, aiChooseCard, surrenderAerialBattle, requestMajorAerialBattle, acceptMajorAerialBattle } from '@/lib/aerialCombat';
 import AerialCardUI from '@/components/AerialCardUI';
 
 export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoMode, onComplete }) {
   const [battle, setBattle] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [inputLocked, setInputLocked] = useState(false);
 
   useEffect(() => {
     // 세션 초기화 (로컬 미니게임 테스트용이므로 임의의 id 사용)
@@ -59,9 +60,11 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
 
   const handleManualChoice = (card) => {
     if (!battle || battle.status !== 'active') return;
+    if (inputLocked) return; // prevent rapid repeated clicks
 
+    setInputLocked(true);
     const currentBattle = JSON.parse(JSON.stringify(battle));
-    
+
     // 공격측(유저) 선택
     if (card) {
       currentBattle.attackerChoice = { cardId: card.cardId, type: card.canBlock ? 'aa' : (card.isAce ? 'ace' : 'normal') };
@@ -74,10 +77,13 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     currentBattle.defenderChoice = defCard ? { cardId: defCard.cardId, type: defCard.canBlock ? 'aa' : (defCard.isAce ? 'ace' : 'normal') } : { cardId: null, type: 'pass' };
 
     processBattleRound(currentBattle);
-    
+
     const lastResult = currentBattle.history[currentBattle.history.length - 1];
     setLogs(prev => [...prev, `라운드 ${currentBattle.round - 1}: ${lastResult?.description}`]);
     setBattle(currentBattle);
+
+    // unlock after short delay to simulate waiting for opponent
+    setTimeout(() => setInputLocked(false), 700);
 
     if (currentBattle.status === 'finished' || currentBattle.attackerState.status === 'surrendered' || currentBattle.defenderState.status === 'surrendered') {
        const isWin = (currentBattle.defenderState.status === 'surrendered' || currentBattle.defenderState.hand.length === 0) 
@@ -90,6 +96,11 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
 
   const handleSurrender = () => {
     if (!battle) return;
+    if (battle.isMajorBattle) {
+      alert('공중결전(전면전) 도중에는 항복할 수 없습니다.');
+      return;
+    }
+
     const currentBattle = JSON.parse(JSON.stringify(battle));
     surrenderAerialBattle(currentBattle, countryId);
     setBattle(currentBattle);
@@ -97,6 +108,18 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     setTimeout(() => {
       onComplete(false);
     }, 2000);
+  };
+
+  const handleMajorAccept = (currentBattle) => {
+    if (!currentBattle) return;
+    // mark request and accept for local minigame
+    requestMajorAerialBattle(currentBattle, countryId);
+    acceptMajorAerialBattle(currentBattle);
+    currentBattle.isMajorBattle = true;
+    currentBattle.majorBattleRequest = 'accepted';
+    currentBattle.history.push({ round: currentBattle.round, reason: 'major_battle_accepted', timestamp: new Date().toISOString() });
+    setBattle(currentBattle);
+    setLogs(prev => [...prev, '🔥 공중결전(전면전) 시작']);
   };
 
   if (!battle) return null;
@@ -135,7 +158,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
           {groupedCards.map(g => (
             <div key={g.cardIds[0]} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <AerialCardUI card={g} />
-              <button className="btn btn-sm btn-primary" onClick={() => handleManualChoice({ cardId: g.cardIds[0], isAce: g.isAce, canBlock: false })}>
+              <button className="btn btn-sm btn-primary" onClick={() => handleManualChoice({ cardId: g.cardIds[0], isAce: g.isAce, canBlock: false })} disabled={inputLocked}>
                 제출 (남은 수량: {g.count})
               </button>
             </div>
@@ -144,15 +167,23 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
           {groupsAA['aa'] && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <AerialCardUI card={groupsAA['aa']} />
-              <button className="btn btn-sm btn-danger" onClick={() => handleManualChoice({ cardId: groupsAA['aa'].cardIds[0], isAce: false, canBlock: true })}>
-                대공포 요격 (남은 수량: {groupsAA['aa'].count})
-              </button>
+                <button className="btn btn-sm btn-danger" onClick={() => handleManualChoice({ cardId: groupsAA['aa'].cardIds[0], isAce: false, canBlock: true })} disabled={inputLocked}>
+                  대공포 요격 (남은 수량: {groupsAA['aa'].count})
+                </button>
             </div>
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', minWidth: '200px', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '8px' }}>
-            <button className="btn btn-warning" style={{ width: '100%' }} onClick={() => handleManualChoice(null)}>💤 패스 (아끼기)</button>
-            <button className="btn btn-danger" style={{ width: '100%' }} onClick={handleSurrender}>🏳️ 항복 (포기)</button>
+            <button className="btn btn-warning" style={{ width: '100%' }} onClick={() => handleManualChoice(null)} disabled={inputLocked}>💤 패스 (아끼기)</button>
+            <button className="btn btn-danger" style={{ width: '100%' }} onClick={handleSurrender} disabled={battle?.isMajorBattle}>🏳️ 항복 (포기)</button>
+            {!battle?.isMajorBattle && (
+              <button className="btn btn-accent" style={{ width: '100%' }} onClick={() => {
+                if (!battle) return;
+                if (!confirm('전면전을 제안하시겠습니까? 수락 시 항복 불가, 카드 소진 시까지 계속됩니다.')) return;
+                const currentBattle = JSON.parse(JSON.stringify(battle));
+                handleMajorAccept(currentBattle);
+              }}>🔥 공중결전 제안 (전면전)</button>
+            )}
           </div>
         </div>
       )}
