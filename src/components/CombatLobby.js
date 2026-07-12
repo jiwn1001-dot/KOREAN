@@ -138,7 +138,14 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       if (activeSession) {
          const updatedActive = latestSessions.find(s => s.id === activeSession.id);
          if (updatedActive) {
-            setActiveSession(updatedActive);
+            const prevTurn = activeSession?.turn || 1;
+            const nextTurn = updatedActive?.turn || 1;
+            const prevGameOver = activeSession?.phase === 'game_over' || activeSession?.status === 'game_over';
+            if (prevGameOver && nextTurn <= prevTurn) {
+              setActiveSession(activeSession);
+            } else if (nextTurn >= prevTurn) {
+              setActiveSession(updatedActive);
+            }
          }
       }
       
@@ -147,6 +154,45 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const mergeSessionForSave = (baseSession, patch) => {
+    const base = baseSession || {};
+    const next = { ...base, ...(patch || {}) };
+    const baseTurn = base?.turn || 1;
+    const patchTurn = patch?.turn || 0;
+    next.turn = Math.max(baseTurn, patchTurn);
+
+    const baseGameOver = base?.phase === 'game_over' || base?.status === 'game_over';
+    const patchGameOver = patch?.phase === 'game_over' || patch?.status === 'game_over';
+    if (baseGameOver && !patchGameOver) {
+      next.phase = 'game_over';
+      next.status = 'game_over';
+      next.winner = base?.winner || next?.winner;
+      next.reportLogged = base?.reportLogged || next?.reportLogged;
+    }
+
+    return next;
+  };
+
+  const saveActiveSessionPatch = async (patch) => {
+    if (!activeSession?.id) return;
+
+    const latest = await getDataEntry('combat_sessions', null);
+    const latestSessions = latest?.data?.sessions || sessions;
+    const latestActive = latestSessions.find(s => s.id === activeSession.id) || activeSession;
+    const merged = mergeSessionForSave(latestActive, patch);
+
+    let nextSessions = [];
+    if (latestSessions.some(s => s.id === activeSession.id)) {
+      nextSessions = latestSessions.map(s => s.id === activeSession.id ? merged : s);
+    } else {
+      nextSessions = [...latestSessions, merged];
+    }
+
+    setSessions(nextSessions);
+    await upsertDataEntry('combat_sessions', null, { sessions: nextSessions });
+    setActiveSession(merged);
   };
 
   const handleCreateSession = async () => {
@@ -445,21 +491,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
           <NavalCombatBoard
             countryId={countryId}
             initialSession={activeSession}
-            onSaveSession={async (updatedData) => {
-              const nextTurn = Math.max(activeSession?.turn || 1, updatedData?.turn || 0);
-              const keepGameOver = activeSession?.phase === 'game_over' || activeSession?.status === 'game_over';
-              const merged = {
-                ...activeSession,
-                ...updatedData,
-                turn: nextTurn,
-                ...(keepGameOver ? { phase: 'game_over', status: 'game_over' } : {})
-              };
-              const updatedSession = merged;
-              const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
-              setSessions(updatedSessions);
-              await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
-              setActiveSession(updatedSession);
-            }}
+            onSaveSession={saveActiveSessionPatch}
           />
         ) : (
           <LandCombatBoard 
@@ -469,21 +501,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             armies={armies} 
             generals={generals}
             initialSession={activeSession}
-            onSaveSession={async (updatedData) => {
-              const nextTurn = Math.max(activeSession?.turn || 1, updatedData?.turn || 0);
-              const keepGameOver = activeSession?.phase === 'game_over' || activeSession?.status === 'game_over';
-              const merged = {
-                ...activeSession,
-                ...updatedData,
-                turn: nextTurn,
-                ...(keepGameOver ? { phase: 'game_over', status: 'game_over' } : {})
-              };
-              const updatedSession = merged;
-               const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
-               setSessions(updatedSessions);
-               await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
-               setActiveSession(updatedSession);
-            }}
+            onSaveSession={saveActiveSessionPatch}
           />
         )}
       </div>
