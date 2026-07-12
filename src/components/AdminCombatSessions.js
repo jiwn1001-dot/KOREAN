@@ -16,6 +16,8 @@ export default function AdminCombatSessions({ countries }) {
   const [sessionCategory, setSessionCategory] = useState('land'); // land, naval, bombing
   const [battleMode, setBattleMode] = useState('encounter'); // encounter, siege
   const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
+  const [allowAirTeam1, setAllowAirTeam1] = useState(true);
+  const [allowAirTeam2, setAllowAirTeam2] = useState(true);
   
   // Team 1 & Team 2: { countryId, armyId }[]
   const [team1, setTeam1] = useState([]);
@@ -83,6 +85,8 @@ export default function AdminCombatSessions({ countries }) {
       sessionCategory,
       battleMode,
       allowNavalBombardment,
+      allowAirTeam1,
+      allowAirTeam2,
       host: team1[0].countryId, // 첫 번째 국가가 방장 역할 (팀 리더)
       opponent: team2[0].countryId,
       status: battleMode === 'siege' ? 'defense_prep' : 'waiting', // 방어전은 사전배치 페이즈 대기
@@ -218,9 +222,17 @@ export default function AdminCombatSessions({ countries }) {
         </div>
         <div className="form-group">
           <label className="form-label">특수 룰</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
             <input type="checkbox" id="adminAllowNaval" checked={allowNavalBombardment} onChange={e => setAllowNavalBombardment(e.target.checked)} />
             <label htmlFor="adminAllowNaval">해안포격 스킬 허용</label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <input type="checkbox" id="adminAllowAirT1" checked={allowAirTeam1} onChange={e => setAllowAirTeam1(e.target.checked)} />
+            <label htmlFor="adminAllowAirT1">Team 1 공군 사용 허용</label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input type="checkbox" id="adminAllowAirT2" checked={allowAirTeam2} onChange={e => setAllowAirTeam2(e.target.checked)} />
+            <label htmlFor="adminAllowAirT2">Team 2 공군 사용 허용</label>
           </div>
         </div>
       </div>

@@ -19,6 +19,8 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
   const [flagshipId, setFlagshipId] = useState('');
   const [mines, setMines] = useState([]);
   const [pendingMissiles, setPendingMissiles] = useState([]);
+  const [queuedSkills, setQueuedSkills] = useState([]);
+  const [pendingSkill, setPendingSkill] = useState(null);
 
   const isHost = initialSession?.isTeamBattle ? initialSession?.team1?.includes(countryId) : initialSession?.host === countryId;
 
@@ -30,6 +32,8 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       setTurn(initialSession.turn || 1);
       setMines(initialSession.mines || []);
       setPendingMissiles(initialSession.pendingMissiles || []);
+      setQueuedSkills([]);
+      setPendingSkill(null);
       const p = initialSession.players?.[countryId];
       if (p?.manualControlIds) setManualControlIds(p.manualControlIds);
       if (p?.flagshipId) setFlagshipId(p.flagshipId);
@@ -49,24 +53,41 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     if (!allReady) return;
 
     const allOrders = [];
+    const allSkills = [];
     Object.entries(nextPlayers).forEach(([pid, player]) => {
       const playerOrders = player.orders || [];
+      const playerSkills = player.skills || [];
       allOrders.push(...playerOrders);
+      allSkills.push(...playerSkills);
 
       if (player.isAI) {
-        const aiOrders = calculateNavalAIOrders({ units: unitsOnBoard }, pid, player.manualControlIds || [], player.flagshipId || null);
+        const aiOrders = calculateNavalAIOrders({ units: unitsOnBoard, manualOrders: playerOrders }, pid, player.manualControlIds || [], player.flagshipId || null);
         allOrders.push(...aiOrders);
       }
     });
 
-    const resolved = resolveNavalTurn({ board, units: unitsOnBoard, orders: allOrders, mines, pendingMissiles });
+    const resolved = resolveNavalTurn({
+      board,
+      units: unitsOnBoard,
+      orders: allOrders,
+      skillsQueue: allSkills,
+      mines,
+      pendingMissiles,
+      isTeamBattle: initialSession?.isTeamBattle,
+      team1: initialSession?.team1,
+      team2: initialSession?.team2,
+      host: initialSession?.host,
+      allowAirTeam1: initialSession?.allowAirTeam1,
+      allowAirTeam2: initialSession?.allowAirTeam2
+    });
 
     const resetPlayers = { ...nextPlayers };
     Object.keys(resetPlayers).forEach(pid => {
       resetPlayers[pid] = {
         ...resetPlayers[pid],
         ready: false,
-        orders: []
+        orders: [],
+        skills: []
       };
     });
 
@@ -115,6 +136,12 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     }
 
     if (phase !== 'combat') return;
+
+    if (pendingSkill) {
+      setQueuedSkills(prev => [...prev, { ...pendingSkill, target: { x, y } }]);
+      setPendingSkill(null);
+      return;
+    }
 
     const clicked = unitsOnBoard.find(u => u.x === x && u.y === y && u.status === 'field' && u.majorCategory === '해군');
 
@@ -181,13 +208,44 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
         ...nextPlayers[countryId],
         ready: true,
         orders: [...localOrders, ...aiAssistOrders],
+        skills: [...queuedSkills],
         manualControlIds: selectedDirect,
         flagshipId: flagshipId || null
       };
     }
 
     onSaveSession?.({ players: nextPlayers });
+    setQueuedSkills([]);
     alert('해전 명령 하달 완료. 결산 대기 중...');
+  };
+
+  const queueTorpedoBomber = () => {
+    const candidates = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby' && (u.subCategory === '뇌격기' || u.minorCategory === '뇌격기'));
+    if (candidates.length === 0) {
+      alert('대기 상태 뇌격기가 없습니다.');
+      return;
+    }
+
+    let selected = candidates[0];
+    if (candidates.length > 1) {
+      const opts = candidates.map((u, i) => `${i + 1}. ${u.name || u.id} (공:${u.attack || 1})`).join('\n');
+      const raw = window.prompt(`사용할 뇌격기 번호를 입력하세요:\n${opts}`, '1');
+      const idx = parseInt(raw || '1', 10) - 1;
+      if (Number.isNaN(idx) || idx < 0 || idx >= candidates.length) {
+        alert('잘못된 번호입니다.');
+        return;
+      }
+      selected = candidates[idx];
+    }
+
+    setPendingSkill({
+      type: 'torpedo_bomber',
+      attackerId: countryId,
+      consumerId: selected.id,
+      direction: torpedoDir,
+      damage: Math.max(1, selected.attack || 1)
+    });
+    alert('뇌격기 타겟 타일을 클릭하세요. 지정한 방향으로 최초 피격 함선에 타격합니다.');
   };
 
   const toggleDirectControl = (unitId) => {
@@ -236,6 +294,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
             <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center' }}>
               공격 모드에서 타일 클릭 시 선택 무장으로 예약됩니다.
             </div>
+            <button className="btn btn-danger" onClick={queueTorpedoBomber}>뇌격기 스킬 예약</button>
           </div>
         )}
 
@@ -303,8 +362,22 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
           <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
             잠수함은 관측력 기반으로만 노출되며, 미사일은 타깃 지정 시 다음 턴 추적 타격됩니다.
           </p>
+          <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
+            대기 뇌격기 스킬은 방향 관통형이며, 팀 공군 비허용 시 항모 수만큼만 출격 가능합니다.
+          </p>
         </div>
       </div>
+
+      {queuedSkills.length > 0 && (
+        <div className="card" style={{ marginTop: '12px', padding: '10px' }}>
+          <strong>예약된 해전 스킬:</strong>
+          {queuedSkills.map((s, i) => (
+            <div key={`${s.type}_${i}`} style={{ fontSize: '0.9rem', marginTop: '4px' }}>
+              {s.type} {'->'} ({s.target?.x},{s.target?.y}) dir:{s.direction}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -190,6 +190,7 @@ function nearestEnemy(unit, enemies) {
 export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = [], flagshipId = null) {
   const units = session.units || [];
   const manualSet = new Set(manualControlIds || []);
+  const manualOrderTargets = new Set((session.manualOrders || []).map(o => `${o?.action?.target?.x},${o?.action?.target?.y}`));
 
   const myShips = units.filter(u => u.owner === aiCountryId && u.status === 'field' && u.majorCategory === '해군');
   const aiShips = myShips.filter(u => !manualSet.has(u.id));
@@ -220,6 +221,10 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
     const shipType = getShipType(ship);
     if (shipType === 'torpedo_boat' || shipType === 'submarine' || shipType === 'modern_submarine') {
       order.action.type = 'torpedo';
+    }
+
+    if (manualOrderTargets.has(`${order?.action?.target?.x},${order?.action?.target?.y}`)) {
+      order.action = null;
     }
     if (shipType === 'destroyer' || shipType === 'modern_destroyer') {
       if (Math.random() < 0.25) {
@@ -263,8 +268,27 @@ export function resolveNavalTurn(session) {
   const board = session.board || createNavalBoard();
   const units = JSON.parse(JSON.stringify(session.units || []));
   const orders = session.orders || [];
+  const skillsQueue = session.skillsQueue || [];
   const mines = JSON.parse(JSON.stringify(session.mines || []));
   const pendingMissiles = JSON.parse(JSON.stringify(session.pendingMissiles || []));
+
+  const isTeam1Owner = (ownerId) => {
+    if (session.isTeamBattle) {
+      return (session.team1 || []).includes(ownerId);
+    }
+    return ownerId === session.host;
+  };
+
+  const getCarrierCount = (ownerId) => units.filter(u => u.owner === ownerId && u.status === 'field' && getShipType(u) === 'carrier').length;
+  const team1AirEnabled = session.allowAirTeam1 !== false;
+  const team2AirEnabled = session.allowAirTeam2 !== false;
+  const canUseAir = (ownerId, usedSortiesByOwner) => {
+    const team1 = isTeam1Owner(ownerId);
+    const enabled = team1 ? team1AirEnabled : team2AirEnabled;
+    if (enabled) return true;
+    const limit = getCarrierCount(ownerId);
+    return (usedSortiesByOwner[ownerId] || 0) < limit;
+  };
 
   const orderMap = new Map();
   orders.forEach(o => orderMap.set(o.unitId, o));
@@ -318,6 +342,40 @@ export function resolveNavalTurn(session) {
     if (target) addDamage(target, ms.damage || 1);
   });
   pendingMissiles.length = 0;
+
+  // Naval skill phase (torpedo bomber, etc.)
+  const usedSortiesByOwner = {};
+  skillsQueue.forEach(skill => {
+    if (!skill || !skill.type) return;
+
+    if (skill.type === 'torpedo_bomber') {
+      const ownerId = skill.attackerId;
+      if (!ownerId || !canUseAir(ownerId, usedSortiesByOwner)) return;
+
+      const consumer = units.find(u => u.id === skill.consumerId && u.status !== 'destroyed');
+      if (!consumer) return;
+
+      const dir = DIRS[skill.direction] || DIRS.E;
+      let cx = skill.target?.x;
+      let cy = skill.target?.y;
+      let hit = null;
+      for (let i = 0; i < (board.length || 20); i++) {
+        cx += dir.x;
+        cy += dir.y;
+        if (!inBounds(cx, cy, board.length || 20)) break;
+        const candidate = units.find(u => u.status === 'field' && u.owner !== ownerId && u.majorCategory === '해군' && getOccupiedTiles(u).some(t => t.x === cx && t.y === cy));
+        if (candidate) {
+          hit = candidate;
+          break;
+        }
+      }
+      if (hit) addDamage(hit, skill.damage || 1);
+
+      usedSortiesByOwner[ownerId] = (usedSortiesByOwner[ownerId] || 0) + 1;
+      consumer.hp = 0;
+      consumer.status = 'destroyed';
+    }
+  });
 
   // Attack phase: hit only if target tile is occupied at attack resolution time.
   for (const ship of fieldShips) {
@@ -413,6 +471,7 @@ export function resolveNavalTurn(session) {
     units,
     mines,
     pendingMissiles,
+    skillsQueue: [],
     orders: []
   };
 }
