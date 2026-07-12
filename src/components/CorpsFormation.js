@@ -7,14 +7,8 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
   const [editingCorps, setEditingCorps] = useState(null);
   const [editingArmy, setEditingArmy] = useState(null);
 
-  const landUnits = militaryUnits.filter(u => {
-    const tmpl = unitTemplates.find(t => t.id == u.templateId);
-    const major = tmpl?.majorCategory || u.majorCategory;
-    return major === '육군';
-  });
-
   // 선택되지 않은 유닛 필터링 (다른 군단에 없는 유닛)
-  const availableUnits = landUnits.filter(u => {
+  const availableUnits = militaryUnits.filter(u => {
     return !corps.some(c => c.id !== editingCorps?.id && c.units.includes(u.id));
   });
 
@@ -72,7 +66,7 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '40px', padding: '8px', border: '1px dashed var(--border-color)' }}>
                   {editingCorps.units.map(uid => {
-                    const u = landUnits.find(mu => mu.id === uid) || militaryUnits.find(mu => mu.id === uid);
+                    const u = militaryUnits.find(mu => mu.id === uid);
                     const tmpl = unitTemplates.find(t => t.id == u?.templateId);
                     const displayName = (u?.customName && u.customName.trim() !== '') ? u.customName : (tmpl?.name || '알 수 없는 유닛');
                     return (
@@ -146,7 +140,7 @@ export default function CorpsFormation({ countryId, militaryUnits, corps, armies
                   </p>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {c.units.map(uid => {
-                      const u = landUnits.find(mu => mu.id === uid) || militaryUnits.find(mu => mu.id === uid);
+                      const u = militaryUnits.find(mu => mu.id === uid);
                       const tmpl = unitTemplates.find(t => t.id == u?.templateId);
                       const displayName = (u?.customName && u.customName.trim() !== '') ? u.customName : (tmpl?.name || '알 수 없는 유닛');
                       return <span key={uid} style={{ fontSize: '0.8rem', padding: '2px 6px', background: 'var(--bg-body)', borderRadius: '4px' }}>{displayName}</span>;

@@ -333,8 +333,6 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             const u = militaryUnits.find(mu => mu.id === uid);
             if (u) {
               const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
-              const major = tmpl.majorCategory || u.majorCategory;
-              if (major !== '육군') return;
               myUnits.push({
                 ...u,
                 name: u.customName || tmpl.name || u.name || '유닛',
@@ -495,8 +493,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             if (u) {
               const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
               const major = tmpl.majorCategory || u.majorCategory;
-              if (session.sessionCategory === 'bombing' && major !== '공군') return;
-              if (session.sessionCategory === 'land' && major !== '육군') return;
+              const isAir = major === '공군';
+              if (session.sessionCategory === 'bombing' && !isAir) return;
+              if (session.sessionCategory === 'land' && major !== '육군' && !isAir) return;
 
               const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
               const startX = isTeam1 ? 0 : 19;
