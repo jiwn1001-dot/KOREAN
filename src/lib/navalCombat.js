@@ -100,6 +100,36 @@ function addDamage(target, amount) {
   if (target.hp <= 0) target.status = 'destroyed';
 }
 
+function computeNavalDamage(baseDamage, actionType, attackerType, targetType) {
+  let multiplier = 1;
+
+  // Weapon vs hull class tuning.
+  if (actionType === 'gunfire') {
+    if (targetType === 'battleship') multiplier *= 0.85;
+    if (targetType === 'carrier') multiplier *= 1.2;
+    if (attackerType === 'battleship') multiplier *= 1.15;
+  } else if (actionType === 'torpedo') {
+    if (targetType === 'carrier' || targetType === 'battleship') multiplier *= 1.35;
+    if (targetType === 'destroyer' || targetType === 'modern_destroyer') multiplier *= 0.85;
+    if (attackerType === 'submarine' || attackerType === 'modern_submarine' || attackerType === 'torpedo_boat') multiplier *= 1.1;
+  } else if (actionType === 'depth_charge') {
+    if (targetType === 'submarine' || targetType === 'modern_submarine') multiplier *= 1.8;
+    else multiplier *= 0.6;
+  } else if (actionType === 'missile') {
+    if (targetType === 'carrier' || targetType === 'battleship') multiplier *= 1.25;
+    if (targetType === 'submarine' || targetType === 'modern_submarine') multiplier *= 0.8;
+    if (attackerType === 'modern_destroyer' || attackerType === 'modern_submarine' || attackerType === 'carrier') multiplier *= 1.1;
+  } else if (actionType === 'mine') {
+    if (targetType === 'carrier' || targetType === 'battleship') multiplier *= 1.2;
+    if (targetType === 'submarine' || targetType === 'modern_submarine') multiplier *= 0.85;
+  } else if (actionType === 'torpedo_bomber') {
+    if (targetType === 'carrier' || targetType === 'battleship') multiplier *= 1.3;
+    if (targetType === 'modern_destroyer') multiplier *= 0.9;
+  }
+
+  return Math.max(1, Math.floor((baseDamage || 1) * multiplier));
+}
+
 function getShipType(unit) {
   const sub = unit?.subCategory || unit?.minorCategory || '';
   if (sub.includes('기뢰부설함')) return 'minelayer';
@@ -419,7 +449,11 @@ export function resolveNavalTurn(session) {
   // Delayed missile hit phase (locks target ship id, guaranteed next turn).
   pendingMissiles.forEach(ms => {
     const target = units.find(u => u.id === ms.targetShipId && u.status === 'field');
-    if (target) addDamage(target, ms.damage || 1);
+    if (target) {
+      const targetType = getShipType(target);
+      const dmg = computeNavalDamage(ms.damage || 1, 'missile', ms.launcherType || 'ship', targetType);
+      addDamage(target, dmg);
+    }
   });
   pendingMissiles.length = 0;
 
@@ -449,7 +483,10 @@ export function resolveNavalTurn(session) {
           break;
         }
       }
-      if (hit) addDamage(hit, skill.damage || 1);
+      if (hit) {
+        const dmg = computeNavalDamage(skill.damage || 1, 'torpedo_bomber', 'carrier', getShipType(hit));
+        addDamage(hit, dmg);
+      }
 
       usedSortiesByOwner[ownerId] = (usedSortiesByOwner[ownerId] || 0) + 1;
       consumer.hp = 0;
@@ -480,7 +517,7 @@ export function resolveNavalTurn(session) {
           owner: ship.owner,
           x: tx,
           y: ty,
-          damage: selfAttack
+          damage: computeNavalDamage(selfAttack, 'mine', shipType, null)
         });
       }
       continue;
@@ -504,7 +541,8 @@ export function resolveNavalTurn(session) {
           id: `ms_${ship.id}_${Date.now()}`,
           owner: ship.owner,
           targetShipId: action.targetShipId,
-          damage: selfAttack
+          damage: selfAttack,
+          launcherType: shipType
         });
       }
       continue;
@@ -526,7 +564,10 @@ export function resolveNavalTurn(session) {
         hit = candidate.unit;
         break;
       }
-      if (hit) addDamage(hit, selfAttack);
+      if (hit) {
+        const dmg = computeNavalDamage(selfAttack, action.type, shipType, getShipType(hit));
+        addDamage(hit, dmg);
+      }
       continue;
     }
 
@@ -541,6 +582,7 @@ export function resolveNavalTurn(session) {
       if (shipType === 'destroyer' || shipType === 'modern_destroyer') {
         damage = Math.max(1, Math.floor(selfAttack * 0.5));
       }
+      damage = computeNavalDamage(damage, 'gunfire', shipType, getShipType(victim));
       addDamage(victim, damage);
     }
   }
