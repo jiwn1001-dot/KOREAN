@@ -476,8 +476,12 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     const targetEnemy = chooseTargetByLevel(aiUnit, aiLevel) || enemyHQ;
 
     if (targetEnemy) {
+      const dToTarget = dist(aiUnit, targetEnemy);
       if (aiUnit.subCategory === '포병') {
         // 포병은 사거리가 무한이므로 안전하게 포격 타겟팅
+        orders.push({ unitId: aiUnit.id, type: 'attack', target: { x: targetEnemy.x, y: targetEnemy.y } });
+      } else if (dToTarget <= 1) {
+        // 근접 교전 가능 거리면 즉시 타격 명령 (와리가리 억제)
         orders.push({ unitId: aiUnit.id, type: 'attack', target: { x: targetEnemy.x, y: targetEnemy.y } });
       } else {
         // 기동/보병 부대는 적을 향해 전진
@@ -751,10 +755,12 @@ export function resolveSimultaneousTurn(session) {
     }
   });
 
-  // 4. 포병 원거리 공격 처리
+  // 4. 공격 명령 처리 (포병 원거리 + 근접 직접공격)
   orders.filter(o => o.type === 'attack').forEach(order => {
     const unit = units.find(u => u.id === order.unitId);
-    if (unit && unit.subCategory === '포병' && unit.status === 'field') {
+    if (!unit || unit.status !== 'field') return;
+
+    if (unit.subCategory === '포병') {
       const targetUnit = units.find(u => u.x === order.target.x && u.y === order.target.y && u.status === 'field' && u.owner !== unit.owner);
       if (targetUnit) {
         if (targetUnit.isHQ) {
@@ -765,6 +771,34 @@ export function resolveSimultaneousTurn(session) {
           targetUnit.hp -= dmg;
         }
       }
+      return;
+    }
+
+    // 비포병은 인접(8방향 1칸) 목표에만 직접 타격 가능
+    const targetUnit = units.find(u => u.x === order.target.x && u.y === order.target.y && u.status === 'field' && u.owner !== unit.owner);
+    if (!targetUnit) return;
+
+    const chebDist = Math.max(Math.abs(unit.x - targetUnit.x), Math.abs(unit.y - targetUnit.y));
+    if (chebDist > 1) return;
+
+    if (targetUnit.isHQ) {
+      targetUnit.hqHitsRemaining = (targetUnit.hqHitsRemaining || 2) - 1;
+    } else {
+      let attackerDmg = unit.attack;
+      if (unit.isHQ) attackerDmg = 0;
+      const attackerEffects = applyTileEffects(unit, board[unit.y]?.[unit.x]);
+      const dmgToTarget = calculateDamage(Math.floor(attackerDmg * attackerEffects.attackMultiplier), targetUnit.defense, session.penetration[unit.owner] || 0);
+      targetUnit.hp -= dmgToTarget;
+    }
+
+    // 생존한 일반 유닛은 반격
+    if (!targetUnit.isHQ && targetUnit.status === 'field') {
+      let counterDmg = targetUnit.attack;
+      if (targetUnit.subCategory === '포병') counterDmg = Math.floor(counterDmg * 0.5);
+      if (targetUnit.isHQ) counterDmg = 0;
+      const targetEffects = applyTileEffects(targetUnit, board[targetUnit.y]?.[targetUnit.x]);
+      const dmgToAttacker = calculateDamage(Math.floor(counterDmg * targetEffects.attackMultiplier), unit.defense, session.penetration[targetUnit.owner] || 0);
+      unit.hp -= dmgToAttacker;
     }
   });
 
