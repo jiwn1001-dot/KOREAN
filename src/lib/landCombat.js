@@ -677,55 +677,64 @@ export function resolveSimultaneousTurn(session) {
     const originalX = winner.unit.x;
     const originalY = winner.unit.y;
 
-    // 목표 타일에 기존 적 점유 유닛이 있으면, 우선 제자리에서 공격 판정을 수행한다.
-    // 적을 격파하지 못하면 전진하지 않고 제자리에 남는다.
-    const occupant = units.find(u => u.x === targetX && u.y === targetY && u.status === 'field' && u.owner !== winner.unit.owner);
-    if (!occupant) {
-      winner.unit.x = targetX;
-      winner.unit.y = targetY;
-      applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
+    // 목표 타일 점유 체크
+    const anyOccupant = units.find(u => u.x === targetX && u.y === targetY && u.status === 'field' && u.id !== winner.unit.id);
+
+    // 아군 점유 타일은 진입 불가 (겹침 방지)
+    if (anyOccupant && anyOccupant.owner === winner.unit.owner) {
+      winner.unit.x = originalX;
+      winner.unit.y = originalY;
     } else {
-      // winner가 occupant를 공격, occupant가 winner를 반격
-      if (occupant.isHQ) {
-        if (winner.order && winner.order.isAirdrop && winner.unit.subCategory === '공수부대') {
-           // 공수 낙하로 사령부 진입 시 무조건 패배 (즉사)
-           winner.unit.hp = 0;
-           winner.unit.status = 'destroyed';
-        } else {
-           occupant.hqHitsRemaining = (occupant.hqHitsRemaining || 2) - 1; // 사령부는 1타격만 입음
-        }
-      } else {
-        let attackerDmg = winner.unit.attack;
-        if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') attackerDmg = 0;
-        if (winner.unit.isHQ) attackerDmg = 0; // 사령부는 공격력 0
-        const attackerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
-        const dmgToOccupant = calculateDamage(Math.floor(attackerDmg * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
-        occupant.hp -= dmgToOccupant;
-      }
-
-      if (winner.unit.isHQ || winner.unit.hp <= 0) {
-         // winner가 사령부일 경우, 적(occupant)으로부터 반격을 받아 1피격 됨 (역돌격 무적 방지)
-         if (winner.unit.isHQ && occupant.status === 'field' && !occupant.isHQ) {
-            winner.unit.hqHitsRemaining = (winner.unit.hqHitsRemaining || 2) - 1;
-         }
-      } else {
-        let defenderDmg = occupant.attack;
-        const occupantOrder = orders.find(o => o.unitId === occupant.id);
-        if (occupant.subCategory === '포병' && occupantOrder && occupantOrder.type === 'move') defenderDmg = 0;
-        const occupantEffects = applyTileEffects(occupant, board[occupant.y]?.[occupant.x]);
-        const dmgToWinner = calculateDamage(Math.floor(defenderDmg * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
-        winner.unit.hp -= dmgToWinner;
-      }
-
-      const occupantAlive = occupant.status === 'field' && (occupant.hp || 0) > 0;
-      const winnerAlive = winner.unit.status === 'field' && (winner.unit.hp || 0) > 0;
-      if (!occupantAlive && winnerAlive) {
+      // 목표 타일에 기존 적 점유 유닛이 있으면, 우선 제자리에서 공격 판정을 수행한다.
+      // 적을 격파하지 못하면 전진하지 않고 제자리에 남는다.
+      const occupant = anyOccupant;
+      if (!occupant) {
         winner.unit.x = targetX;
         winner.unit.y = targetY;
         applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
       } else {
-        winner.unit.x = originalX;
-        winner.unit.y = originalY;
+        // winner가 occupant를 공격, occupant가 winner를 반격
+        if (occupant.isHQ) {
+          if (winner.order && winner.order.isAirdrop && winner.unit.subCategory === '공수부대') {
+            // 공수 낙하로 사령부 진입 시 무조건 패배 (즉사)
+            winner.unit.hp = 0;
+            winner.unit.status = 'destroyed';
+          } else {
+            occupant.hqHitsRemaining = (occupant.hqHitsRemaining || 2) - 1; // 사령부는 1타격만 입음
+          }
+        } else {
+          let attackerDmg = winner.unit.attack;
+          if (winner.unit.subCategory === '포병' && winner.order && winner.order.type === 'move') attackerDmg = 0;
+          if (winner.unit.isHQ) attackerDmg = 0; // 사령부는 공격력 0
+          const attackerEffects = applyTileEffects(winner.unit, board[winner.unit.y]?.[winner.unit.x]);
+          const dmgToOccupant = calculateDamage(Math.floor(attackerDmg * attackerEffects.attackMultiplier), occupant.defense, session.penetration[winner.unit.owner] || 0);
+          occupant.hp -= dmgToOccupant;
+        }
+
+        if (winner.unit.isHQ || winner.unit.hp <= 0) {
+          // winner가 사령부일 경우, 적(occupant)으로부터 반격을 받아 1피격 됨 (역돌격 무적 방지)
+          if (winner.unit.isHQ && occupant.status === 'field' && !occupant.isHQ) {
+            winner.unit.hqHitsRemaining = (winner.unit.hqHitsRemaining || 2) - 1;
+          }
+        } else {
+          let defenderDmg = occupant.attack;
+          const occupantOrder = orders.find(o => o.unitId === occupant.id);
+          if (occupant.subCategory === '포병' && occupantOrder && occupantOrder.type === 'move') defenderDmg = 0;
+          const occupantEffects = applyTileEffects(occupant, board[occupant.y]?.[occupant.x]);
+          const dmgToWinner = calculateDamage(Math.floor(defenderDmg * occupantEffects.attackMultiplier), winner.unit.defense, session.penetration[occupant.owner] || 0);
+          winner.unit.hp -= dmgToWinner;
+        }
+
+        const occupantAlive = occupant.status === 'field' && (occupant.hp || 0) > 0;
+        const winnerAlive = winner.unit.status === 'field' && (winner.unit.hp || 0) > 0;
+        if (!occupantAlive && winnerAlive) {
+          winner.unit.x = targetX;
+          winner.unit.y = targetY;
+          applyTerrainMovementLock(winner.unit, board[targetY]?.[targetX]);
+        } else {
+          winner.unit.x = originalX;
+          winner.unit.y = originalY;
+        }
       }
     }
     
