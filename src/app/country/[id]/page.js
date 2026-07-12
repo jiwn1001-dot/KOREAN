@@ -1742,7 +1742,9 @@ export default function CountryPage() {
         ))}
       </div>
 
-      {renderTab()}
+      <div style={espionageMode ? { pointerEvents: 'none', userSelect: 'text' } : undefined}>
+        {renderTab()}
+      </div>
     </div>
   );
 }
