@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { createNavalBoard, canPlaceNavalUnit, calculateNavalAIOrders, resolveNavalTurn } from '@/lib/navalCombat';
+import { createNavalBoard, canPlaceNavalUnit, calculateNavalAIOrders, resolveNavalTurn, getVisibleNavalUnits } from '@/lib/navalCombat';
 
 export default function NavalCombatBoard({ countryId, initialSession, onSaveSession }) {
   const [board, setBoard] = useState([]);
@@ -11,10 +11,14 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
   const [selectedStandbyId, setSelectedStandbyId] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [orderMode, setOrderMode] = useState('move');
+  const [actionType, setActionType] = useState('gunfire');
+  const [torpedoDir, setTorpedoDir] = useState('E');
   const [ordersByUnit, setOrdersByUnit] = useState({});
   const [orientation, setOrientation] = useState('horizontal');
   const [manualControlIds, setManualControlIds] = useState([]);
   const [flagshipId, setFlagshipId] = useState('');
+  const [mines, setMines] = useState([]);
+  const [pendingMissiles, setPendingMissiles] = useState([]);
 
   const isHost = initialSession?.isTeamBattle ? initialSession?.team1?.includes(countryId) : initialSession?.host === countryId;
 
@@ -24,6 +28,8 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       setUnitsOnBoard(initialSession.units || []);
       setPhase(initialSession.phase || (initialSession.status === 'playing' ? 'combat' : 'deployment'));
       setTurn(initialSession.turn || 1);
+      setMines(initialSession.mines || []);
+      setPendingMissiles(initialSession.pendingMissiles || []);
       const p = initialSession.players?.[countryId];
       if (p?.manualControlIds) setManualControlIds(p.manualControlIds);
       if (p?.flagshipId) setFlagshipId(p.flagshipId);
@@ -53,7 +59,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       }
     });
 
-    const resolved = resolveNavalTurn({ board, units: unitsOnBoard, orders: allOrders });
+    const resolved = resolveNavalTurn({ board, units: unitsOnBoard, orders: allOrders, mines, pendingMissiles });
 
     const resetPlayers = { ...nextPlayers };
     Object.keys(resetPlayers).forEach(pid => {
@@ -67,12 +73,16 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     onSaveSession?.({
       board: resolved.board,
       units: resolved.units,
+      mines: resolved.mines || [],
+      pendingMissiles: resolved.pendingMissiles || [],
       players: resetPlayers,
       phase: 'combat',
       status: 'playing',
       turn: (initialSession.turn || turn) + 1
     });
-  }, [initialSession, isHost, unitsOnBoard, board, turn, onSaveSession]);
+  }, [initialSession, isHost, unitsOnBoard, board, mines, pendingMissiles, turn, onSaveSession]);
+
+  const visibleUnits = useMemo(() => getVisibleNavalUnits(unitsOnBoard, countryId), [unitsOnBoard, countryId]);
 
   const myNavalStandby = useMemo(
     () => unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '해군' && u.status === 'standby'),
@@ -112,8 +122,21 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       setOrdersByUnit(prev => {
         const current = prev[selectedUnit.id] || { unitId: selectedUnit.id };
         const next = { ...current };
-        if (orderMode === 'move') next.move = { x, y };
-        else next.attack = { x, y };
+        if (orderMode === 'move') {
+          next.move = { x, y };
+        } else {
+          const baseAction = {
+            type: actionType,
+            target: { x, y },
+            direction: torpedoDir,
+            targetShipId: null
+          };
+          if (actionType === 'missile') {
+            const targetUnit = unitsOnBoard.find(u => u.status === 'field' && u.owner !== countryId && u.majorCategory === '해군' && u.x === x && u.y === y);
+            baseAction.targetShipId = targetUnit?.id || null;
+          }
+          next.action = baseAction;
+        }
         return { ...prev, [selectedUnit.id]: next };
       });
       setSelectedUnit(null);
@@ -131,6 +154,8 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
 
     onSaveSession?.({
       units: unitsOnBoard,
+      mines,
+      pendingMissiles,
       players: nextPlayers,
       phase: 'deployment',
       status: 'deployment'
@@ -195,9 +220,29 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
         )}
       </div>
 
+        {phase === 'combat' && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <select className="form-select" style={{ maxWidth: '160px' }} value={actionType} onChange={(e) => setActionType(e.target.value)}>
+              <option value="gunfire">함포</option>
+              <option value="torpedo">어뢰</option>
+              <option value="depth_charge">폭뢰</option>
+              <option value="mine">기뢰 부설</option>
+              <option value="mine_sweep">기뢰 소해</option>
+              <option value="missile">미사일</option>
+            </select>
+            <select className="form-select" style={{ maxWidth: '140px' }} value={torpedoDir} onChange={(e) => setTorpedoDir(e.target.value)}>
+              {['N','NE','E','SE','S','SW','W','NW'].map(d => <option key={d} value={d}>방향 {d}</option>)}
+            </select>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center' }}>
+              공격 모드에서 타일 클릭 시 선택 무장으로 예약됩니다.
+            </div>
+          </div>
+        )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(20, 30px)', gap: '2px', marginBottom: '16px' }}>
         {board.map((row, y) => row.map((tile, x) => {
-          const unit = unitsOnBoard.find(u => u.status === 'field' && u.majorCategory === '해군' && u.x === x && u.y === y);
+            const unit = visibleUnits.find(u => u.status === 'field' && u.majorCategory === '해군' && u.x === x && u.y === y);
+            const mine = mines.find(m => m.x === x && m.y === y);
           const selected = selectedUnit?.id === unit?.id;
           return (
             <div
@@ -217,6 +262,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
               }}
               title={`(${x},${y})`}
             >
+              {mine ? '✳' : ''}
               {unit ? (unit.owner === countryId ? '⚓' : '☠') : ''}
             </div>
           );
@@ -253,6 +299,9 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
           </select>
           <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
             직할 외 함선은 AI가 자동 운용하며, 직할 함선 타일 점유를 우선 회피합니다.
+          </p>
+          <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>
+            잠수함은 관측력 기반으로만 노출되며, 미사일은 타깃 지정 시 다음 턴 추적 타격됩니다.
           </p>
         </div>
       </div>
