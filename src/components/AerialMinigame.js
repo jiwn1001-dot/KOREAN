@@ -53,7 +53,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     
     const isWin = currentBattle.winner === 'attacker';
     setTimeout(() => {
-      onComplete(isWin);
+      onComplete(isWin, currentBattle);
     }, 2000);
   };
 
@@ -87,7 +87,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     if (currentBattle.status === 'finished' || currentBattle.attackerState.status === 'surrendered' || currentBattle.defenderState.status === 'surrendered') {
        const isWin = currentBattle.winner === 'attacker';
        setTimeout(() => {
-         onComplete(isWin);
+         onComplete(isWin, currentBattle);
        }, 2000);
     }
   };
@@ -100,7 +100,7 @@ export default function AerialMinigame({ countryId, myPlanes, enemyPlanes, autoM
     setBattle(currentBattle);
     setLogs(prev => [...prev, '플레이어가 항복했습니다. 제공권 상실.']);
     setTimeout(() => {
-      onComplete(false);
+      onComplete(false, currentBattle);
     }, 2000);
   };
 

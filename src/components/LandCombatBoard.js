@@ -677,6 +677,48 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
   };
 
+  const applyAerialBattleLosses = React.useCallback((battleResult) => {
+    if (!battleResult) return { nextUnits: unitsOnBoard, myLosses: 0, enemyLosses: 0 };
+
+    const lossMap = {};
+    const markLoss = (card) => {
+      const unitId = card?.unitId;
+      if (!unitId) return;
+      lossMap[unitId] = (lossMap[unitId] || 0) + 1;
+    };
+
+    (battleResult.attackerState?.lost || []).forEach(markLoss);
+    (battleResult.defenderState?.lost || []).forEach(markLoss);
+
+    let myLosses = 0;
+    let enemyLosses = 0;
+
+    const nextUnits = unitsOnBoard
+      .map((u) => {
+        if (u.majorCategory !== '공군') return u;
+        const lostCount = lossMap[u.id] || 0;
+        if (!lostCount) return u;
+
+        if (u.owner === countryId) myLosses += lostCount;
+        else enemyLosses += lostCount;
+
+        const qty = parseInt(u.quantity || 0, 10);
+        if (qty > 1) {
+          const remaining = Math.max(0, qty - lostCount);
+          if (remaining <= 0) {
+            return { ...u, quantity: 0, hp: 0, status: 'destroyed' };
+          }
+          return { ...u, quantity: remaining };
+        }
+
+        // 기본 모델(유닛 1기 = 카드 1장)은 카드 손실 시 유닛 격추 처리
+        return { ...u, hp: 0, status: 'destroyed' };
+      })
+      .filter((u) => !(u.majorCategory === '공군' && u.status === 'destroyed'));
+
+    return { nextUnits, myLosses, enemyLosses };
+  }, [unitsOnBoard, countryId]);
+
   // 사이버네틱 UI 컬러 팔레트
   const uiColors = {
     glassBg: 'rgba(16, 24, 39, 0.7)',
@@ -966,9 +1008,22 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           myPlanes={unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군')}
           enemyPlanes={unitsOnBoard.filter(u => u.owner !== countryId && u.majorCategory === '공군')}
           autoMode={autoAirCombat}
-          onComplete={(isWin) => {
+          onComplete={(isWin, battleResult) => {
+            const { nextUnits, myLosses, enemyLosses } = applyAerialBattleLosses(battleResult);
+            setUnitsOnBoard(nextUnits);
             setHasAirSupremacy(isWin);
             setPhase('combat');
+
+            if (onSaveSession) {
+              onSaveSession({
+                units: nextUnits,
+                phase: 'combat'
+              });
+            }
+
+            if ((myLosses + enemyLosses) > 0) {
+              alert(`공중전 손실 반영 완료: 아군 ${myLosses}기, 적군 ${enemyLosses}기`);
+            }
           }}
         />
       ) : (
