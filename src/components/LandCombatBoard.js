@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, calculateCasualties, TILE_TYPES, deployAIUnits } from '@/lib/landCombat';
 import AerialMinigame from '@/components/AerialMinigame';
 import { applyCombatCasualties } from '@/lib/store';
@@ -28,6 +28,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   const [autoMode, setAutoMode] = useState(false); // 전투 AI 위임 (Auto)
   const [orderMode, setOrderMode] = useState('move'); // 'move' | 'attack'
   const [selectedStandbyUnitId, setSelectedStandbyUnitId] = useState(null);
+  const resolveInFlightRef = useRef(false);
+  const lastResolvedMarkerRef = useRef('');
 
   const resolveAutoAirSupremacy = React.useCallback(() => {
     const myAir = unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '공군' && (u.status === 'standby' || u.status === 'field'));
@@ -201,8 +203,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     }
 
     // Host 전용 로직 (AI 혹은 멀티플레이 결산)
-    const isTeam1 = initialSession.isTeamBattle ? initialSession.team1?.includes(countryId) : (initialSession.host === countryId);
-    if (!isTeam1) return; // 호스트만 연산
+    const isAuthoritativeHost = initialSession.host === countryId;
+    if (!isAuthoritativeHost) return; // 단일 호스트만 연산
 
     let nextPlayers = { ...initialSession.players };
     
@@ -215,8 +217,21 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
     const allReady = Object.values(nextPlayers).every(p => p.ready);
     
+    const marker = `${initialSession.id || 'session'}_${initialSession.turn || turn}`;
     if (allReady && (!initialSession.turn || initialSession.turn === turn)) {
-      resolveHostTurn(nextPlayers);
+      if (resolveInFlightRef.current) return;
+      if (lastResolvedMarkerRef.current === marker) return;
+
+      resolveInFlightRef.current = true;
+      lastResolvedMarkerRef.current = marker;
+      resolveHostTurn(nextPlayers)
+        .catch((err) => {
+          console.error('Host turn resolve failed:', err);
+          lastResolvedMarkerRef.current = '';
+        })
+        .finally(() => {
+          resolveInFlightRef.current = false;
+        });
     }
   }, [initialSession, phase, turn, unitsOnBoard, countryId]);
 

@@ -446,7 +446,15 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             countryId={countryId}
             initialSession={activeSession}
             onSaveSession={async (updatedData) => {
-              const updatedSession = { ...activeSession, ...updatedData };
+              const nextTurn = Math.max(activeSession?.turn || 1, updatedData?.turn || 0);
+              const keepGameOver = activeSession?.phase === 'game_over' || activeSession?.status === 'game_over';
+              const merged = {
+                ...activeSession,
+                ...updatedData,
+                turn: nextTurn,
+                ...(keepGameOver ? { phase: 'game_over', status: 'game_over' } : {})
+              };
+              const updatedSession = merged;
               const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
               setSessions(updatedSessions);
               await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
@@ -462,7 +470,15 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             generals={generals}
             initialSession={activeSession}
             onSaveSession={async (updatedData) => {
-               const updatedSession = { ...activeSession, ...updatedData };
+              const nextTurn = Math.max(activeSession?.turn || 1, updatedData?.turn || 0);
+              const keepGameOver = activeSession?.phase === 'game_over' || activeSession?.status === 'game_over';
+              const merged = {
+                ...activeSession,
+                ...updatedData,
+                turn: nextTurn,
+                ...(keepGameOver ? { phase: 'game_over', status: 'game_over' } : {})
+              };
+              const updatedSession = merged;
                const updatedSessions = sessions.map(s => s.id === activeSession.id ? updatedSession : s);
                setSessions(updatedSessions);
                await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });

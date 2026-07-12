@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createNavalBoard, canPlaceNavalUnit, calculateNavalAIOrders, resolveNavalTurn, getVisibleNavalUnits } from '@/lib/navalCombat';
 import { appendCombatReport, decideWinnerByRemainingHp, summarizeNavalLosses } from '@/lib/combatReports';
 
@@ -22,8 +22,10 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
   const [pendingMissiles, setPendingMissiles] = useState([]);
   const [queuedSkills, setQueuedSkills] = useState([]);
   const [pendingSkill, setPendingSkill] = useState(null);
+  const resolveInFlightRef = useRef(false);
+  const lastResolvedMarkerRef = useRef('');
 
-  const isHost = initialSession?.isTeamBattle ? initialSession?.team1?.includes(countryId) : initialSession?.host === countryId;
+  const isHost = initialSession?.host === countryId;
 
   useEffect(() => {
     if (initialSession) {
@@ -55,6 +57,12 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
 
     const allReady = Object.values(nextPlayers).every(p => p.ready);
     if (!allReady) return;
+
+    const marker = `${initialSession.id || 'session'}_${initialSession.turn || turn}`;
+    if (resolveInFlightRef.current) return;
+    if (lastResolvedMarkerRef.current === marker) return;
+    resolveInFlightRef.current = true;
+    lastResolvedMarkerRef.current = marker;
 
     const allOrders = [];
     const allSkills = [];
@@ -156,7 +164,14 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       });
     };
 
-    runHostResolve();
+    runHostResolve()
+      .catch((err) => {
+        console.error('Naval host resolve failed:', err);
+        lastResolvedMarkerRef.current = '';
+      })
+      .finally(() => {
+        resolveInFlightRef.current = false;
+      });
   }, [initialSession, isHost, unitsOnBoard, board, mines, pendingMissiles, turn, onSaveSession]);
 
   const visibleUnits = useMemo(() => getVisibleNavalUnits(unitsOnBoard, countryId), [unitsOnBoard, countryId]);
