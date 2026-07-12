@@ -13,6 +13,7 @@ import ParliamentArch from '@/components/ParliamentArch';
 import SupportPieChart from '@/components/SupportPieChart';
 import CorpsFormation from '@/components/CorpsFormation';
 import FleetFormation from '@/components/FleetFormation';
+import AirWingFormation from '@/components/AirWingFormation';
 import CombatLobby from '@/components/CombatLobby';
 import AerialBattleUI from '@/components/AerialBattleUI';
 
@@ -47,6 +48,7 @@ export default function CountryPage() {
   const [fieldArmies, setFieldArmies] = useState([]);
   const [generals, setGenerals] = useState([]);
   const [navalFleets, setNavalFleets] = useState([]);
+  const [airWings, setAirWings] = useState([]);
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -138,6 +140,9 @@ export default function CountryPage() {
 
       const fleetEntry = await getDataEntry('naval_fleets', countryId);
       if (fleetEntry && fleetEntry.data) setNavalFleets(fleetEntry.data.fleets || []);
+
+      const airWingsEntry = await getDataEntry('air_wings', countryId);
+      if (airWingsEntry && airWingsEntry.data) setAirWings(airWingsEntry.data.wings || []);
     } catch(err) {
       console.error('Failed to load military units/corps', err);
     }
@@ -170,6 +175,7 @@ export default function CountryPage() {
     { id: 'formation', label: '편제', icon: '🎖️' },
     { id: 'corps', label: '작전/군단', icon: '🏕️' },
     { id: 'fleet', label: '함대 편제', icon: '🚢' },
+    { id: 'air_wing', label: '비행단 편제', icon: '🛩️' },
     { id: 'land_combat', label: '지상전', icon: '🗺️' },
     { id: 'aerial', label: '공중전', icon: '✈️' },
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
@@ -1447,6 +1453,7 @@ export default function CountryPage() {
             corps={corps} 
             armies={fieldArmies} 
             navalFleets={navalFleets}
+            airWings={airWings}
             generals={generals}
             admin={admin}
             countryStats={countryStats}
@@ -1483,6 +1490,19 @@ export default function CountryPage() {
             onUpdateArmies={async (newArmies) => {
               setFieldArmies(newArmies);
               await upsertDataEntry('field_armies', countryId, { armies: newArmies });
+            }}
+          />
+        );
+      case 'air_wing':
+        return (
+          <AirWingFormation
+            militaryUnits={militaryUnits}
+            unitTemplates={unitTemplates}
+            airWings={airWings}
+            generals={generals}
+            onUpdateAirWings={async (nextWings) => {
+              setAirWings(nextWings);
+              await upsertDataEntry('air_wings', countryId, { wings: nextWings });
             }}
           />
         );

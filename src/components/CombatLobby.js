@@ -47,7 +47,7 @@ function buildAIPlayerData(sourceUnits, isTeam1) {
   };
 }
 
-export default function CombatLobby({ countryId, militaryUnits, corps, armies, navalFleets = [], generals, admin, countryStats, unitTemplates = [] }) {
+export default function CombatLobby({ countryId, militaryUnits, corps, armies, navalFleets = [], airWings = [], generals, admin, countryStats, unitTemplates = [] }) {
   const [maps, setMaps] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [countries, setCountries] = useState([]);
@@ -63,6 +63,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   const [opponentId, setOpponentId] = useState('');
   const [selectedArmyId, setSelectedArmyId] = useState('');
   const [selectedFleetId, setSelectedFleetId] = useState('');
+  const [selectedAirWingId, setSelectedAirWingId] = useState('');
   const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
 
   const buildUnitsFromFleet = (fleet, session = null) => {
@@ -104,6 +105,104 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     });
 
     return myUnits;
+  };
+
+  const buildUnitsFromAirWing = (wing, session = null) => {
+    const myUnits = [];
+    (wing?.unitIds || []).forEach(uid => {
+      const u = militaryUnits.find(mu => mu.id === uid);
+      if (!u) return;
+      const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+      const major = tmpl.majorCategory || u.majorCategory;
+      if (major !== '공군') return;
+
+      const isTeam1 = session
+        ? (session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId))
+        : true;
+      const startX = isTeam1 ? 0 : 19;
+
+      myUnits.push({
+        ...u,
+        name: u.customName || tmpl.name || u.name || '항공기',
+        image: tmpl.image || u.image || null,
+        attack: u.attack || tmpl.attack || 0,
+        defense: u.defense || tmpl.defense || 0,
+        speed: u.speed || tmpl.speed || 0,
+        maxHp: u.maxHp || u.hp || tmpl.hp || 100,
+        hp: u.hp || u.maxHp || tmpl.hp || 100,
+        vision: (u.vision || tmpl.vision || 0) + (countryStats?.vision || 0),
+        supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
+        majorCategory: '공군',
+        minorCategory: tmpl.minorCategory || u.minorCategory,
+        subCategory: tmpl.subCategory || u.subCategory,
+        x: startX,
+        y: startX,
+        status: 'standby',
+        owner: countryId,
+        wingId: wing.id,
+        aiLevel: generals.find(g => g.id === wing.commanderId)?.aiLevel || 1
+      });
+    });
+
+    return myUnits;
+  };
+
+  const applyFormationLossesFromSession = async (sessionData) => {
+    const units = sessionData?.units || [];
+    if (!units.length) return;
+
+    const countryIds = new Set((countries || []).map(c => c.id));
+    if (countryId) countryIds.add(countryId);
+    const destroyedByOwner = {};
+    units.forEach((u) => {
+      if (u?.status !== 'destroyed') return;
+      if (!countryIds.has(u.owner) && u.owner !== countryId) return;
+      if (u.owner === 'AI') return;
+      if (!destroyedByOwner[u.owner]) destroyedByOwner[u.owner] = new Set();
+      destroyedByOwner[u.owner].add(u.id);
+    });
+
+    const owners = Object.keys(destroyedByOwner);
+    for (const ownerId of owners) {
+      const destroyed = destroyedByOwner[ownerId];
+      if (!destroyed || destroyed.size === 0) continue;
+
+      const [unitsEntry, corpsEntry, fleetsEntry, wingsEntry] = await Promise.all([
+        getDataEntry('military_units', ownerId),
+        getDataEntry('corps', ownerId),
+        getDataEntry('naval_fleets', ownerId),
+        getDataEntry('air_wings', ownerId)
+      ]);
+
+      const srcUnits = unitsEntry?.data?.units || [];
+      const nextUnits = srcUnits.filter(u => !destroyed.has(u.id));
+      if (nextUnits.length !== srcUnits.length) {
+        await upsertDataEntry('military_units', ownerId, { units: nextUnits });
+      }
+
+      const srcCorps = corpsEntry?.data?.corps || [];
+      const nextCorps = srcCorps.map(c => ({ ...c, units: (c.units || []).filter(uid => !destroyed.has(uid)) }));
+      if (JSON.stringify(nextCorps) !== JSON.stringify(srcCorps)) {
+        await upsertDataEntry('corps', ownerId, { corps: nextCorps });
+      }
+
+      const srcFleets = fleetsEntry?.data?.fleets || [];
+      const nextFleets = srcFleets.map(f => ({
+        ...f,
+        shipIds: (f.shipIds || []).filter(uid => !destroyed.has(uid)),
+        manualControlIds: (f.manualControlIds || []).filter(uid => !destroyed.has(uid)),
+        flagshipId: destroyed.has(f.flagshipId) ? null : (f.flagshipId || null)
+      }));
+      if (JSON.stringify(nextFleets) !== JSON.stringify(srcFleets)) {
+        await upsertDataEntry('naval_fleets', ownerId, { fleets: nextFleets });
+      }
+
+      const srcWings = wingsEntry?.data?.wings || [];
+      const nextWings = srcWings.map(w => ({ ...w, unitIds: (w.unitIds || []).filter(uid => !destroyed.has(uid)) }));
+      if (JSON.stringify(nextWings) !== JSON.stringify(srcWings)) {
+        await upsertDataEntry('air_wings', ownerId, { wings: nextWings });
+      }
+    }
   };
 
   // Supply Limit Negotiation
@@ -183,6 +282,12 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     const latestActive = latestSessions.find(s => s.id === activeSession.id) || activeSession;
     const merged = mergeSessionForSave(latestActive, patch);
 
+    const becameGameOver = (merged?.phase === 'game_over' || merged?.status === 'game_over');
+    if (becameGameOver && !merged?.formationLossApplied) {
+      await applyFormationLossesFromSession(merged);
+      merged.formationLossApplied = true;
+    }
+
     let nextSessions = [];
     if (latestSessions.some(s => s.id === activeSession.id)) {
       nextSessions = latestSessions.map(s => s.id === activeSession.id ? merged : s);
@@ -203,7 +308,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     if (sessionCategory === 'naval' && !selectedFleetId) {
       return alert('해전 세션 생성 시 투입할 함대를 선택해주세요.');
     }
-    if (sessionCategory !== 'naval' && !selectedArmyId) {
+    if (sessionCategory === 'bombing' && !selectedAirWingId) {
+      return alert('폭격전 세션 생성 시 투입할 비행단을 선택해주세요.');
+    }
+    if (sessionCategory !== 'naval' && sessionCategory !== 'bombing' && !selectedArmyId) {
       return alert('해전 이외 세션 생성 시 투입할 야전군을 선택해주세요.');
     }
 
@@ -212,6 +320,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       const fleet = navalFleets.find(f => f.id === selectedFleetId);
       if (!fleet) return alert('함대를 찾을 수 없습니다.');
       myUnits = buildUnitsFromFleet(fleet);
+    } else if (sessionCategory === 'bombing') {
+      const wing = airWings.find(w => w.id === selectedAirWingId);
+      if (!wing) return alert('비행단을 찾을 수 없습니다.');
+      myUnits = buildUnitsFromAirWing(wing);
     } else {
       const army = armies.find(a => a.id === selectedArmyId);
       if (!army) return alert('야전군을 찾을 수 없습니다.');
@@ -274,8 +386,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     const aiPlayer = isAIEnemy ? buildAIPlayerData(myUnits, false) : null;
 
     const hostPlayerData = {
-      armyId: sessionCategory === 'naval' ? null : selectedArmyId,
+      armyId: (sessionCategory === 'naval' || sessionCategory === 'bombing') ? null : selectedArmyId,
       fleetId: sessionCategory === 'naval' ? selectedFleetId : null,
+      airWingId: sessionCategory === 'bombing' ? selectedAirWingId : null,
       ready: hostIsAI ? true : false,
       isAI: hostIsAI,
       orders: [],
@@ -343,16 +456,22 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     }
 
     const isNavalSession = session.sessionCategory === 'naval';
+    const isBombingSession = session.sessionCategory === 'bombing';
     const assignedArmyId = session?.players?.[countryId]?.armyId || '';
     const assignedFleetId = session?.players?.[countryId]?.fleetId || '';
+    const assignedAirWingId = session?.players?.[countryId]?.airWingId || '';
     const effectiveArmyId = selectedArmyId || assignedArmyId;
     const effectiveFleetId = selectedFleetId || assignedFleetId;
+    const effectiveAirWingId = selectedAirWingId || assignedAirWingId;
 
-    if (!isNavalSession && !effectiveArmyId) {
+    if (!isNavalSession && !isBombingSession && !effectiveArmyId) {
       return alert('참여하기 전 투입할 야전군을 선택해주세요.');
     }
     if (isNavalSession && !effectiveFleetId) {
       return alert('해전 참여 전 투입할 함대를 선택해주세요.');
+    }
+    if (isBombingSession && !effectiveAirWingId) {
+      return alert('폭격전 참여 전 투입할 비행단을 선택해주세요.');
     }
 
     let myUnits = [];
@@ -360,6 +479,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       const fleet = navalFleets.find(f => f.id === effectiveFleetId);
       if (!fleet) return alert('함대를 찾을 수 없습니다.');
       myUnits = buildUnitsFromFleet(fleet, session);
+    } else if (isBombingSession) {
+      const wing = airWings.find(w => w.id === effectiveAirWingId);
+      if (!wing) return alert('비행단을 찾을 수 없습니다.');
+      myUnits = buildUnitsFromAirWing(wing, session);
     } else {
       const army = armies.find(a => a.id === effectiveArmyId);
       if (!army) return alert('야전군을 찾을 수 없습니다.');
@@ -433,8 +556,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     
     updatedSession.players[countryId] = {
       ...updatedSession.players[countryId],
-      armyId: isNavalSession ? null : effectiveArmyId,
+      armyId: (isNavalSession || isBombingSession) ? null : effectiveArmyId,
       fleetId: isNavalSession ? effectiveFleetId : null,
+      airWingId: isBombingSession ? effectiveAirWingId : null,
       ready: false,
       orders: [],
       units: myUnits,
@@ -570,7 +694,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             </div>
           </div>
           <div className="form-group">
-            <label className="form-label">투입할 야전군 ({sessionCategory === 'naval' ? '선택' : '필수'})</label>
+            <label className="form-label">투입할 야전군 ({sessionCategory === 'land' ? '필수' : '선택'})</label>
             <select className="form-select" value={selectedArmyId} onChange={e => setSelectedArmyId(e.target.value)}>
               <option value="">-- 내 야전군 선택 --</option>
               {armies.map(a => (
@@ -584,6 +708,15 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
               <option value="">-- 내 함대 선택 --</option>
               {navalFleets.map(f => (
                 <option key={f.id} value={f.id}>{f.name} (선박: {(f.shipIds || []).length}척)</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">폭격전 참여용 비행단 ({sessionCategory === 'bombing' ? '필수' : '선택'})</label>
+            <select className="form-select" value={selectedAirWingId} onChange={e => setSelectedAirWingId(e.target.value)}>
+              <option value="">-- 내 비행단 선택 --</option>
+              {airWings.map(w => (
+                <option key={w.id} value={w.id}>{w.name} (항공기: {(w.unitIds || []).length}기)</option>
               ))}
             </select>
           </div>
@@ -612,6 +745,13 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             <option value="">-- 내 함대 선택 --</option>
             {navalFleets.map(f => (
               <option key={f.id} value={f.id}>{f.name} (선박: {(f.shipIds || []).length}척)</option>
+            ))}
+          </select>
+          <label className="form-label" style={{ marginTop: '10px' }}>미리 투입할 비행단 선택 (폭격전 참여용)</label>
+          <select className="form-select" value={selectedAirWingId} onChange={e => setSelectedAirWingId(e.target.value)}>
+            <option value="">-- 내 비행단 선택 --</option>
+            {airWings.map(w => (
+              <option key={w.id} value={w.id}>{w.name} (항공기: {(w.unitIds || []).length}기)</option>
             ))}
           </select>
         </div>
