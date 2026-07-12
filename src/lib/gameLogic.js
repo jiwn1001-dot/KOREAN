@@ -383,6 +383,83 @@ export async function processTurnEnd(newTurn) {
           const template = unitTemplates.find(t => t.id === unit.templateId);
           if (!template) continue;
 
+          const major = template.majorCategory || unit.majorCategory;
+
+          // 육군 자동 회복: 결손 체력 비율만큼 인력/무기를 소모해 회복, 부족하면 가능한 범위만 회복
+          if (major === '육군') {
+            const maxHp = Number(unit.maxHp || template.hp || 100);
+            const curHp = Number(unit.hp !== undefined ? unit.hp : maxHp);
+            const missingHp = Math.max(0, maxHp - curHp);
+
+            if (maxHp > 0 && missingHp > 0) {
+              const unitCount = Math.max(1, Number(unit.count || 1));
+              const manpowerBase = Math.max(0, Number(template.manpowerCost || 0) * unitCount);
+              const reqWeapons = template.requiredWeapons || [];
+
+              let possibleRatio = 1;
+              let availableMob = 0;
+
+              if (manpowerBase > 0) {
+                const ecoEntry = ecoEntries.find(e => e.country_id === uEntry.country_id);
+                const ecoData = ecoEntry?.data || {};
+                availableMob = Number(ecoData.population?.mobilizable || 0);
+                possibleRatio = Math.min(possibleRatio, availableMob / manpowerBase);
+              }
+
+              for (const rw of reqWeapons) {
+                const totalWeaponNeed = Math.max(0, Number(rw.amount || 0) * unitCount);
+                if (totalWeaponNeed <= 0) continue;
+                const key = `weapon:${rw.weaponName}`;
+                const currAmt = resMap[key] ? Number(resMap[key].amount) : 0;
+                possibleRatio = Math.min(possibleRatio, currAmt / totalWeaponNeed);
+              }
+
+              const missingRatio = missingHp / maxHp;
+              const actualRatio = Math.max(0, Math.min(missingRatio, possibleRatio));
+              const recoverHp = Math.floor(maxHp * actualRatio);
+
+              if (recoverHp > 0) {
+                if (manpowerBase > 0) {
+                  const ecoEntry = ecoEntries.find(e => e.country_id === uEntry.country_id);
+                  if (ecoEntry?.data) {
+                    const manpowerSpend = Math.min(
+                      Number(ecoEntry.data.population?.mobilizable || 0),
+                      Math.max(0, Math.ceil(manpowerBase * actualRatio))
+                    );
+                    ecoEntry.data = {
+                      ...ecoEntry.data,
+                      population: {
+                        ...(ecoEntry.data.population || {}),
+                        mobilizable: Math.max(0, Number(ecoEntry.data.population?.mobilizable || 0) - manpowerSpend)
+                      }
+                    };
+                    if (manpowerSpend > 0) {
+                      await supabase.from('data_entries').update({ data: ecoEntry.data }).eq('id', ecoEntry.id);
+                    }
+                  }
+                }
+
+                for (const rw of reqWeapons) {
+                  const totalWeaponNeed = Math.max(0, Number(rw.amount || 0) * unitCount);
+                  if (totalWeaponNeed <= 0) continue;
+                  const key = `weapon:${rw.weaponName}`;
+                  const res = resMap[key];
+                  if (!res) continue;
+                  const spend = Math.min(Number(res.amount || 0), Math.max(0, Math.ceil(totalWeaponNeed * actualRatio)));
+                  res.amount = Math.max(0, Number(res.amount || 0) - spend);
+                  await supabase.from('resources').update({ amount: res.amount }).eq('id', res.id);
+                }
+
+                units[i] = {
+                  ...unit,
+                  maxHp,
+                  hp: Math.min(maxHp, curHp + recoverHp)
+                };
+                updated = true;
+              }
+            }
+          }
+
           // 연료 불필요 유닛은 항상 전체 가동
           if (!template.fuelType || template.fuelType === 'none' || template.fuelPerTurn <= 0) {
             if (unit.operational !== unit.count) {

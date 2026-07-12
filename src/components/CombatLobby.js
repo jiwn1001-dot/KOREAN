@@ -154,18 +154,28 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     const countryIds = new Set((countries || []).map(c => c.id));
     if (countryId) countryIds.add(countryId);
     const destroyedByOwner = {};
+    const survivorHpByOwner = {};
     units.forEach((u) => {
-      if (u?.status !== 'destroyed') return;
+      if (!u || u.owner === 'AI') return;
       if (!countryIds.has(u.owner) && u.owner !== countryId) return;
-      if (u.owner === 'AI') return;
+
+      if (u.status !== 'destroyed') {
+        if (!survivorHpByOwner[u.owner]) survivorHpByOwner[u.owner] = {};
+        survivorHpByOwner[u.owner][u.id] = {
+          hp: Number(u.hp || 0),
+          maxHp: Number(u.maxHp || u.hp || 100)
+        };
+      }
+
+      if (u?.status !== 'destroyed') return;
       if (!destroyedByOwner[u.owner]) destroyedByOwner[u.owner] = new Set();
       destroyedByOwner[u.owner].add(u.id);
     });
 
-    const owners = Object.keys(destroyedByOwner);
+    const owners = [...new Set([...Object.keys(destroyedByOwner), ...Object.keys(survivorHpByOwner)])];
     for (const ownerId of owners) {
-      const destroyed = destroyedByOwner[ownerId];
-      if (!destroyed || destroyed.size === 0) continue;
+      const destroyed = destroyedByOwner[ownerId] || new Set();
+      const survivorHp = survivorHpByOwner[ownerId] || {};
 
       const [unitsEntry, corpsEntry, fleetsEntry, wingsEntry] = await Promise.all([
         getDataEntry('military_units', ownerId),
@@ -175,8 +185,16 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
       ]);
 
       const srcUnits = unitsEntry?.data?.units || [];
-      const nextUnits = srcUnits.filter(u => !destroyed.has(u.id));
-      if (nextUnits.length !== srcUnits.length) {
+      const nextUnits = srcUnits
+        .filter(u => !destroyed.has(u.id))
+        .map((u) => {
+          const s = survivorHp[u.id];
+          if (!s) return u;
+          const maxHp = Number.isFinite(s.maxHp) && s.maxHp > 0 ? s.maxHp : Number(u.maxHp || u.hp || 100);
+          const hp = Math.max(0, Math.min(maxHp, Number.isFinite(s.hp) ? s.hp : Number(u.hp || maxHp)));
+          return { ...u, hp, maxHp };
+        });
+      if (JSON.stringify(nextUnits) !== JSON.stringify(srcUnits)) {
         await upsertDataEntry('military_units', ownerId, { units: nextUnits });
       }
 
