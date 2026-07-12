@@ -28,6 +28,8 @@ export function createLandBoard() {
         y,
         type: TILE_TYPES.NORMAL, // 기본 타일
         poisoned: false, // 독가스 여부
+        poisonDamage: 0,
+        poisonTurns: 0,
       });
     }
     board.push(row);
@@ -216,49 +218,79 @@ export function deployAIUnits(units, initialSession, userCountryId) {
     const supplyLimit = isTeam1 ? (initialSession?.supplyLimitTeam1 || 10) : (initialSession?.supplyLimitTeam2 || 10);
     const xRange = isTeam1 ? [0, 9] : [10, 19];
     
-    // 이 국가의 스탠바이 유닛들 가져오기
+    const army = initialSession?.armies?.find(a => a.corpsIds.some(cid => updatedUnits.some(u => u.owner === countryId && u.corpsId === cid)));
+    let armyAiLevel = 1;
+    if (army && army.commanderId) {
+      const general = initialSession?.generals?.find(g => g.id === army.commanderId);
+      if (general && general.aiLevel) armyAiLevel = parseInt(general.aiLevel, 10);
+    }
+
     const standbyUnits = updatedUnits.filter(u => u.owner === countryId && u.status === 'standby');
     let currentSupply = updatedUnits.filter(u => u.owner === countryId && (u.status === 'field' || (u.status === 'standby' && u.majorCategory === '공군'))).reduce((a, b) => a + (b.supplyConsumption || 0), 0);
 
-    // 먼저 사령부(HQ)부터 배치 (필드에 없다면)
     const hq = standbyUnits.find(u => u.isHQ);
     if (hq) {
-      // 빈 자리 찾기
+      const targetX = isTeam1 ? (armyAiLevel >= 2 ? 2 : 0) : (armyAiLevel >= 2 ? 17 : 19);
+      const targetY = 10;
       let placed = false;
-      for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
-        for (let y = 0; y < 20 && !placed; y++) {
-          if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
-            hq.x = x;
+      if (armyAiLevel >= 2) {
+        const searchOrder = [10, 9, 11, 8, 12, 7, 13, 6, 14, 5, 15, 4, 16, 3, 17, 2, 18, 1, 19, 0];
+        for (let delta of searchOrder) {
+          const y = delta;
+          if (!updatedUnits.some(u => u.x === targetX && u.y === y && u.status === 'field')) {
+            hq.x = targetX;
             hq.y = y;
             hq.status = 'field';
             placed = true;
+            break;
+          }
+        }
+      }
+      if (!placed) {
+        for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
+          for (let y = 0; y < 20 && !placed; y++) {
+            if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+              hq.x = x;
+              hq.y = y;
+              hq.status = 'field';
+              placed = true;
+            }
           }
         }
       }
     }
 
-    // 나머지 유닛들 보급 한계 내에서 무작위 배치 (공군은 제외!)
+    // 나머지 유닛들 보급 한계 내에서 배치 (공군은 제외!)
     const nonHqStandby = standbyUnits.filter(u => !u.isHQ && u.majorCategory !== '공군');
-    // 무작위로 섞음 (다양한 유닛이 배치되도록)
-    nonHqStandby.sort(() => Math.random() - 0.5);
+    const formationSpread = armyAiLevel >= 3 ? 0.8 : 0.4;
+    const placementOrder = nonHqStandby.sort((a, b) => {
+      if (armyAiLevel >= 3) {
+        return (b.attack || 0) - (a.attack || 0);
+      }
+      return Math.random() - 0.5;
+    });
 
-    for (const unit of nonHqStandby) {
+    for (const unit of placementOrder) {
       if (currentSupply + (unit.supplyConsumption || 1) <= supplyLimit) {
         let placed = false;
-        // AI는 무작위로 타일을 골라 배치 시도 (단순화를 위해 순차적 탐색)
-        for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
-          for (let y = 0; y < 20 && !placed; y++) {
-            // 난수 개입으로 약간의 흩어짐 유도
-            if (Math.random() < 0.2 && !updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
+        const preferredXs = armyAiLevel >= 2 ? (isTeam1 ? [2, 3, 4, 1, 5, 0, 6, 7, 8, 9] : [17, 16, 15, 18, 14, 19, 13, 12, 11, 10]) : xRange;
+        const yOffsets = armyAiLevel >= 2 ? [10, 9, 11, 8, 12, 7, 13, 6, 14, 5, 15, 4, 16, 3, 17, 2, 18, 1, 19, 0] : Array.from({ length: 20 }, (_, i) => i);
+
+        for (const x of preferredXs) {
+          for (const y of yOffsets) {
+            if (Math.random() > formationSpread && armyAiLevel < 3) continue;
+            if (x < xRange[0] || x > xRange[1]) continue;
+            if (!updatedUnits.some(u => u.x === x && u.y === y && u.status === 'field')) {
               unit.x = x;
               unit.y = y;
               unit.status = 'field';
               currentSupply += (unit.supplyConsumption || 1);
               placed = true;
+              break;
             }
           }
+          if (placed) break;
         }
-        // 난수로 인해 못 찾았다면 순차 탐색으로 다시 시도
         if (!placed) {
           for (let x = xRange[0]; x <= xRange[1] && !placed; x++) {
             for (let y = 0; y < 20 && !placed; y++) {
@@ -788,15 +820,20 @@ export function resolveCommanderSkills(session) {
   const { board, units, skillsQueue, antiAir = {} } = session;
   // skillsQueue: [{ type: 'poison', target: {x, y} }, { type: 'missile', target: {x, y}, damage: 50 }, ...]
 
-  // 1. 독가스 필드 도트 데미지 적용 (피아 구분 없음)
+  // 1. 독가스 필드 도트 데미지 적용 (피아 구분 없음, 지속 턴 관리)
   for (let y = 0; y < 20; y++) {
     for (let x = 0; x < 20; x++) {
-      if (board[y][x].poisoned) {
+      if (board[y][x].poisoned && (board[y][x].poisonTurns || 0) > 0) {
         const unit = units.find(u => u.x === x && u.y === y && u.status === 'field');
         if (unit && !unit.isHQ) {
-          // 최대체력의 10% (1할) 깎아먹음
-          const dmg = Math.max(1, Math.floor((unit.maxHp || unit.hp) * 0.1));
+          const dmg = Math.max(1, board[y][x].poisonDamage || 1);
           unit.hp -= dmg;
+        }
+        board[y][x].poisonTurns -= 1;
+        if (board[y][x].poisonTurns <= 0) {
+          board[y][x].poisoned = false;
+          board[y][x].poisonDamage = 0;
+          board[y][x].poisonTurns = 0;
         }
       }
     }
@@ -815,34 +852,35 @@ export function resolveCommanderSkills(session) {
   activeSkills.forEach(skill => {
     // ---- [AA 요격 판정] 폭격, CAS, 핵투발의 경우 상대 대공능력과 다이스 경합 ----
     let intercepted = false;
+    let aaChecked = false;
     if (['bombing', 'cas', 'nuke'].includes(skill.type)) {
+      aaChecked = true;
       const targetUnit = units.find(u => u.x === skill.target.x && u.y === skill.target.y && u.status === 'field');
       // 타겟에 유닛이 없더라도 일단 적국의 기본 대공능력으로 방어 시도한다고 가정 (또는 타겟 유닛의 소유주)
       const defenderId = targetUnit ? targetUnit.owner : 'enemy'; 
       const defenderAA = antiAir[defenderId] || 0;
-      
-      let aircraftSpeed = 3; // 기본 항공기 속도
-      const myAircrafts = units.filter(u => u.owner !== defenderId && u.status === 'field');
-      
-      if (skill.type === 'bombing' || skill.type === 'nuke') {
-        const bomber = myAircrafts.find(u => u.subCategory === '폭격기' || u.subCategory === '핵무기');
-        if (bomber && bomber.speed) aircraftSpeed = bomber.speed;
-      } else if (skill.type === 'cas') {
-        const casUnit = myAircrafts.find(u => u.subCategory === '근접항공지원기');
-        if (casUnit && casUnit.speed) aircraftSpeed = casUnit.speed;
-      }
-      
+
+      let aircraftSpeed = skill.aircraftSpeed || 3;
       intercepted = calculateAirInterception(defenderAA, aircraftSpeed);
     }
     
-    // 요격당한 경우 데미지 적용 건너뜀
+    // 요격당한 경우 데미지 적용 건너뜀 (폭격/CAS는 손실, 핵은 손실 없음)
     if (intercepted) {
+      if (skill.consumerId && ['bombing', 'cas'].includes(skill.type)) {
+        const consumer = units.find(u => u.id === skill.consumerId);
+        if (consumer) {
+          consumer.hp = 0;
+          consumer.status = 'destroyed';
+        }
+      }
       console.log(`[AA 요격 성공] ${skill.type} 스킬이 요격되어 무효화되었습니다.`);
       return; 
     }
 
     if (skill.type === 'poison') {
       board[skill.target.y][skill.target.x].poisoned = true;
+      board[skill.target.y][skill.target.x].poisonDamage = Math.max(1, skill.damage || 1);
+      board[skill.target.y][skill.target.x].poisonTurns = Math.max(1, skill.duration || 1);
     } 
     else if (skill.type === 'missile' || skill.type === 'cas') {
       const unit = units.find(u => u.x === skill.target.x && u.y === skill.target.y && u.status === 'field');
@@ -851,10 +889,12 @@ export function resolveCommanderSkills(session) {
       }
     }
     if (skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'bombing' || skill.type === 'naval_bombardment') {
-      // 3x3 범위 처리
+      // 범위 처리 (핵은 투입 유닛 속도 기반으로 범위 확장)
+      const nukeRadius = Math.max(1, Math.min(3, parseInt(skill.radius, 10) || 1));
       const targetArea = [];
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
+      const areaRadius = (skill.type === 'nuke' || skill.type === 'nuke_missile') ? nukeRadius : 1;
+      for (let dy = -areaRadius; dy <= areaRadius; dy++) {
+        for (let dx = -areaRadius; dx <= areaRadius; dx++) {
           targetArea.push({ x: skill.target.x + dx, y: skill.target.y + dy });
         }
       }
@@ -875,9 +915,11 @@ export function resolveCommanderSkills(session) {
     }
     
     // 소모성 스킬 사용 시 주체 유닛 파괴
+    // missile: 항상 소모 / bombing, cas: 요격 실패(공격 성공) 시에는 소모 없음
     if (skill.consumerId) {
       const consumer = units.find(u => u.id === skill.consumerId);
-      if (consumer) {
+      const shouldConsume = skill.type === 'missile' || skill.type === 'nuke' || skill.type === 'nuke_missile' || skill.type === 'poison' || (skill.type === 'cas' && !aaChecked) || (skill.type === 'bombing' && !aaChecked);
+      if (consumer && shouldConsume) {
         consumer.hp = 0;
         consumer.status = 'destroyed';
       }

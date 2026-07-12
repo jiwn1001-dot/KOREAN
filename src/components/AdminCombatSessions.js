@@ -100,7 +100,10 @@ export default function AdminCombatSessions({ countries }) {
     [...team1, ...team2].forEach(t => {
       newSession.players[t.countryId] = {
         armyId: null,
+        isAI: false,
         ready: false, // 유저가 개별적으로 준비 완료(입장) 해야 함
+        orders: [],
+        skills: [],
         units: [],
         stats: { penetration: 0, antiAir: 0, vision: 0 } // 접속 시 갱신됨
       };
@@ -141,6 +144,34 @@ export default function AdminCombatSessions({ countries }) {
     });
     setSessions(updated);
     await upsertDataEntry('combat_sessions', null, { sessions: updated });
+  };
+
+  const handleUpdatePlayerControl = async (sessionId, playerId, controlMode) => {
+    const isAIControl = controlMode === 'ai' || playerId === 'AI';
+    const updated = sessions.map(s => {
+      if (s.id !== sessionId) return s;
+
+      const nextPlayers = { ...(s.players || {}) };
+      const prevPlayer = nextPlayers[playerId] || {};
+
+      nextPlayers[playerId] = {
+        ...prevPlayer,
+        isAI: isAIControl,
+        ready: isAIControl ? true : false,
+        orders: isAIControl ? [] : (prevPlayer.orders || []),
+        skills: isAIControl ? [] : (prevPlayer.skills || [])
+      };
+
+      return { ...s, players: nextPlayers };
+    });
+
+    setSessions(updated);
+    await upsertDataEntry('combat_sessions', null, { sessions: updated });
+  };
+
+  const getCountryName = (id) => {
+    if (id === 'AI') return 'AI';
+    return countries.find(c => c.id === id)?.name || id;
   };
 
   return (
@@ -249,6 +280,42 @@ export default function AdminCombatSessions({ countries }) {
 
               {s.battleMode === 'siege' && s.status === 'defense_prep' && (
                 <button className="btn btn-sm btn-warning" style={{marginLeft:'16px'}} onClick={() => handleTriggerInvasion(s.id)}>🔥 침공 개시 (공격측 진입 허용)</button>
+              )}
+
+              {s.players && Object.keys(s.players).length > 0 && (
+                <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>조작 주체:</span>
+                  {Object.entries(s.players).map(([playerId, playerData]) => {
+                    const fixedAI = playerId === 'AI';
+                    const selectedMode = (playerData?.isAI || fixedAI) ? 'ai' : 'user';
+                    return (
+                      <span
+                        key={`${s.id}_${playerId}`}
+                        style={{
+                          display: 'inline-flex',
+                          gap: '6px',
+                          alignItems: 'center',
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          padding: '4px 8px'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.8rem' }}>{getCountryName(playerId)}</span>
+                        <select
+                          className="form-select"
+                          style={{ padding: '2px 6px', minWidth: '96px', fontSize: '0.8rem' }}
+                          value={selectedMode}
+                          disabled={fixedAI}
+                          onChange={(e) => handleUpdatePlayerControl(s.id, playerId, e.target.value)}
+                        >
+                          <option value="user">유저 조작</option>
+                          <option value="ai">AI 조작</option>
+                        </select>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>

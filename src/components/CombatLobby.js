@@ -2,7 +2,49 @@
 
 import React, { useState, useEffect } from 'react';
 import { getDataEntry, upsertDataEntry, getCountries } from '@/lib/store';
+import { deployAIUnits } from '@/lib/landCombat';
 import LandCombatBoard from '@/components/LandCombatBoard';
+
+function cloneUnitForAI(unit, aiOwnerId, isTeam1, aiLevel = 2) {
+  const uniqueId = `${unit.id || 'unit'}_ai_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  return {
+    ...unit,
+    id: uniqueId,
+    owner: aiOwnerId,
+    status: 'standby',
+    x: isTeam1 ? 0 : 19,
+    y: unit.y !== undefined ? unit.y : 10,
+    corpsId: unit.corpsId ? `AI_${unit.corpsId}` : 'AI_corps',
+    aiLevel,
+    isHQ: unit.isHQ || false,
+    hp: unit.hp || unit.maxHp || 100,
+    maxHp: unit.maxHp || unit.hp || 100,
+    vision: unit.vision || 0,
+    supplyConsumption: unit.supplyConsumption || 1,
+    attack: unit.attack || 0,
+    defense: unit.defense || 0,
+    speed: unit.speed || 0,
+    majorCategory: unit.majorCategory || unit.subCategory || '육군',
+    minorCategory: unit.minorCategory || unit.subCategory || '보병',
+    subCategory: unit.subCategory || '보병'
+  };
+}
+
+function buildAIUnitsFromArmy(units, aiOwnerId, isTeam1, aiLevel = 2) {
+  return units.map(unit => cloneUnitForAI(unit, aiOwnerId, isTeam1, aiLevel));
+}
+
+function buildAIPlayerData(sourceUnits, isTeam1) {
+  return {
+    armyId: null,
+    ready: true,
+    isAI: true,
+    orders: [],
+    skills: [],
+    stats: { penetration: 0, antiAir: 0, vision: 0 },
+    units: buildAIUnitsFromArmy(sourceUnits, 'AI', isTeam1, 2)
+  };
+}
 
 export default function CombatLobby({ countryId, militaryUnits, corps, armies, generals, admin, countryStats, unitTemplates = [] }) {
   const [maps, setMaps] = useState([]);
@@ -14,6 +56,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
   const [showCreate, setShowCreate] = useState(false);
   const [sessionName, setSessionName] = useState('');
   const [selectedMapId, setSelectedMapId] = useState('');
+  const [sessionMode, setSessionMode] = useState('human_vs_ai');
   const [supplyLimit, setSupplyLimit] = useState(10);
   const [opponentId, setOpponentId] = useState('');
   const [selectedArmyId, setSelectedArmyId] = useState('');
@@ -79,12 +122,21 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
           const u = militaryUnits.find(mu => mu.id === uid);
           if (u) {
             const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
-            // 현재 유저가 직접 생성하는 세션에는 카테고리 구분이 없지만 추후 확장성을 위해 둠
-            
-            // Convert to field unit format
             myUnits.push({
               ...u,
-              x: 0, // Default deploy position
+              name: u.customName || tmpl.name || u.name || '유닛',
+              image: tmpl.image || u.image || null,
+              attack: u.attack || tmpl.attack || 0,
+              defense: u.defense || tmpl.defense || 0,
+              speed: u.speed || tmpl.speed || 0,
+              hp: u.hp || tmpl.hp || 100,
+              maxHp: u.maxHp || u.hp || tmpl.hp || 100,
+              vision: u.vision || tmpl.vision || 0,
+              supplyConsumption: u.supplyConsumption || tmpl.supplyConsumption || 1,
+              majorCategory: tmpl.majorCategory || u.majorCategory || '육군',
+              minorCategory: tmpl.minorCategory || u.minorCategory || tmpl.minorCategory || '보병',
+              subCategory: tmpl.subCategory || u.subCategory || '보병',
+              x: 0,
               y: 0,
               status: 'standby',
               owner: countryId,
@@ -97,7 +149,6 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       }
     });
 
-    // Add HQ
     myUnits.push({
       id: 'hq_' + countryId,
       name: '야전사령부',
@@ -107,8 +158,28 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       status: 'standby',
       owner: countryId,
       isHQ: true,
-      hp: 100
+      hp: 100,
+      maxHp: 100,
+      vision: countryStats?.vision || 0,
+      supplyConsumption: 0
     });
+
+    const hostIsAI = sessionMode === 'ai_vs_ai';
+    const finalOpponent = sessionMode === 'ai_vs_ai'
+      ? 'AI'
+      : (opponentId === 'AI' ? 'AI' : (opponentId || (sessionMode === 'human_vs_ai' ? 'AI' : null)));
+    const isAIEnemy = finalOpponent === 'AI';
+    const aiPlayer = isAIEnemy ? buildAIPlayerData(myUnits, false) : null;
+
+    const hostPlayerData = {
+      armyId: selectedArmyId,
+      ready: hostIsAI ? true : false,
+      isAI: hostIsAI,
+      orders: [],
+      skills: [],
+      units: hostIsAI ? buildAIUnitsFromArmy(myUnits, countryId, true, 2) : myUnits,
+      stats: countryStats
+    };
 
     const newSession = {
       id: 'session_' + Date.now(),
@@ -117,28 +188,46 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
       supplyLimitTeam1: parseInt(supplyLimit) || 10,
       supplyLimitTeam2: parseInt(supplyLimit) || 10,
       host: countryId,
-      opponent: opponentId || 'AI',
+      opponent: finalOpponent,
+      sessionMode,
       allowNavalBombardment,
-      status: 'waiting',
+      status: (sessionMode === 'human_vs_human' || (sessionMode === 'human_vs_ai' && !isAIEnemy))
+        ? 'waiting'
+        : 'deployment',
+      phase: undefined,
       players: {
-        [countryId]: {
-          armyId: selectedArmyId,
-          ready: false,
-          orders: [],
-          units: myUnits,
-          stats: countryStats
-        }
+        [countryId]: hostPlayerData,
+        ...(isAIEnemy ? { AI: aiPlayer } : {})
       },
       board: maps.find(m => m.id === selectedMapId)?.board,
+      units: isAIEnemy ? [...hostPlayerData.units, ...aiPlayer.units] : [...hostPlayerData.units],
       createdAt: new Date().toISOString()
     };
+
+    if (sessionMode === 'ai_vs_ai') {
+      const deployedUnits = deployAIUnits(newSession.units, { ...newSession, armies, generals }, null);
+      newSession.units = deployedUnits;
+      newSession.players[countryId].units = deployedUnits.filter(u => u.owner === countryId);
+      if (newSession.players.AI) {
+        newSession.players.AI.units = deployedUnits.filter(u => u.owner === 'AI');
+      }
+      newSession.status = 'playing';
+      newSession.phase = 'combat';
+      newSession.turn = 1;
+      newSession.players[countryId].ready = true;
+      if (newSession.players.AI) newSession.players.AI.ready = true;
+    }
 
     const updatedSessions = [...sessions, newSession];
     setSessions(updatedSessions);
     await upsertDataEntry('combat_sessions', null, { sessions: updatedSessions });
     
     setShowCreate(false);
-    alert('전투 세션이 생성되었습니다. 상대방의 수락을 기다립니다.');
+    if (sessionMode === 'ai_vs_ai') {
+      alert('AI 대 AI 세션이 생성되었습니다. 즉시 전투를 개시할 수 있습니다.');
+    } else {
+      alert('전투 세션이 생성되었습니다. 상대방의 수락을 기다립니다.');
+    }
   };
 
   const handleJoinSession = async (session) => {
@@ -324,14 +413,25 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">상대방 (선택)</label>
-              <select className="form-select" value={opponentId} onChange={e => setOpponentId(e.target.value)}>
-                <option value="">누구나 (또는 AI)</option>
-                {countries.filter(c => c.id !== countryId).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <label className="form-label">전투 타입</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label><input type="radio" name="sessionMode" value="human_vs_human" checked={sessionMode === 'human_vs_human'} onChange={() => setSessionMode('human_vs_human')} /> 유저 vs 유저</label>
+                <label><input type="radio" name="sessionMode" value="human_vs_ai" checked={sessionMode === 'human_vs_ai'} onChange={() => setSessionMode('human_vs_ai')} /> 유저 vs AI</label>
+                <label><input type="radio" name="sessionMode" value="ai_vs_ai" checked={sessionMode === 'ai_vs_ai'} onChange={() => setSessionMode('ai_vs_ai')} /> AI vs AI</label>
+              </div>
             </div>
+            {sessionMode !== 'ai_vs_ai' && (
+              <div className="form-group">
+                <label className="form-label">상대방 (선택)</label>
+                <select className="form-select" value={opponentId} onChange={e => setOpponentId(e.target.value)}>
+                  <option value="">누구나 (또는 AI)</option>
+                  <option value="AI">AI 자동 상대</option>
+                  {countries.filter(c => c.id !== countryId).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">보급 한계</label>
               <input type="number" className="form-input" value={supplyLimit} onChange={e => setSupplyLimit(e.target.value)} />
@@ -437,8 +537,10 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, g
                       {s.battleMode === 'siege' && s.status === 'defense_prep' ? '방어 준비 (사전 배치)' : '입장하기 (부대 투입)'}
                     </button>
                   )}
-                  {s.status === 'waiting' && isHost && !isTeamBattle && !isPlaying && (
-                    <button className="btn btn-primary" onClick={() => setActiveSession(s)}>⚔️ 입장 (대기/AI 플레이)</button>
+                  {(isHost && !isPlaying && (s.sessionMode === 'ai_vs_ai' || (s.status === 'waiting' && !isTeamBattle))) && (
+                    <button className="btn btn-primary" onClick={() => setActiveSession(s)}>
+                      ⚔️ 입장 {s.sessionMode === 'ai_vs_ai' ? '(AI 대 AI)' : '(대기/AI 플레이)'}
+                    </button>
                   )}
                   {admin && (
                     <button className="btn btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>

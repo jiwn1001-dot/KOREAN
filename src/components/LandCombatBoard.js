@@ -28,6 +28,86 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
   const [orderMode, setOrderMode] = useState('move'); // 'move' | 'attack'
   const [selectedStandbyUnitId, setSelectedStandbyUnitId] = useState(null);
 
+  const hasMainSkillQueued = activeSkills.some(s => s.type !== 'recon');
+
+  const getStandbySkillUnits = React.useCallback((skillType) => {
+    const myStandbyUnits = unitsOnBoard.filter(u => u.owner === countryId && u.status === 'standby');
+
+    if (skillType === 'poison') {
+      return myStandbyUnits.filter(u => u.minorCategory === '독가스' || u.subCategory === '독가스');
+    }
+    if (skillType === 'bombing') {
+      return myStandbyUnits.filter(u => u.minorCategory === '폭격기' || u.subCategory === '폭격기');
+    }
+    if (skillType === 'cas') {
+      return myStandbyUnits.filter(u => u.minorCategory === '근접항공지원기' || u.subCategory === '근접항공지원기');
+    }
+    if (skillType === 'missile') {
+      return myStandbyUnits.filter(u => u.minorCategory === '미사일' || u.subCategory === '미사일');
+    }
+    if (skillType === 'nuke') {
+      return myStandbyUnits.filter(u => u.minorCategory === '핵무기' || u.subCategory === '핵무기');
+    }
+    if (skillType === 'nuke_missile') {
+      return myStandbyUnits.filter(u => u.minorCategory === '핵미사일' || u.subCategory === '핵미사일');
+    }
+    return [];
+  }, [unitsOnBoard, countryId]);
+
+  const pickSkillConsumer = React.useCallback((skillType) => {
+    const candidates = getStandbySkillUnits(skillType);
+    if (!candidates.length) {
+      alert('해당 스킬을 사용할 수 있는 대기 상태 유닛이 없습니다.');
+      return null;
+    }
+
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+
+    const optionsText = candidates
+      .map((u, idx) => `${idx + 1}. ${u.name || u.id} (공:${u.attack || 0}, 속:${u.speed || 1}, 유효:${u.effectDuration || 1})`)
+      .join('\n');
+    const raw = window.prompt(`사용할 ${skillType} 유닛 번호를 입력하세요:\n${optionsText}`, '1');
+    if (!raw) return null;
+    const idx = parseInt(raw, 10) - 1;
+    if (Number.isNaN(idx) || idx < 0 || idx >= candidates.length) {
+      alert('잘못된 번호입니다.');
+      return null;
+    }
+
+    return candidates[idx];
+  }, [getStandbySkillUnits]);
+
+  const beginSkillTargeting = React.useCallback((skillType) => {
+    if (!hasAirSupremacy && ['bombing', 'cas', 'nuke', 'nuke_missile', 'poison'].includes(skillType)) {
+      alert('제공권 확보 후 사용할 수 있는 스킬입니다.');
+      return;
+    }
+    if (hasMainSkillQueued) {
+      alert('정찰을 제외한 스킬은 턴당 1종류만 사용할 수 있습니다.');
+      return;
+    }
+
+    const selected = pickSkillConsumer(skillType);
+    if (!selected) return;
+
+    const radius = (skillType === 'nuke' || skillType === 'nuke_missile')
+      ? Math.max(1, Math.min(3, parseInt(selected.speed || 1, 10)))
+      : 1;
+
+    const skillData = {
+      type: skillType,
+      consumerId: selected.id,
+      damage: Math.max(1, selected.attack || 1),
+      duration: Math.max(1, selected.effectDuration || 1),
+      aircraftSpeed: Math.max(1, selected.speed || 1),
+      radius
+    };
+
+    setTargetingSkill(skillData);
+  }, [hasAirSupremacy, hasMainSkillQueued, pickSkillConsumer]);
+
   // 보유 특수 유닛 스캔 및 공격력 추출 (보드나 투입 대기 중인 상태 등 필드에 있는 자기 유닛 기준)
   const specialUnits = React.useMemo(() => {
     const myUnits = unitsOnBoard.filter(u => u.owner === countryId);
@@ -109,10 +189,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
     let nextPlayers = { ...initialSession.players };
     
-    // AI 상대방 처리
-    if (initialSession.opponent === 'AI' && nextPlayers['AI']) {
-      nextPlayers['AI'].ready = true;
-    }
+    // 모든 AI 플레이어는 항상 준비된 상태로 간주
+    Object.values(nextPlayers).forEach(player => {
+      if (player?.isAI) {
+        player.ready = true;
+      }
+    });
 
     const allReady = Object.values(nextPlayers).every(p => p.ready);
     
@@ -235,29 +317,26 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           setOrderMode(clickedUnit.subCategory === '포병' ? 'attack' : 'move'); // 포병은 기본적으로 포격 모드로 시작
         }
       }
-    } else if (targetingSkill) {
-       // 스킬 타겟팅 처리 (데미지도 함께 넘김)
-       let consumerId = null;
-       if (targetingSkill === 'bombing') skillDamage = specialUnits.bomber.damage;
-       if (targetingSkill === 'cas') skillDamage = specialUnits.cas.damage;
-       if (targetingSkill === 'missile') {
-         skillDamage = specialUnits.missile.damage;
-         consumerId = specialUnits.missile.units[0]?.id; // 소비할 미사일
+    } else if (targetingSkill?.type) {
+       if (targetingSkill.type === 'missile') {
+         const targetUnit = unitsOnBoard.find(u => u.x === x && u.y === y && u.status === 'field' && u.owner !== countryId && !u.isHQ);
+         if (!targetUnit) {
+           alert('미사일은 적 유닛이 있는 타일에만 사용할 수 있습니다.');
+           return;
+         }
        }
-       if (targetingSkill === 'nuke') consumerId = specialUnits.nuke.units[nukeUses]?.id;
-       if (targetingSkill === 'nuke_missile') consumerId = specialUnits.nukeMissile.units[nukeUses]?.id;
-       
-       setActiveSkills(prev => [...prev, { type: targetingSkill, target: {x, y}, damage: skillDamage, consumerId }]);
-       
-       if (['poison', 'naval_bombardment'].includes(targetingSkill)) {
-         setUsedSkills(prev => [...prev, targetingSkill]); // 1회용 스킬 제한
+
+       setActiveSkills(prev => [...prev, { ...targetingSkill, target: {x, y} }]);
+
+       if (['poison', 'naval_bombardment'].includes(targetingSkill.type)) {
+         setUsedSkills(prev => [...prev, targetingSkill.type]);
        }
-       if (['nuke', 'nuke_missile'].includes(targetingSkill)) {
-         setNukeUses(prev => prev + 1); // 핵 사용 횟수 증가
+       if (['nuke', 'nuke_missile'].includes(targetingSkill.type)) {
+         setNukeUses(prev => prev + 1);
        }
 
        setTargetingSkill(null);
-       alert(`${targetingSkill} 타겟팅 완료`);
+       alert(`${targetingSkill.type} 타겟팅 완료`);
     }
   };
 
@@ -380,11 +459,11 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       if (playersData[pId].skills) aiSkillsCombined = aiSkillsCombined.concat(playersData[pId].skills);
     });
 
-    // 2. Calculate AI logic (if Opponent is AI)
-    const opponentIds = [...new Set(unitsOnBoard.map(u => u.owner).filter(o => o !== countryId))];
-    opponentIds.forEach(oppId => {
-      if (initialSession.opponent === 'AI' && oppId === 'AI') {
-        const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, oppId);
+    // 2. Generate AI orders for any AI-controlled player
+    Object.keys(playersData).forEach(pId => {
+      const player = playersData[pId];
+      if (player && player.isAI) {
+        const { orders: aiOrders, skills: aiSkills } = calculateAIOrders({ units: unitsOnBoard, userOrders: currentOrders, corps, generals, armies }, pId);
         currentOrders = currentOrders.concat(aiOrders);
         aiSkillsCombined = aiSkillsCombined.concat(aiSkills);
       }
@@ -669,62 +748,70 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: '0.9rem', color: '#94a3b8', marginRight: '8px' }}>전술 스킬:</span>
           <button 
-            className={`cyber-btn ${targetingSkill === 'bombing' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('bombing')}
-            disabled={!hasAirSupremacy || specialUnits.bomber.count === 0 || activeSkills.length > 0 || hasRecon}
-            title={`보유: ${specialUnits.bomber.count}`}
+            className={`cyber-btn ${targetingSkill?.type === 'bombing' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('bombing')}
+            disabled={!hasAirSupremacy || getStandbySkillUnits('bombing').length === 0 || hasMainSkillQueued}
+            title={`대기 보유: ${getStandbySkillUnits('bombing').length}`}
           >🛩️ 폭격</button>
           
           <button 
-            className={`cyber-btn ${targetingSkill === 'cas' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('cas')}
-            disabled={!hasAirSupremacy || specialUnits.cas.count === 0 || activeSkills.length > 0 || hasRecon}
+            className={`cyber-btn ${targetingSkill?.type === 'cas' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('cas')}
+            disabled={!hasAirSupremacy || getStandbySkillUnits('cas').length === 0 || hasMainSkillQueued}
           >🛩️ CAS</button>
           
           <button 
-            className={`cyber-btn ${targetingSkill === 'nuke' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('nuke')}
-            disabled={!hasAirSupremacy || specialUnits.nuke.count <= nukeUses || activeSkills.length > 0 || hasRecon}
+            className={`cyber-btn ${targetingSkill?.type === 'nuke' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('nuke')}
+            disabled={!hasAirSupremacy || getStandbySkillUnits('nuke').length === 0 || hasMainSkillQueued}
           >☢️ 핵투발</button>
 
           <button 
-            className={`cyber-btn ${targetingSkill === 'missile' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('missile')}
-            disabled={specialUnits.missile.count === 0 || activeSkills.length > 0 || hasRecon}
+            className={`cyber-btn ${targetingSkill?.type === 'missile' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('missile')}
+            disabled={getStandbySkillUnits('missile').length === 0 || hasMainSkillQueued}
           >🚀 미사일</button>
 
           <button 
-            className={`cyber-btn ${targetingSkill === 'nuke_missile' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('nuke_missile')}
-            disabled={specialUnits.nukeMissile.count <= nukeUses || activeSkills.length > 0 || hasRecon} 
+            className={`cyber-btn ${targetingSkill?.type === 'nuke_missile' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('nuke_missile')}
+            disabled={!hasAirSupremacy || getStandbySkillUnits('nuke_missile').length === 0 || hasMainSkillQueued} 
           >☢️🚀 핵미사일</button>
           
           <button 
-            className={`cyber-btn ${targetingSkill === 'poison' ? 'active' : ''}`} 
-            onClick={() => setTargetingSkill('poison')}
-            disabled={specialUnits.chemical.count === 0 || usedSkills.includes('poison') || activeSkills.length > 0 || hasRecon}
+            className={`cyber-btn ${targetingSkill?.type === 'poison' ? 'active' : ''}`} 
+            onClick={() => beginSkillTargeting('poison')}
+            disabled={!hasAirSupremacy || getStandbySkillUnits('poison').length === 0 || usedSkills.includes('poison') || hasMainSkillQueued}
           >🧪 독가스</button>
           <button 
-            className={`cyber-btn ${targetingSkill === 'naval_bombardment' ? 'active' : ''}`} 
+            className={`cyber-btn ${targetingSkill?.type === 'naval_bombardment' ? 'active' : ''}`} 
             onClick={() => {
               if(!initialSession.allowNavalBombardment) {
                 alert('관리자에 의해 해안포격 스킬 사용이 금지된 전장입니다.');
                 return;
               }
-              setTargetingSkill('naval_bombardment');
+              if (hasMainSkillQueued) {
+                alert('정찰을 제외한 스킬은 턴당 1종류만 사용할 수 있습니다.');
+                return;
+              }
+              setTargetingSkill({ type: 'naval_bombardment', damage: 0, duration: 1, radius: 1 });
             }}
-            disabled={!initialSession.allowNavalBombardment || usedSkills.includes('naval_bombardment') || activeSkills.length > 0 || hasRecon}
+            disabled={!initialSession.allowNavalBombardment || usedSkills.includes('naval_bombardment') || hasMainSkillQueued}
           >🚢 해안포격</button>
           
           <button 
             className="cyber-btn"
             style={{ borderColor: uiColors.neonYellow, color: uiColors.neonYellow }}
             onClick={() => {
+              if (hasMainSkillQueued) {
+                alert('정찰을 제외한 스킬은 턴당 1종류만 사용할 수 있습니다.');
+                return;
+              }
               setActiveSkills(prev => [...prev, { type: 'emp' }]);
               setUsedSkills(prev => [...prev, 'emp']);
               alert('EMP가 예약되었습니다. 턴 넘김 시 양측 기계화 부대 정지 및 상대방의 스킬이 모두 무력화됩니다.');
             }}
-            disabled={usedSkills.includes('emp') || activeSkills.length > 0 || hasRecon}
+            disabled={usedSkills.includes('emp') || hasMainSkillQueued}
           >⚡ EMP</button>
           
           <button 
@@ -732,9 +819,10 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             style={{ marginLeft: 'auto', borderColor: hasRecon ? uiColors.neonBlue : '#475569', background: hasRecon ? 'rgba(59,130,246,0.2)' : 'transparent' }}
             onClick={() => {
                setHasRecon(true);
+               setActiveSkills(prev => prev.some(s => s.type === 'recon') ? prev : [...prev, { type: 'recon' }]);
                alert('정찰 스킬 발동! 이번 턴 동안 맵 전체의 시야가 밝혀집니다.');
             }}
-            disabled={!hasAirSupremacy || activeSkills.length > 0 || hasRecon}
+            disabled={!hasAirSupremacy || hasRecon}
           >
             👁️ 정찰 {hasRecon ? 'ON' : 'OFF'}
           </button>
