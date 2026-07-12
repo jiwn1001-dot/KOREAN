@@ -327,6 +327,7 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
   );
   
   const enemies = units.filter(u => u.owner !== aiCountryId && u.status === 'field');
+  const enemyHQ = enemies.find(u => u.isHQ);
 
   const orders = [];
   const skills = [];
@@ -379,6 +380,11 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
         consumerId: missile.id,
         attackerId: aiCountryId
       });
+    }
+
+    // 정찰을 자주 섞어 시야 교착을 줄인다.
+    if (Math.random() < 0.4) {
+      skills.push({ type: 'recon', attackerId: aiCountryId });
     }
   }
 
@@ -442,6 +448,9 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     let targetEnemy = null;
 
     if (aiLevel >= 2) {
+      if (enemyHQ) {
+        targetEnemy = enemyHQ;
+      }
       // [Level 2 이상] 딸피(가장 체력 비율이 낮은) 적을 우선적으로 점사 (Focus Fire)
       // 거리가 너무 멀면 곤란하므로, 일정 거리 이내의 적 중 체력이 가장 낮은 적 탐색
       let lowestHpEnemy = null;
@@ -478,6 +487,10 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
           targetEnemy = enemy;
         }
       });
+    }
+
+    if (!targetEnemy && enemyHQ) {
+      targetEnemy = enemyHQ;
     }
 
     if (targetEnemy) {

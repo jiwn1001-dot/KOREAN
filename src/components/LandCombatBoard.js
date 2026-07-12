@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createLandBoard, calculateFogOfWar, resolveSimultaneousTurn, resolveCommanderSkills, calculateAIOrders, calculateAirInterception, calculateCasualties, TILE_TYPES, deployAIUnits } from '@/lib/landCombat';
 import AerialMinigame from '@/components/AerialMinigame';
 import { applyCombatCasualties } from '@/lib/store';
+import { appendCombatReport, decideWinnerByRemainingHp } from '@/lib/combatReports';
 
 export default function LandCombatBoard({ countryId, militaryUnits, corps, armies, generals, initialSession, onSaveSession }) {
   const isTeam1 = initialSession?.isTeamBattle ? initialSession.team1?.includes(countryId) : (initialSession?.host === countryId);
@@ -157,6 +158,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       setTurn(initialSession.turn || 1);
       setUsedSkills(initialSession.usedSkills || []);
       setNukeUses(initialSession.nukeUses || 0);
+      setHasRecon((initialSession.reconOwners || []).includes(countryId));
     } else {
       setBoard(createLandBoard());
     }
@@ -194,7 +196,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       setOrders([]);
       setActiveSkills([]);
       setHasAirSupremacy(false);
-      setHasRecon(false);
+      setHasRecon((initialSession.reconOwners || []).includes(countryId));
       return;
     }
 
@@ -525,6 +527,8 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     
     let resolvedSession = resolveSimultaneousTurn(session);
     resolvedSession = resolveCommanderSkills(resolvedSession);
+
+    const reconOwners = [...new Set(aiSkillsCombined.filter(s => s?.type === 'recon').map(s => s.attackerId).filter(Boolean))];
     
     const hqs = resolvedSession.units.filter(u => u.isHQ);
     const myHQ = hqs.find(u => u.owner === countryId);
@@ -534,7 +538,22 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
     let casualties = null;
     let isGameOver = false;
 
-    if (myHQ && myHQ.status === 'destroyed') {
+    if (initialSession?.isTeamBattle) {
+      const team1AliveHQ = hqs.some(u => (initialSession.team1 || []).includes(u.owner) && u.status !== 'destroyed');
+      const team2AliveHQ = hqs.some(u => (initialSession.team2 || []).includes(u.owner) && u.status !== 'destroyed');
+
+      if (!team1AliveHQ && team2AliveHQ) {
+        alert('Team 1 사령부 전멸! Team 2 승리');
+        nextPhase = 'game_over';
+        isGameOver = true;
+        resolvedSession.winner = (initialSession.team2 || [])[0] || initialSession.opponent;
+      } else if (!team2AliveHQ && team1AliveHQ) {
+        alert('Team 2 사령부 전멸! Team 1 승리');
+        nextPhase = 'game_over';
+        isGameOver = true;
+        resolvedSession.winner = (initialSession.team1 || [])[0] || initialSession.host;
+      }
+    } else if (myHQ && myHQ.status === 'destroyed') {
       alert('아군 사령부가 파괴되었습니다! 패배!');
       nextPhase = 'game_over';
       isGameOver = true;
@@ -546,9 +565,32 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
       resolvedSession.winner = countryId;
     }
 
+    if (!isGameOver && turn >= 120) {
+      const owners = Object.keys(playersData || {});
+      const { winner } = decideWinnerByRemainingHp(resolvedSession.units, owners);
+      resolvedSession.winner = winner || initialSession?.host;
+      nextPhase = 'game_over';
+      isGameOver = true;
+      alert('장기전 제한 턴에 도달했습니다. 잔존 전력 기준으로 승패를 확정합니다.');
+    }
+
     if (isGameOver) {
       casualties = calculateCasualties(resolvedSession.units);
       await applyCombatCasualties(casualties);
+
+      if (!initialSession?.reportLogged) {
+        await appendCombatReport({
+          source: 'land',
+          sessionId: initialSession?.id,
+          sessionName: initialSession?.name,
+          sessionCategory: initialSession?.sessionCategory || 'land',
+          battleMode: initialSession?.battleMode || 'encounter',
+          winner: resolvedSession.winner || null,
+          turn: turn + 1,
+          resultReason: 'combat_end',
+          casualties
+        });
+      }
     }
 
     // Reset players ready state and orders
@@ -567,9 +609,14 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
         turn: turn + 1,
         players: nextPlayers,
         resourceDeductions: resolvedSession.resourceDeductions,
-        casualties
+        casualties,
+        reconOwners
       };
-      if (isGameOver) saveData.winner = resolvedSession.winner;
+      if (isGameOver) {
+        saveData.winner = resolvedSession.winner;
+        saveData.reportLogged = true;
+        saveData.status = 'game_over';
+      }
       
       onSaveSession(saveData);
     }
@@ -577,8 +624,26 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
 
   const handleSurrender = async () => {
     if (window.confirm("정말로 항복하시겠습니까? 남은 병력의 체력에 비례해 자원이 크게 소실됩니다.")) {
+      const surrenderWinner = initialSession?.isTeamBattle
+        ? ((initialSession?.team1 || []).includes(countryId)
+            ? (initialSession?.team2 || [])[0]
+            : (initialSession?.team1 || [])[0])
+        : (initialSession?.opponent || null);
       const casualties = calculateCasualties(unitsOnBoard);
       await applyCombatCasualties(casualties);
+      if (!initialSession?.reportLogged) {
+        await appendCombatReport({
+          source: 'land',
+          sessionId: initialSession?.id,
+          sessionName: initialSession?.name,
+          sessionCategory: initialSession?.sessionCategory || 'land',
+          battleMode: initialSession?.battleMode || 'encounter',
+          winner: surrenderWinner,
+          turn,
+          resultReason: 'surrender',
+          casualties
+        });
+      }
       alert('항복했습니다. 전투를 종료합니다.');
       setPhase('game_over');
       if (onSaveSession) {
@@ -586,9 +651,12 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
           board,
           units: unitsOnBoard,
           phase: 'game_over',
+          status: 'game_over',
           turn,
           resourceDeductions: [],
-          casualties
+          casualties,
+          winner: surrenderWinner,
+          reportLogged: true
         });
       }
     }
@@ -841,7 +909,7 @@ export default function LandCombatBoard({ countryId, militaryUnits, corps, armie
             style={{ marginLeft: 'auto', borderColor: hasRecon ? uiColors.neonBlue : '#475569', background: hasRecon ? 'rgba(59,130,246,0.2)' : 'transparent' }}
             onClick={() => {
                setHasRecon(true);
-               setActiveSkills(prev => prev.some(s => s.type === 'recon') ? prev : [...prev, { type: 'recon' }]);
+              setActiveSkills(prev => prev.some(s => s.type === 'recon') ? prev : [...prev, { type: 'recon', attackerId: countryId }]);
                alert('정찰 스킬 발동! 이번 턴 동안 맵 전체의 시야가 밝혀집니다.');
             }}
             disabled={!hasAirSupremacy || hasRecon}

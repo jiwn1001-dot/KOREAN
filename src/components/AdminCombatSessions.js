@@ -6,6 +6,7 @@ import { deployAIUnits } from '@/lib/landCombat';
 
 export default function AdminCombatSessions({ countries }) {
   const [sessions, setSessions] = useState([]);
+  const [reports, setReports] = useState([]);
   const [maps, setMaps] = useState([]);
   const [fieldArmiesMap, setFieldArmiesMap] = useState({}); // { countryId: [armies] }
   const [navalFleetsMap, setNavalFleetsMap] = useState({}); // { countryId: [fleets] }
@@ -38,6 +39,9 @@ export default function AdminCombatSessions({ countries }) {
   const loadData = async () => {
     const sessionEntry = await getDataEntry('combat_sessions', null);
     if (sessionEntry?.data?.sessions) setSessions(sessionEntry.data.sessions);
+
+    const reportEntry = await getDataEntry('combat_reports', null);
+    setReports(reportEntry?.data?.reports || []);
 
     const mapEntry = await getDataEntry('combat_maps', null);
     if (mapEntry?.data?.maps) setMaps(mapEntry.data.maps);
@@ -390,6 +394,20 @@ export default function AdminCombatSessions({ countries }) {
     return countries.find(c => c.id === id)?.name || id;
   };
 
+  const formatLoss = (lossObj) => {
+    if (!lossObj) return '기록 없음';
+    const lines = Object.entries(lossObj).map(([owner, v]) => {
+      if (v && typeof v === 'object' && 'manpower' in v) {
+        return `${getCountryName(owner)} 인력손실:${v.manpower || 0}`;
+      }
+      if (v && typeof v === 'object' && 'shipsDestroyed' in v) {
+        return `${getCountryName(owner)} 격침:${v.shipsDestroyed || 0}, 손상:${v.shipsDamaged || 0}, HP손실:${v.hpLoss || 0}`;
+      }
+      return `${getCountryName(owner)} 손실:${JSON.stringify(v)}`;
+    });
+    return lines.join(' | ');
+  };
+
   return (
     <div className="card" style={{ padding: '24px' }}>
       <h2>⚔️ 지상전 세션 강제 배정 (팀전/다대다)</h2>
@@ -580,6 +598,27 @@ export default function AdminCombatSessions({ countries }) {
                 {s.isActive === false ? '🔴 비활성화' : '🟢 활성화됨'}
               </button>
               <button className="btn btn-sm btn-danger" onClick={() => handleDeleteSession(s.id)}>삭제</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <hr style={{ margin: '32px 0', borderColor: 'var(--border-color)' }} />
+      <h3>전투 결산 로그 (승패/양측 손실)</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {reports.length === 0 && (
+          <div className="card" style={{ padding: '12px', color: 'var(--text-muted)' }}>아직 기록된 전투 결산이 없습니다.</div>
+        )}
+        {reports.map(r => (
+          <div key={r.id} className="card" style={{ padding: '12px' }}>
+            <div style={{ fontWeight: 'bold' }}>
+              [{r.source === 'naval' ? '해전' : '지상/폭격전'}] {r.sessionName || r.sessionId}
+            </div>
+            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              승자: {getCountryName(r.winner)} | 턴: {r.turn || '-'} | 종료사유: {r.resultReason || '-'} | 시간: {new Date(r.createdAt).toLocaleString()}
+            </div>
+            <div style={{ marginTop: '6px', fontSize: '0.9rem' }}>
+              손실 요약: {formatLoss(r.casualties)}
             </div>
           </div>
         ))}

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { createNavalBoard, canPlaceNavalUnit, calculateNavalAIOrders, resolveNavalTurn, getVisibleNavalUnits } from '@/lib/navalCombat';
+import { appendCombatReport, decideWinnerByRemainingHp, summarizeNavalLosses } from '@/lib/combatReports';
 
 export default function NavalCombatBoard({ countryId, initialSession, onSaveSession }) {
   const [board, setBoard] = useState([]);
@@ -43,6 +44,9 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
   useEffect(() => {
     if (!initialSession?.players) return;
     if (!isHost) return;
+    if (initialSession?.phase === 'game_over' || initialSession?.status === 'game_over') return;
+
+    const runHostResolve = async () => {
 
     const nextPlayers = { ...initialSession.players };
     Object.keys(nextPlayers).forEach(pid => {
@@ -81,6 +85,53 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       allowAirTeam2: initialSession?.allowAirTeam2
     });
 
+    const owners = Object.keys(nextPlayers);
+    const aliveByOwner = {};
+    owners.forEach((ownerId) => {
+      aliveByOwner[ownerId] = (resolved.units || []).some(
+        (u) => u.owner === ownerId && u.majorCategory === '해군' && u.status === 'field'
+      );
+    });
+
+    const aliveOwners = owners.filter((o) => aliveByOwner[o]);
+    let isGameOver = false;
+    let winner = null;
+
+    if (initialSession?.isTeamBattle) {
+      const team1Alive = (initialSession.team1 || []).some((id) => aliveByOwner[id]);
+      const team2Alive = (initialSession.team2 || []).some((id) => aliveByOwner[id]);
+      if (team1Alive && !team2Alive) {
+        winner = (initialSession.team1 || []).find((id) => aliveByOwner[id]) || initialSession.host;
+        isGameOver = true;
+      } else if (!team1Alive && team2Alive) {
+        winner = (initialSession.team2 || []).find((id) => aliveByOwner[id]) || initialSession.opponent;
+        isGameOver = true;
+      }
+    } else if (aliveOwners.length <= 1) {
+      winner = aliveOwners[0] || initialSession?.host || null;
+      isGameOver = true;
+    }
+
+    if (!isGameOver && (initialSession?.turn || turn) >= 100) {
+      const byPower = decideWinnerByRemainingHp(resolved.units, owners);
+      winner = byPower.winner || initialSession?.host || null;
+      isGameOver = true;
+    }
+
+      if (isGameOver && !initialSession?.reportLogged) {
+        await appendCombatReport({
+          source: 'naval',
+          sessionId: initialSession?.id,
+          sessionName: initialSession?.name,
+          sessionCategory: 'naval',
+          battleMode: initialSession?.battleMode || 'encounter',
+          winner,
+          turn: (initialSession?.turn || turn) + 1,
+          resultReason: 'combat_end',
+          casualties: summarizeNavalLosses(resolved.units)
+        });
+      }
+
     const resetPlayers = { ...nextPlayers };
     Object.keys(resetPlayers).forEach(pid => {
       resetPlayers[pid] = {
@@ -91,16 +142,21 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       };
     });
 
-    onSaveSession?.({
-      board: resolved.board,
-      units: resolved.units,
-      mines: resolved.mines || [],
-      pendingMissiles: resolved.pendingMissiles || [],
-      players: resetPlayers,
-      phase: 'combat',
-      status: 'playing',
-      turn: (initialSession.turn || turn) + 1
-    });
+      onSaveSession?.({
+        board: resolved.board,
+        units: resolved.units,
+        mines: resolved.mines || [],
+        pendingMissiles: resolved.pendingMissiles || [],
+        players: resetPlayers,
+        phase: isGameOver ? 'game_over' : 'combat',
+        status: isGameOver ? 'game_over' : 'playing',
+        winner: isGameOver ? winner : undefined,
+        reportLogged: isGameOver ? true : initialSession?.reportLogged,
+        turn: (initialSession.turn || turn) + 1
+      });
+    };
+
+    runHostResolve();
   }, [initialSession, isHost, unitsOnBoard, board, mines, pendingMissiles, turn, onSaveSession]);
 
   const visibleUnits = useMemo(() => getVisibleNavalUnits(unitsOnBoard, countryId), [unitsOnBoard, countryId]);
