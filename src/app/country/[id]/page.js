@@ -52,6 +52,8 @@ export default function CountryPage() {
   const [nationalSpirits, setNationalSpirits] = useState([]);
   const [espionageSourceCountryId, setEspionageSourceCountryId] = useState('');
   const [espionageLevel, setEspionageLevel] = useState(0);
+  const [eventChannelData, setEventChannelData] = useState({ events: [] });
+  const [selectedEventId, setSelectedEventId] = useState('');
 
   useEffect(() => {
     setAdmin(isAdminOrSub());
@@ -201,6 +203,9 @@ export default function CountryPage() {
 
       const spiritEntry = await getDataEntry('national_spirits', countryId);
       setNationalSpirits(spiritEntry?.data?.spirits || []);
+
+      const eventEntry = await getDataEntry('event_channel');
+      setEventChannelData(eventEntry?.data || { events: [] });
     } catch(err) {
       console.error('Failed to load military units/corps', err);
     }
@@ -238,6 +243,7 @@ export default function CountryPage() {
     { id: 'land_combat', label: '지상전', icon: '🗺️' },
     { id: 'aerial', label: '공중전', icon: '✈️' },
     { id: 'transfers', label: '알림 및 수송', icon: '🔔' },
+    { id: 'events', label: '이벤트 채널', icon: '📣' },
   ];
 
   const espionageMode = !!espionageSourceCountryId && !canAccessCountry(countryId);
@@ -646,6 +652,77 @@ export default function CountryPage() {
                   <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>{s.description || '설명 없음'}</p>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderEventChannel = () => {
+    const events = (eventChannelData?.events || []).filter(e => e.enabled !== false);
+    const selectedEvent = events.find(e => e.id === selectedEventId) || events[0] || null;
+
+    return (
+      <div className="slide-up">
+        <div className="content-section">
+          <h3 className="content-section-title">📣 이벤트 채널</h3>
+          {events.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>현재 공개된 이벤트가 없습니다.</p>
+          ) : (
+            <div className="card-grid card-grid-2" style={{ alignItems: 'start' }}>
+              <div className="card" style={{ padding: '16px' }}>
+                <h4 style={{ marginBottom: '10px' }}>이벤트 목록</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {events.map((ev) => (
+                    <button
+                      key={ev.id}
+                      className="btn btn-sm btn-ghost"
+                      style={{ textAlign: 'left', border: selectedEvent?.id === ev.id ? '1px solid var(--accent)' : undefined }}
+                      onClick={() => {
+                        setSelectedEventId(ev.id);
+                        const player = document.getElementById('eventAudioPlayer');
+                        if (player && ev.audioUrl) {
+                          player.src = ev.audioUrl;
+                          player.play().catch(() => {});
+                        }
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>{ev.title || '제목 없음'}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{ev.summary || '요약 없음'}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: '16px' }}>
+                {selectedEvent ? (
+                  <>
+                    <h4 style={{ marginBottom: '8px' }}>{selectedEvent.title || '제목 없음'}</h4>
+                    {selectedEvent.summary && (
+                      <p style={{ color: 'var(--text-muted)', marginBottom: '12px' }}>{selectedEvent.summary}</p>
+                    )}
+
+                    <audio id="eventAudioPlayer" controls style={{ width: '100%', marginBottom: '12px' }} src={selectedEvent.audioUrl || ''} />
+
+                    {(selectedEvent.images || []).length > 0 && (
+                      <div className="image-gallery" style={{ marginBottom: '12px' }}>
+                        {(selectedEvent.images || []).map((img, i) => (
+                          <div key={`${selectedEvent.id}_img_${i}`} className="image-gallery-item">
+                            <img src={img} alt={`${selectedEvent.title || 'event'}_${i + 1}`} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="markdown-body" style={{ whiteSpace: 'pre-wrap' }}>
+                      {selectedEvent.content || '내용 없음'}
+                    </div>
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>이벤트를 선택하세요.</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1686,6 +1763,8 @@ export default function CountryPage() {
       case 'aerial':
         if (espionageMode) return <p style={{ color: 'var(--text-muted)' }}>첩보 열람 모드에서는 공중전 조작이 제한됩니다.</p>;
         return renderAerial();
+      case 'events':
+        return renderEventChannel();
       default:
         return null;
     }

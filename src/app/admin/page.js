@@ -79,6 +79,7 @@ export default function AdminPage() {
   const [testGameLog, setTestGameLog] = useState([]); // 라운드 로그
   const [adminGenerals, setAdminGenerals] = useState([]);
   const [nationalSpiritData, setNationalSpiritData] = useState({ spirits: [] });
+  const [eventChannelData, setEventChannelData] = useState({ events: [] });
 
   // Forms
   const [newCountry, setNewCountry] = useState({ name: '', password: '', color: '#7c6bf0' });
@@ -311,6 +312,9 @@ export default function AdminPage() {
     else if (activeSection === 'combat-map') {
       loadCombatMaps();
     }
+    else if (activeSection === 'event-channel') {
+      loadEventChannel();
+    }
     else if (activeSection === 'map') {
       loadMap();
       loadCountries();
@@ -377,6 +381,15 @@ export default function AdminPage() {
     try {
       const entry = await getDataEntry('combat_maps', null);
       setCombatMaps(entry?.data?.maps || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadEventChannel = async () => {
+    try {
+      const entry = await getDataEntry('event_channel');
+      setEventChannelData(entry?.data || { events: [] });
     } catch (err) {
       console.error(err);
     }
@@ -1488,6 +1501,49 @@ export default function AdminPage() {
             <div className="form-group">
               <label className="form-label">소비재 배율</label>
               <input type="number" step="0.1" className="form-input" value={economyData.multipliers?.consumerGoods ?? 1} onChange={e => setEconomyData(p => ({ ...p, multipliers: { ...(p.multipliers || {}), consumerGoods: Number(e.target.value) } }))} />
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-form-section">
+          <h3 className="admin-form-title">🕵️ 첩보력 관리</h3>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">첩보력 (Intel Points)</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={economyData.intelPoints || 0}
+                  onChange={(e) => setEconomyData(p => ({ ...p, intelPoints: Number(e.target.value) || 0 }))}
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="number"
+                  id="intelDelta"
+                  className="form-input"
+                  placeholder="±증감치"
+                  style={{ width: '100px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      document.getElementById('btnApplyIntelDelta').click();
+                    }
+                  }}
+                />
+                <button
+                  id="btnApplyIntelDelta"
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => {
+                    const delta = Number(document.getElementById('intelDelta').value) || 0;
+                    if (!delta) return;
+                    setEconomyData(p => ({ ...p, intelPoints: Math.max(0, Number(p.intelPoints || 0) + delta) }));
+                    document.getElementById('intelDelta').value = '';
+                  }}
+                >적용</button>
+              </div>
+              <small style={{ color: 'var(--text-muted)' }}>관리자가 국가 첩보력을 직접 상향/하향 조작할 수 있습니다.</small>
             </div>
           </div>
         </div>
@@ -3583,6 +3639,102 @@ export default function AdminPage() {
     </div>
   );
 
+  const renderEventChannel = () => {
+    const events = eventChannelData?.events || [];
+    const updateEvent = (idx, patch) => {
+      const next = [...events];
+      next[idx] = { ...next[idx], ...patch };
+      setEventChannelData({ events: next });
+    };
+
+    return (
+      <div className="slide-up">
+        <h2 style={{ marginBottom: '24px' }}>📣 이벤트 채널</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>
+          유저가 클릭해 열람할 이벤트를 생성합니다. 클릭 시 설정한 오디오 URL이 재생되고, 이미지/글 이슈를 함께 노출합니다.
+        </p>
+
+        {(events || []).map((ev, idx) => (
+          <div key={ev.id || idx} className="admin-form-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 className="admin-form-title" style={{ margin: 0 }}>이벤트 #{idx + 1}</h3>
+              <button className="btn btn-sm btn-danger" onClick={() => {
+                setEventChannelData({ events: events.filter((_, i) => i !== idx) });
+              }}>삭제</button>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">제목</label>
+                <input className="form-input" value={ev.title || ''} onChange={(e) => updateEvent(idx, { title: e.target.value })} placeholder="예: 국경 분쟁 발생" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">요약</label>
+                <input className="form-input" value={ev.summary || ''} onChange={(e) => updateEvent(idx, { summary: e.target.value })} placeholder="한 줄 요약" />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">오디오 URL</label>
+                <input className="form-input" value={ev.audioUrl || ''} onChange={(e) => updateEvent(idx, { audioUrl: e.target.value })} placeholder="https://...mp3" />
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="checkbox" checked={ev.enabled !== false} onChange={(e) => updateEvent(idx, { enabled: e.target.checked })} />
+                  공개(활성)
+                </label>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">이벤트 본문</label>
+              <textarea className="form-textarea" value={ev.content || ''} onChange={(e) => updateEvent(idx, { content: e.target.value })} style={{ minHeight: '120px' }} placeholder="이벤트 상세 설명/이슈 본문" />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">이미지 URL 목록 (줄바꿈으로 구분)</label>
+              <textarea
+                className="form-textarea"
+                value={(ev.images || []).join('\n')}
+                onChange={(e) => updateEvent(idx, {
+                  images: e.target.value.split('\n').map(v => v.trim()).filter(Boolean)
+                })}
+                style={{ minHeight: '90px' }}
+                placeholder={'https://...\nhttps://...'}
+              />
+            </div>
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-secondary" onClick={() => {
+            setEventChannelData({
+              events: [
+                ...events,
+                {
+                  id: `event_${Date.now()}`,
+                  title: '신규 이벤트',
+                  summary: '',
+                  content: '',
+                  audioUrl: '',
+                  images: [],
+                  enabled: true,
+                  createdAt: new Date().toISOString()
+                }
+              ]
+            });
+          }}>➕ 이벤트 추가</button>
+
+          <button className="btn btn-primary" onClick={async () => {
+            await upsertDataEntry('event_channel', null, eventChannelData);
+            showToast('이벤트 채널이 저장되었습니다');
+          }}>💾 이벤트 채널 저장</button>
+        </div>
+      </div>
+    );
+  };
+
   const renderCombatMapEditor = () => (
     <div className="slide-up">
       <CombatMapEditor 
@@ -3644,6 +3796,7 @@ export default function AdminPage() {
     { id: 'resources', label: '📦 자원 관리' },
     { id: 'combat-map', label: '🏕️ 전투 맵 에디터' },
     { id: 'combat-sessions', label: '⚔️ 지상전 세션 강제 배정' },
+    { id: 'event-channel', label: '📣 이벤트 채널' },
     { id: 'map', label: '🗺️ 지도 색칠' },
   ];
 
@@ -3679,6 +3832,7 @@ export default function AdminPage() {
           { activeSection === 'resources' && renderResources() }
           { activeSection === 'combat-map' && renderCombatMapEditor() }
           { activeSection === 'combat-sessions' && renderAdminCombatSessions() }
+          { activeSection === 'event-channel' && renderEventChannel() }
           { activeSection === 'map' && renderMapEditor() }
         </div>
       </div>
