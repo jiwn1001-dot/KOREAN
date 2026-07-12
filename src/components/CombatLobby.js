@@ -282,10 +282,8 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     const latestActive = latestSessions.find(s => s.id === activeSession.id) || activeSession;
     const merged = mergeSessionForSave(latestActive, patch);
 
-    const becameGameOver = (merged?.phase === 'game_over' || merged?.status === 'game_over');
-    if (becameGameOver && !merged?.formationLossApplied) {
+    if ((merged?.units || []).length > 0) {
       await applyFormationLossesFromSession(merged);
-      merged.formationLossApplied = true;
     }
 
     let nextSessions = [];
@@ -335,6 +333,8 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             const u = militaryUnits.find(mu => mu.id === uid);
             if (u) {
               const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
+              const major = tmpl.majorCategory || u.majorCategory;
+              if (major !== '육군') return;
               myUnits.push({
                 ...u,
                 name: u.customName || tmpl.name || u.name || '유닛',
@@ -494,9 +494,9 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
             const u = militaryUnits.find(mu => mu.id === uid);
             if (u) {
               const tmpl = unitTemplates.find(t => t.id === u.templateId) || {};
-              const isAir = tmpl.majorCategory === '공군';
-              if (session.sessionCategory === 'bombing' && !isAir) return;
-              if (session.sessionCategory === 'land' && tmpl.majorCategory !== '육군' && !isAir) return;
+              const major = tmpl.majorCategory || u.majorCategory;
+              if (session.sessionCategory === 'bombing' && major !== '공군') return;
+              if (session.sessionCategory === 'land' && major !== '육군') return;
 
               const isTeam1 = session.isTeamBattle ? session.team1.includes(countryId) : (session.host === countryId);
               const startX = isTeam1 ? 0 : 19;
@@ -511,7 +511,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
                 hp: tmpl.hp || 100,
                 vision: (tmpl.vision || 0) + (countryStats?.vision || 0),
                 supplyConsumption: tmpl.supplyConsumption || 1,
-                majorCategory: tmpl.majorCategory,
+                majorCategory: major,
                 minorCategory: tmpl.minorCategory,
                 subCategory: tmpl.subCategory,
                 x: startX,
