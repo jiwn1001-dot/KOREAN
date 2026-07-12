@@ -198,14 +198,47 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
 
   const manualShips = myShips.filter(u => manualSet.has(u.id));
   const manualTiles = manualShips.flatMap(getOccupiedTiles).map(t => `${t.x},${t.y}`);
+  const occupiedByAi = new Set();
+
+  const aiLevel = Math.max(1, Math.round(
+    aiShips.reduce((acc, s) => acc + parseInt(s.aiLevel || 1, 10), 0) / Math.max(1, aiShips.length)
+  ));
+
+  const hpRatio = (u) => (u.hp || 0) / (u.maxHp || 100);
+  const distance = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  const getPriority = (u) => {
+    const t = getShipType(u);
+    if (t === 'carrier') return 5;
+    if (t === 'battleship') return 4;
+    if (t === 'modern_destroyer' || t === 'destroyer') return 3;
+    if (t === 'modern_submarine' || t === 'submarine') return 2;
+    return 1;
+  };
+
+  const chooseTarget = (ship) => {
+    if (!enemies.length) return null;
+    if (aiLevel <= 1) return nearestEnemy(ship, enemies);
+    if (aiLevel === 2) {
+      return enemies.slice().sort((a, b) => hpRatio(a) - hpRatio(b))[0] || nearestEnemy(ship, enemies);
+    }
+    return enemies.slice().sort((a, b) => {
+      const pa = getPriority(a);
+      const pb = getPriority(b);
+      if (pb !== pa) return pb - pa;
+      const da = distance(ship, a);
+      const db = distance(ship, b);
+      return da - db;
+    })[0] || nearestEnemy(ship, enemies);
+  };
 
   const orders = [];
   for (const ship of aiShips) {
-    const target = nearestEnemy(ship, enemies);
+    const target = chooseTarget(ship);
     if (!target) continue;
 
     const moved = chebyshevStep(ship.x, ship.y, target.x, target.y, ship.speed || 1);
-    const moveBlockedByManual = manualTiles.includes(`${moved.x},${moved.y}`);
+    const movedKey = `${moved.x},${moved.y}`;
+    const moveBlockedByManual = manualTiles.includes(movedKey) || occupiedByAi.has(movedKey);
 
     const order = {
       unitId: ship.id,
@@ -219,6 +252,7 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
     };
 
     const shipType = getShipType(ship);
+    const d = distance(ship, target);
     if (shipType === 'torpedo_boat' || shipType === 'submarine' || shipType === 'modern_submarine') {
       order.action.type = 'torpedo';
     }
@@ -227,25 +261,27 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
       order.action = null;
     }
     if (shipType === 'destroyer' || shipType === 'modern_destroyer') {
-      if (Math.random() < 0.25) {
+      const subTargetNearby = enemies.some(e => isSubmarine(e) && distance(ship, e) <= 2);
+      if (subTargetNearby) {
         order.action.type = 'depth_charge';
-      } else if (Math.random() < 0.2) {
-        order.action.type = 'mine';
-        order.action.target = { x: ship.x, y: ship.y };
-      } else if (Math.random() < 0.2) {
+      } else if (aiLevel >= 3 && d <= 2) {
         order.action.type = 'torpedo';
       } else {
         order.action.type = 'gunfire';
       }
     }
     if (shipType === 'modern_destroyer' || shipType === 'modern_submarine') {
-      if (Math.random() < 0.2) {
+      if (aiLevel >= 2 && d >= 4) {
         order.action.type = 'missile';
       }
     }
     if (shipType === 'minelayer') {
-      order.action.type = Math.random() < 0.7 ? 'mine' : 'torpedo';
-      order.action.target = { x: ship.x, y: ship.y };
+      if (d <= 3) {
+        order.action.type = 'torpedo';
+      } else {
+        order.action.type = 'mine';
+        order.action.target = { x: ship.x, y: ship.y };
+      }
     }
     if (shipType === 'battleship') {
       order.action.type = 'gunfire';
@@ -253,10 +289,12 @@ export function calculateNavalAIOrders(session, aiCountryId, manualControlIds = 
 
     if (flagshipId && ship.id === flagshipId) {
       // Flagship is still AI-controlled when not direct-controlled, but keep it slightly safer.
-      if (!moveBlockedByManual && Math.random() < 0.3) {
+      if (!moveBlockedByManual && aiLevel >= 3 && d <= 2) {
         order.move = null;
       }
     }
+
+    if (order.move) occupiedByAi.add(`${order.move.x},${order.move.y}`);
 
     orders.push(order);
   }

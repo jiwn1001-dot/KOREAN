@@ -332,6 +332,29 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
   const orders = [];
   const skills = [];
   const reservedTiles = userOrders.filter(o => o.type === 'move').map(o => `${o.target.x},${o.target.y}`);
+  const localReserved = new Set(reservedTiles);
+
+  const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const chooseTargetByLevel = (unit, aiLevel) => {
+    if (!enemies.length) return null;
+
+    const nearest = enemies.reduce((best, e) => {
+      if (!best) return e;
+      return dist(unit, e) < dist(unit, best) ? e : best;
+    }, null);
+
+    if (aiLevel <= 1) return nearest;
+
+    const lowHpInRange = enemies
+      .filter(e => dist(unit, e) <= 12)
+      .sort((a, b) => ((a.hp / (a.maxHp || 100)) - (b.hp / (b.maxHp || 100))))[0];
+
+    if (aiLevel === 2) return lowHpInRange || nearest;
+
+    const hq = enemies.find(e => e.isHQ);
+    const keyThreat = enemies.find(e => e.subCategory === '포병' || e.minorCategory === '포병');
+    return hq || keyThreat || lowHpInRange || nearest;
+  };
 
   // 야전군 사령관 지능 추출
   let armyAiLevel = 1;
@@ -356,11 +379,16 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
     const myMissiles = myStandbyUnits.filter(u => u.subCategory === '미사일' || u.minorCategory === '미사일');
     const myCas = myStandbyUnits.filter(u => u.subCategory === '근접항공지원기' || u.minorCategory === '근접항공지원기');
     
-    // 무작위 적 하나 타겟팅
-    const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+    // 고레벨일수록 핵심 표적(HQ/포병/딸피)을 먼저 선택
+    const targetEnemy = enemyHQ
+      || enemies.find(e => e.subCategory === '포병' || e.minorCategory === '포병')
+      || enemies.slice().sort((a, b) => ((a.hp / (a.maxHp || 100)) - (b.hp / (b.maxHp || 100))))[0]
+      || enemies[0];
 
-    if (myCas.length > 0 && Math.random() < 0.3) {
-      // 30% 확률로 CAS 사용
+    const casUseChance = Math.min(0.75, 0.2 + armyAiLevel * 0.15);
+    const missileUseChance = Math.min(0.8, 0.2 + armyAiLevel * 0.15);
+
+    if (myCas.length > 0 && Math.random() < casUseChance) {
       const maxAttackCas = myCas.reduce((prev, curr) => (prev.attack > curr.attack) ? prev : curr);
       skills.push({
         type: 'cas',
@@ -370,8 +398,7 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
         aircraftSpeed: Math.max(1, maxAttackCas.speed || 1),
         attackerId: aiCountryId
       });
-    } else if (myMissiles.length > 0 && Math.random() < 0.3) {
-      // 30% 확률로 미사일 사용
+    } else if (myMissiles.length > 0 && Math.random() < missileUseChance) {
       const missile = myMissiles[0];
       skills.push({
         type: 'missile',
@@ -382,8 +409,9 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
       });
     }
 
-    // 정찰을 자주 섞어 시야 교착을 줄인다.
-    if (Math.random() < 0.4) {
+    // 정찰: 레벨이 높을수록 더 자주 사용
+    const reconChance = Math.min(0.9, 0.2 + armyAiLevel * 0.2);
+    if (Math.random() < reconChance) {
       skills.push({ type: 'recon', attackerId: aiCountryId });
     }
   }
@@ -439,59 +467,13 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
 
     // 2. [Level 3 지능] 체력이 20% 미만이면 후퇴(Retreat) 결단
     const hpRatio = aiUnit.hp / (aiUnit.maxHp || 100);
-    if (aiLevel >= 3 && hpRatio < 0.2) {
+    const retreatThreshold = aiLevel >= 4 ? 0.3 : (aiLevel >= 3 ? 0.2 : 0.1);
+    if (aiLevel >= 3 && hpRatio < retreatThreshold) {
       orders.push({ unitId: aiUnit.id, type: 'retreat' });
       return; // 후퇴 처리 후 해당 유닛 오더 종료
     }
 
-    // 3. 타겟 선정 로직 (Level에 따라 분기)
-    let targetEnemy = null;
-
-    if (aiLevel >= 2) {
-      if (enemyHQ) {
-        targetEnemy = enemyHQ;
-      }
-      // [Level 2 이상] 딸피(가장 체력 비율이 낮은) 적을 우선적으로 점사 (Focus Fire)
-      // 거리가 너무 멀면 곤란하므로, 일정 거리 이내의 적 중 체력이 가장 낮은 적 탐색
-      let lowestHpEnemy = null;
-      let lowestHpRatio = Infinity;
-      let minDistance = Infinity;
-
-      enemies.forEach(enemy => {
-        const dist = Math.abs(enemy.x - aiUnit.x) + Math.abs(enemy.y - aiUnit.y);
-        const enemyHpRatio = enemy.hp / (enemy.maxHp || 100);
-        
-        // 거리가 10칸 이내인 적 중에서 체력 비율이 가장 낮은 적을 타겟팅
-        if (dist <= 10 && enemyHpRatio < lowestHpRatio) {
-          lowestHpRatio = enemyHpRatio;
-          lowestHpEnemy = enemy;
-        }
-        
-        // 백업용 최단거리 적 (주변 10칸에 아무도 없을 경우 대비)
-        if (dist < minDistance) {
-          minDistance = dist;
-          targetEnemy = enemy;
-        }
-      });
-
-      if (lowestHpEnemy) {
-        targetEnemy = lowestHpEnemy;
-      }
-    } else {
-      // [Level 1 기본] 가장 가까운 적(최단 거리)에게 무지성 돌격
-      let minDistance = Infinity;
-      enemies.forEach(enemy => {
-        const dist = Math.abs(enemy.x - aiUnit.x) + Math.abs(enemy.y - aiUnit.y);
-        if (dist < minDistance) {
-          minDistance = dist;
-          targetEnemy = enemy;
-        }
-      });
-    }
-
-    if (!targetEnemy && enemyHQ) {
-      targetEnemy = enemyHQ;
-    }
+    const targetEnemy = chooseTargetByLevel(aiUnit, aiLevel) || enemyHQ;
 
     if (targetEnemy) {
       if (aiUnit.subCategory === '포병') {
@@ -521,7 +503,7 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
           }
 
           // 유저가 가기로 예약한 타일이면 그 즉시 해당 타일 진입을 포기하고 직전 타일에서 멈춤 (양보)
-          if (reservedTiles.includes(`${tempX},${tempY}`)) {
+          if (localReserved.has(`${tempX},${tempY}`)) {
             break; 
           }
 
@@ -530,7 +512,10 @@ export function calculateAIOrders(session, aiCountryId, excludeCorpsId = null) {
           steps++;
         }
         
-        orders.push({ unitId: aiUnit.id, type: 'move', target: { x: targetX, y: targetY } });
+        if (targetX !== aiUnit.x || targetY !== aiUnit.y) {
+          orders.push({ unitId: aiUnit.id, type: 'move', target: { x: targetX, y: targetY } });
+          localReserved.add(`${targetX},${targetY}`);
+        }
       }
     }
   });
