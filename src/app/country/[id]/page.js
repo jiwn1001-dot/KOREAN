@@ -766,8 +766,10 @@ export default function CountryPage() {
                       </div>
                     )}
 
-                    <div className="markdown-body" style={{ whiteSpace: 'pre-wrap' }}>
-                      {selectedEvent.content || '내용 없음'}
+                    <div className="markdown-body">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {selectedEvent.content || '내용 없음'}
+                      </ReactMarkdown>
                     </div>
                   </>
                 ) : (

@@ -3690,6 +3690,9 @@ export default function AdminPage() {
             <div className="form-group">
               <label className="form-label">이벤트 본문</label>
               <textarea className="form-textarea" value={ev.content || ''} onChange={(e) => updateEvent(idx, { content: e.target.value })} style={{ minHeight: '120px' }} placeholder="이벤트 상세 설명/이슈 본문" />
+              <small style={{ color: 'var(--text-muted)' }}>
+                본문은 마크다운을 지원합니다. 텍스트 사이 이미지: ![설명](https://이미지주소)
+              </small>
             </div>
 
             <div className="form-group">
