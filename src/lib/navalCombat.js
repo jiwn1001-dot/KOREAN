@@ -162,8 +162,8 @@ export function getVisibleNavalUnits(units, viewerId) {
   const visible = new Set();
 
   myShips.forEach(u => {
-    // 관측력 1=>3x3(9칸), 2=>5x5(25칸)
-    const vision = Math.max(1, Number(u.vision || 1));
+    // 관측력 0=>3x3(9칸), 1=>5x5(25칸), 2=>7x7(49칸)
+    const vision = Math.max(1, Number(u.vision || 0) + 1);
     for (let dy = -vision; dy <= vision; dy++) {
       for (let dx = -vision; dx <= vision; dx++) {
         visible.add(`${u.x + dx},${u.y + dy}`);
