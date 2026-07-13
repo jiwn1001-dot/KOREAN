@@ -6,7 +6,11 @@
  */
 
 export const NAVAL_TILE_TYPES = {
-  SEA: '해역'
+  SEA: '해역',
+  SHALLOW: '천해',
+  REEF: '암초',
+  ISLAND: '도서',
+  STORM: '폭풍해역'
 };
 
 const DIRS = {

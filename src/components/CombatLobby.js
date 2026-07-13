@@ -66,6 +66,15 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   const [selectedAirWingId, setSelectedAirWingId] = useState('');
   const [allowNavalBombardment, setAllowNavalBombardment] = useState(false);
 
+  const getMapCategoryForSession = (category) => {
+    return category === 'naval' ? 'naval' : 'land';
+  };
+
+  const filteredMaps = maps.filter((m) => {
+    const mapCategory = m?.category || 'land';
+    return mapCategory === getMapCategoryForSession(sessionCategory);
+  });
+
   const applySpiritToUnit = (unit) => {
     const e = countryStats?.spiritEffects || {};
     const atkPct = Number(e.unitAttackPct || 0);
@@ -269,6 +278,12 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
     }
   }, [sessions]);
 
+  useEffect(() => {
+    if (!selectedMapId) return;
+    const exists = filteredMaps.some(m => m.id === selectedMapId);
+    if (!exists) setSelectedMapId('');
+  }, [sessionCategory, maps, selectedMapId]);
+
   const loadLobbyData = async () => {
     try {
       const mapEntry = await getDataEntry('combat_maps', null);
@@ -346,6 +361,13 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
   const handleCreateSession = async () => {
     if (!sessionName || !selectedMapId) {
       return alert('세션 이름과 맵을 선택해주세요.');
+    }
+
+    const selectedMap = maps.find(m => m.id === selectedMapId);
+    const expectedCategory = getMapCategoryForSession(sessionCategory);
+    const selectedCategory = selectedMap?.category || 'land';
+    if (!selectedMap || selectedCategory !== expectedCategory) {
+      return alert(`선택한 세션 카테고리(${sessionCategory})에 맞는 ${expectedCategory === 'naval' ? '해전' : '육전'} 맵을 선택해주세요.`);
     }
 
     if (sessionCategory === 'naval' && !selectedFleetId) {
@@ -697,7 +719,7 @@ export default function CombatLobby({ countryId, militaryUnits, corps, armies, n
               <label className="form-label">맵 선택</label>
               <select className="form-select" value={selectedMapId} onChange={e => setSelectedMapId(e.target.value)}>
                 <option value="">-- 맵 선택 --</option>
-                {maps.map(m => (
+                {filteredMaps.map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
