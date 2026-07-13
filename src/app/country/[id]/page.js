@@ -694,6 +694,18 @@ export default function CountryPage() {
     const events = (eventChannelData?.events || []).filter(e => e.enabled !== false);
     const selectedEvent = events.find(e => e.id === selectedEventId) || events[0] || null;
 
+    const getYouTubeVideoId = (url) => {
+      if (!url) return null;
+      const s = String(url).trim();
+      const m1 = s.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
+      if (m1?.[1]) return m1[1];
+      const m2 = s.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/);
+      return m2?.[1] || null;
+    };
+
+    const ytId = getYouTubeVideoId(selectedEvent?.audioUrl || '');
+    const ytEmbedUrl = ytId ? `https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0` : '';
+
     return (
       <div className="slide-up">
         <div className="content-section">
@@ -712,11 +724,6 @@ export default function CountryPage() {
                       style={{ textAlign: 'left', border: selectedEvent?.id === ev.id ? '1px solid var(--accent)' : undefined }}
                       onClick={() => {
                         setSelectedEventId(ev.id);
-                        const player = document.getElementById('eventAudioPlayer');
-                        if (player && ev.audioUrl) {
-                          player.src = ev.audioUrl;
-                          player.play().catch(() => {});
-                        }
                       }}
                     >
                       <div style={{ fontWeight: 700 }}>{ev.title || '제목 없음'}</div>
@@ -734,7 +741,19 @@ export default function CountryPage() {
                       <p style={{ color: 'var(--text-muted)', marginBottom: '12px' }}>{selectedEvent.summary}</p>
                     )}
 
-                    <audio id="eventAudioPlayer" controls style={{ width: '100%', marginBottom: '12px' }} src={selectedEvent.audioUrl || ''} />
+                    {ytId ? (
+                      <iframe
+                        title="event-youtube-player"
+                        width="100%"
+                        height="260"
+                        src={ytEmbedUrl}
+                        style={{ border: 'none', borderRadius: '8px', marginBottom: '12px' }}
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <audio id="eventAudioPlayer" controls style={{ width: '100%', marginBottom: '12px' }} src={selectedEvent.audioUrl || ''} />
+                    )}
 
                     {(selectedEvent.images || []).length > 0 && (
                       <div className="image-gallery" style={{ marginBottom: '12px' }}>

@@ -3678,6 +3678,9 @@ export default function AdminPage() {
               <div className="form-group">
                 <label className="form-label">오디오 URL</label>
                 <input className="form-input" value={ev.audioUrl || ''} onChange={(e) => updateEvent(idx, { audioUrl: e.target.value })} placeholder="https://...mp3" />
+                <small style={{ color: 'var(--text-muted)' }}>
+                  mp3 링크 또는 유튜브 링크(예: https://youtu.be/xxxx, https://www.youtube.com/watch?v=xxxx) 사용 가능
+                </small>
               </div>
               <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
