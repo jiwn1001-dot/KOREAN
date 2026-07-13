@@ -487,6 +487,62 @@ export default function CountryPage() {
     const budget = (economyData.gdp || 0) * ((economyData.taxRate || 0) / 100);
     const nonBudget = (economyData.gdp || 0) - budget;
 
+    const allocatePersistentAssignment = async (type, amount) => {
+      const amt = Math.max(0, Math.floor(Number(amount || 0)));
+      if (amt <= 0) return alert('배정 수량을 입력하세요.');
+
+      const currentCoins = Number(economyData.heavyIndustryCoins || 0);
+      if (currentCoins < amt) return alert('중공업코인이 부족합니다.');
+
+      const now = new Date().toISOString();
+      const nextEco = { ...economyData, heavyIndustryCoins: currentCoins - amt };
+
+      if (type === 'heavy') {
+        nextEco.heavyIndustryComplexes = Number(nextEco.heavyIndustryComplexes || 0) + amt;
+        const slots = Array.isArray(nextEco.heavyIndustryAssignments) ? [...nextEco.heavyIndustryAssignments] : [];
+        for (let i = 0; i < amt; i++) {
+          slots.push({ id: `hslot_${Date.now()}_${i}`, createdAt: now });
+        }
+        nextEco.heavyIndustryAssignments = slots;
+      } else {
+        nextEco.shipyards = Number(nextEco.shipyards || 0) + amt;
+        const slots = Array.isArray(nextEco.shipyardAssignments) ? [...nextEco.shipyardAssignments] : [];
+        for (let i = 0; i < amt; i++) {
+          slots.push({ id: `sslot_${Date.now()}_${i}`, createdAt: now });
+        }
+        nextEco.shipyardAssignments = slots;
+      }
+
+      await upsertDataEntry('economy', countryId, nextEco);
+      setData(prev => ({ ...prev, economy: { ...prev.economy, data: nextEco } }));
+    };
+
+    const cancelPersistentAssignment = async (type, amount) => {
+      const amt = Math.max(0, Math.floor(Number(amount || 0)));
+      if (amt <= 0) return alert('취소 수량을 입력하세요.');
+
+      const nextEco = { ...economyData };
+      const currentCoins = Number(nextEco.heavyIndustryCoins || 0);
+
+      if (type === 'heavy') {
+        const current = Number(nextEco.heavyIndustryComplexes || 0);
+        if (current < amt) return alert('취소할 중공업단지 수량이 부족합니다.');
+        nextEco.heavyIndustryComplexes = current - amt;
+        const slots = Array.isArray(nextEco.heavyIndustryAssignments) ? [...nextEco.heavyIndustryAssignments] : [];
+        nextEco.heavyIndustryAssignments = slots.slice(0, Math.max(0, slots.length - amt));
+      } else {
+        const current = Number(nextEco.shipyards || 0);
+        if (current < amt) return alert('취소할 조선소 수량이 부족합니다.');
+        nextEco.shipyards = current - amt;
+        const slots = Array.isArray(nextEco.shipyardAssignments) ? [...nextEco.shipyardAssignments] : [];
+        nextEco.shipyardAssignments = slots.slice(0, Math.max(0, slots.length - amt));
+      }
+
+      nextEco.heavyIndustryCoins = currentCoins + amt;
+      await upsertDataEntry('economy', countryId, nextEco);
+      setData(prev => ({ ...prev, economy: { ...prev.economy, data: nextEco } }));
+    };
+
     const handleConvertIntel = async () => {
       const raw = Number(document.getElementById('intelConvertAmount')?.value || 0);
       const amount = Math.max(0, Math.floor(raw));
@@ -534,7 +590,7 @@ export default function CountryPage() {
           <div className="card stat-card">
             <div className="stat-label">예산 (Budget)</div>
             <div className="stat-value">${Number(budget).toLocaleString()}</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--accent)', marginTop: '4px' }}>이번 턴 중공업 코인: {economyData.heavyIndustryCoins || 0}개</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--accent)', marginTop: '4px' }}>가용 중공업 코인: {economyData.heavyIndustryCoins || 0}개</div>
             {economyData.heavyIndustryCoins > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', justifyContent: 'center' }}>
@@ -543,20 +599,24 @@ export default function CountryPage() {
                 </div>
                 <button className="btn btn-sm btn-primary" onClick={async () => {
                   const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
-                  if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
-                  if(!confirm(`중공업단지에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
-                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, heavyIndustryComplexes: (economyData.heavyIndustryComplexes || 0) + amt };
-                  await upsertDataEntry('economy', countryId, newData);
-                  setData(p => ({ ...p, economy: { ...p.economy, data: newData } }));
-                }}>🏭 중공업단지 짓기</button>
+                  if(!confirm(`중공업단지에 ${amt}개 배정하시겠습니까?`)) return;
+                  await allocatePersistentAssignment('heavy', amt);
+                }}>🏭 중공업단지 배정</button>
                 <button className="btn btn-sm btn-primary" onClick={async () => {
                   const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
-                  if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
-                  if(!confirm(`조선소에 ${amt}개 배정하시겠습니까? (턴 종료 시 소멸)`)) return;
-                  const newData = { ...economyData, heavyIndustryCoins: economyData.heavyIndustryCoins - amt, shipyards: (economyData.shipyards || 0) + amt };
-                  await upsertDataEntry('economy', countryId, newData);
-                  setData(p => ({ ...p, economy: { ...p.economy, data: newData } }));
-                }}>🏗️ 조선소 짓기</button>
+                  if(!confirm(`조선소에 ${amt}개 배정하시겠습니까?`)) return;
+                  await allocatePersistentAssignment('ship', amt);
+                }}>🏗️ 조선소 배정</button>
+                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                  const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
+                  if(!confirm(`중공업단지 배정 ${amt}개를 취소하시겠습니까?`)) return;
+                  await cancelPersistentAssignment('heavy', amt);
+                }}>↩️ 중공업단지 취소</button>
+                <button className="btn btn-sm btn-ghost" onClick={async () => {
+                  const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
+                  if(!confirm(`조선소 배정 ${amt}개를 취소하시겠습니까?`)) return;
+                  await cancelPersistentAssignment('ship', amt);
+                }}>↩️ 조선소 취소</button>
                 <button className="btn btn-sm btn-secondary" onClick={async () => {
                   const amt = parseInt(document.getElementById('hicAllocateAmount').value) || 0;
                   if (amt <= 0 || amt > economyData.heavyIndustryCoins) return alert('배정 가능한 올바른 수량을 입력하세요.');
@@ -694,6 +754,19 @@ export default function CountryPage() {
     const events = (eventChannelData?.events || []).filter(e => e.enabled !== false);
     const selectedEvent = events.find(e => e.id === selectedEventId) || events[0] || null;
 
+    const normalizeBangImageSyntax = (text) => {
+      const src = String(text || '');
+      return src
+        .split('\n')
+        .map((line) => {
+          const trimmed = line.trim();
+          const matched = trimmed.match(/^!\s*(https?:\/\/\S+)$/i);
+          if (matched?.[1]) return `![](${matched[1]})`;
+          return line;
+        })
+        .join('\n');
+    };
+
     const getYouTubeVideoId = (url) => {
       if (!url) return null;
       const s = String(url).trim();
@@ -767,7 +840,7 @@ export default function CountryPage() {
 
                     <div className="markdown-body">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {selectedEvent.content || '내용 없음'}
+                        {normalizeBangImageSyntax(selectedEvent.content || '내용 없음')}
                       </ReactMarkdown>
                     </div>
                   </>
@@ -1107,7 +1180,7 @@ export default function CountryPage() {
                 const target = parseInt(queueTargetAmount);
                 if (!bpId || !target || target <= 0) return alert('올바른 값을 입력하세요.');
                 
-                const newQueue = [...militaryQueue, { bpId, target, progress: 0, deliveries: [] }];
+                const newQueue = [...militaryQueue, { id: `q_${Date.now()}`, bpId, target, progress: 0, deliveries: [], createdAt: new Date().toISOString() }];
                 await upsertDataEntry('military_queue', countryId, { queue: newQueue });
                 setMilitaryQueue(newQueue);
                 setQueueBpId('');

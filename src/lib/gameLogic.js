@@ -290,10 +290,97 @@ export async function processTurnEnd(newTurn) {
         const cgSpiritMult = 1 + (Number(spirit.consumerGoodsProdPct || 0) / 100);
         const heavyCoinSpiritMult = 1 + (Number(spirit.heavyCoinProdPct || 0) / 100);
         
-        // 3-3. 코인 산정
-        data.heavyIndustryCoins = Math.floor((budget / 50000) * heavyCoinSpiritMult);
+        // 3-3. 코인 산정 (잔액에 누적)
+        const earnedHeavyCoins = Math.floor((budget / 50000) * heavyCoinSpiritMult);
+        const prevHeavyCoins = Number(data.heavyIndustryCoins || 0);
+        let totalHeavyCoins = prevHeavyCoins + earnedHeavyCoins;
         data.agricultureCoins = Math.floor((nonBudget * (alloc.agriculture / 100)) / 2000);
         data.lightIndustryCoins = Math.floor((nonBudget * (alloc.lightIndustry / 100)) / 50000);
+
+        // 중공업/조선소 지속 배정 슬롯 정규화
+        let heavyAssignments = Array.isArray(data.heavyIndustryAssignments) ? [...data.heavyIndustryAssignments] : [];
+        let shipyardAssignments = Array.isArray(data.shipyardAssignments) ? [...data.shipyardAssignments] : [];
+        const heavyCount = Number(data.heavyIndustryComplexes || 0);
+        const shipCount = Number(data.shipyards || 0);
+        const syntheticBase = '2000-01-01T00:00:00.000Z';
+
+        while (heavyAssignments.length < heavyCount) {
+          heavyAssignments.unshift({ id: `hslot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, createdAt: syntheticBase });
+        }
+        while (shipyardAssignments.length < shipCount) {
+          shipyardAssignments.unshift({ id: `sslot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, createdAt: syntheticBase });
+        }
+        if (heavyAssignments.length > heavyCount) heavyAssignments = heavyAssignments.slice(0, heavyCount);
+        if (shipyardAssignments.length > shipCount) shipyardAssignments = shipyardAssignments.slice(0, shipCount);
+
+        // 무기 생산 대기열 로드 (지속 배정 및 부족 시 축소 대상으로 사용)
+        let queue = [];
+        let queueEntryId = null;
+        if (entry.country_id) {
+          const { data: qEntryRaw } = await supabase
+            .from('data_entries')
+            .select('id, data')
+            .eq('category', 'military_queue')
+            .eq('country_id', entry.country_id)
+            .single();
+          if (qEntryRaw) {
+            queueEntryId = qEntryRaw.id;
+            queue = Array.isArray(qEntryRaw?.data?.queue) ? [...qEntryRaw.data.queue] : [];
+          }
+        }
+        let queueMetaChanged = false;
+        queue = queue.map((q, idx) => {
+          const nextId = q.id || `q_legacy_${idx}_${Date.now()}`;
+          const nextCreatedAt = q.createdAt || syntheticBase;
+          if (!q.id || !q.createdAt) queueMetaChanged = true;
+          return { ...q, id: nextId, createdAt: nextCreatedAt };
+        });
+
+        // 지속 배정 유지비 처리: 코인이 부족하면 가장 먼저 배정된 항목부터 축소
+        const commitmentQueue = queue
+          .filter(q => Number(q.progress || 0) < Number(q.target || 0) || ((q.deliveries || []).length > 0))
+          .map(q => ({ kind: 'queue', id: q.id, createdAt: q.createdAt || syntheticBase }));
+        const commitmentHeavy = heavyAssignments.map(s => ({ kind: 'heavy', id: s.id, createdAt: s.createdAt || syntheticBase }));
+        const commitmentShip = shipyardAssignments.map(s => ({ kind: 'ship', id: s.id, createdAt: s.createdAt || syntheticBase }));
+
+        let commitments = [...commitmentQueue, ...commitmentHeavy, ...commitmentShip]
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+        let queueChangedByDeficit = false;
+        const deficit = commitments.length - totalHeavyCoins;
+        if (deficit > 0) {
+          const toCut = commitments.slice(0, deficit);
+          const cutQueueIds = new Set(toCut.filter(c => c.kind === 'queue').map(c => c.id));
+          const cutHeavyIds = new Set(toCut.filter(c => c.kind === 'heavy').map(c => c.id));
+          const cutShipIds = new Set(toCut.filter(c => c.kind === 'ship').map(c => c.id));
+
+          queue = queue.filter(q => !cutQueueIds.has(q.id));
+          heavyAssignments = heavyAssignments.filter(s => !cutHeavyIds.has(s.id));
+          shipyardAssignments = shipyardAssignments.filter(s => !cutShipIds.has(s.id));
+
+          commitments = commitments.slice(deficit);
+          queueChangedByDeficit = cutQueueIds.size > 0;
+        }
+
+        data.heavyIndustryComplexes = heavyAssignments.length;
+        data.shipyards = shipyardAssignments.length;
+        data.heavyIndustryAssignments = heavyAssignments;
+        data.shipyardAssignments = shipyardAssignments;
+        data.heavyIndustryCoins = Math.max(0, totalHeavyCoins - commitments.length);
+
+        if (entry.country_id && (queueChangedByDeficit || queueMetaChanged)) {
+          if (queueEntryId) {
+            await supabase.from('data_entries').update({ data: { queue } }).eq('id', queueEntryId);
+          } else {
+            const { data: insertedQueueEntry } = await supabase
+              .from('data_entries')
+              .insert({ category: 'military_queue', country_id: entry.country_id, data: { queue } })
+              .select('id')
+              .single();
+            if (insertedQueueEntry?.id) queueEntryId = insertedQueueEntry.id;
+          }
+          queueMetaChanged = false;
+        }
         
         // 무기 생산 로직 (큐 처리)
         if (entry.country_id) {
@@ -309,9 +396,7 @@ export async function processTurnEnd(newTurn) {
           let availShipyard = Math.floor((data.shipyards || 0) * (adminMults.shipbuilding || 1));
           const weaponBlueprints = settingEntry?.data?.weaponBlueprints || [];
           
-          const { data: qEntry } = await supabase.from('data_entries').select('id, data').eq('category', 'military_queue').eq('country_id', entry.country_id).single();
-          if (qEntry && qEntry.data && qEntry.data.queue && qEntry.data.queue.length > 0) {
-            let queue = qEntry.data.queue;
+          if (queue && queue.length > 0) {
             let updated = false;
             
             const { data: cRes } = await supabase.from('resources').select('*').eq('country_id', entry.country_id);
@@ -394,19 +479,19 @@ export async function processTurnEnd(newTurn) {
               }
             }
             
-            if (updated) {
+            if (updated || queueMetaChanged) {
               queue = queue.filter(q => q.progress < q.target || (q.deliveries && q.deliveries.length > 0));
-              await supabase.from('data_entries').update({ data: { queue } }).eq('id', qEntry.id);
+              if (queueEntryId) {
+                await supabase.from('data_entries').update({ data: { queue } }).eq('id', queueEntryId);
+              } else {
+                await supabase.from('data_entries').insert({ category: 'military_queue', country_id: entry.country_id, data: { queue } });
+              }
+              queueMetaChanged = false;
             }
           }
         }
-        
-        // 3-4. 이전 턴에 지어둔 단지/조선소 초기화 및 코인 환불 (매년 새로 배정해야 하므로)
-        data.heavyIndustryCoins = (data.heavyIndustryCoins || 0) + (data.heavyIndustryComplexes || 0) + (data.shipyards || 0);
-        data.heavyIndustryComplexes = 0;
-        data.shipyards = 0;
 
-        // 3-5. 코인 기반 자동 자원 생산 (농업 -> 식량, 경공업 -> 소비재) 및 인구 비례 소비
+        // 3-4. 코인 기반 자동 자원 생산 (농업 -> 식량, 경공업 -> 소비재) 및 인구 비례 소비
         if (entry.country_id) {
           const adminMults = data.multipliers || { shipbuilding: 1, food: 1, heavyIndustry: 1, consumerGoods: 1 };
           const techMults = countryTechMultipliers[entry.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
