@@ -162,7 +162,8 @@ export function getVisibleNavalUnits(units, viewerId) {
   const visible = new Set();
 
   myShips.forEach(u => {
-    const vision = Math.max(1, 1 + (u.vision || 0));
+    // 관측력 1=>3x3(9칸), 2=>5x5(25칸)
+    const vision = Math.max(1, Number(u.vision || 1));
     for (let dy = -vision; dy <= vision; dy++) {
       for (let dx = -vision; dx <= vision; dx++) {
         visible.add(`${u.x + dx},${u.y + dy}`);
@@ -385,6 +386,7 @@ export function resolveNavalTurn(session) {
   const skillsQueue = session.skillsQueue || [];
   const mines = JSON.parse(JSON.stringify(session.mines || []));
   const pendingMissiles = JSON.parse(JSON.stringify(session.pendingMissiles || []));
+  const rammingLogs = [...(session.rammingLogs || [])];
 
   const isTeam1Owner = (ownerId) => {
     if (session.isTeamBattle) {
@@ -457,6 +459,7 @@ export function resolveNavalTurn(session) {
 
       if (attackerHp === defenderHp) {
         // 동체력은 우위가 없으므로 기존처럼 이동 실패 처리
+        rammingLogs.push(`충각 실패: ${ship.name || ship.id} 와 ${defender.name || defender.id} 체력이 동일하여 밀어내지 못했습니다.`);
         movingShipAlive = false;
         break;
       }
@@ -465,15 +468,18 @@ export function resolveNavalTurn(session) {
         defender.hp = 0;
         defender.status = 'destroyed';
         ship.hp = Math.max(0, attackerHp - defenderHp);
+        rammingLogs.push(`충각 성공: ${ship.name || ship.id} 가 ${defender.name || defender.id} 를 격침 (자가 피해 ${defenderHp})`);
         if (ship.hp <= 0) {
           ship.status = 'destroyed';
           movingShipAlive = false;
+          rammingLogs.push(`충각 동귀어진: ${ship.name || ship.id} 도 피해 누적으로 격침되었습니다.`);
           break;
         }
       } else {
         ship.hp = 0;
         ship.status = 'destroyed';
         defender.hp = Math.max(0, defenderHp - attackerHp);
+        rammingLogs.push(`충각 실패: ${ship.name || ship.id} 가 ${defender.name || defender.id} 에 밀려 격침 (상대 피해 ${attackerHp})`);
         if (defender.hp <= 0) defender.status = 'destroyed';
         movingShipAlive = false;
         break;
@@ -653,6 +659,7 @@ export function resolveNavalTurn(session) {
     units,
     mines,
     pendingMissiles,
+    rammingLogs: rammingLogs.slice(-40),
     skillsQueue: [],
     orders: []
   };

@@ -155,6 +155,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
         units: resolved.units,
         mines: resolved.mines || [],
         pendingMissiles: resolved.pendingMissiles || [],
+        rammingLogs: resolved.rammingLogs || [],
         players: resetPlayers,
         phase: isGameOver ? 'game_over' : 'combat',
         status: isGameOver ? 'game_over' : 'playing',
@@ -185,6 +186,7 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     () => unitsOnBoard.filter(u => u.owner === countryId && u.majorCategory === '해군' && u.status === 'field'),
     [unitsOnBoard, countryId]
   );
+  const rammingLogs = initialSession?.rammingLogs || [];
 
   const handleTileClick = (x, y) => {
     if (phase === 'deployment') {
@@ -461,6 +463,19 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
               {s.type} {'->'} ({s.target?.x},{s.target?.y}) dir:{s.direction}
             </div>
           ))}
+        </div>
+      )}
+
+      {rammingLogs.length > 0 && (
+        <div className="card" style={{ marginTop: '12px', padding: '10px' }}>
+          <strong>충각 로그</strong>
+          <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+            {rammingLogs.slice(-12).map((log, idx) => (
+              <div key={`ram_${idx}`} style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                {log}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
