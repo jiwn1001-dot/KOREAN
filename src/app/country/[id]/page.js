@@ -63,7 +63,7 @@ export default function CountryPage() {
 
   const getEspionageAllowedTabs = (level) => {
     const allowed = [];
-    if (level >= 10) allowed.push('politics');
+    if (level >= 10) allowed.push('politics', 'national_spirit');
     if (level >= 20) allowed.push('economy');
     if (level >= 30) allowed.push('social');
     if (level >= 40) allowed.push('diplomacy');
@@ -201,13 +201,19 @@ export default function CountryPage() {
       const airWingsEntry = await getDataEntry('air_wings', countryId);
       if (airWingsEntry && airWingsEntry.data) setAirWings(airWingsEntry.data.wings || []);
 
-      const spiritEntry = await getDataEntry('national_spirits', countryId);
-      setNationalSpirits(spiritEntry?.data?.spirits || []);
-
       const eventEntry = await getDataEntry('event_channel');
       setEventChannelData(eventEntry?.data || { events: [] });
     } catch(err) {
       console.error('Failed to load military units/corps', err);
+    }
+
+    // 국민정신은 별도 로드하여 다른 군사 데이터 실패와 분리
+    try {
+      const spiritEntry = await getDataEntry('national_spirits', countryId);
+      setNationalSpirits(spiritEntry?.data?.spirits || []);
+    } catch (err) {
+      console.error('Failed to load national spirits', err);
+      setNationalSpirits([]);
     }
 
     // Load aerial battles
@@ -632,12 +638,25 @@ export default function CountryPage() {
   };
 
   const renderNationalSpirit = () => {
+    const effectLabelMap = {
+      unitAttackPct: '공격력',
+      unitDefensePct: '방어력',
+      unitHpPct: '체력',
+      unitAntiAirPct: '대공능력',
+      unitObservationPct: '관측력',
+      unitPenetrationPct: '관통력',
+      foodProdPct: '식량 생산',
+      resourceProdPct: '자원 생산',
+      consumerGoodsProdPct: '소비재 생산',
+      heavyCoinProdPct: '중공업코인 생산'
+    };
+
     return (
       <div className="slide-up">
         <div className="content-section">
           <h3 className="content-section-title">🪖 국민정신</h3>
           {(nationalSpirits || []).length === 0 ? (
-            <p style={{ color: 'var(--text-muted)' }}>적용 중인 국민정신이 없습니다.</p>
+            <p style={{ color: 'var(--text-muted)' }}>등록된 국민정신이 없습니다. 관리자에서 저장 후 새로고침해보세요.</p>
           ) : (
             <div className="card-grid card-grid-2">
               {nationalSpirits.map((s) => (
@@ -650,6 +669,16 @@ export default function CountryPage() {
                     </div>
                   </div>
                   <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>{s.description || '설명 없음'}</p>
+
+                  <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {Object.entries(s.effects || {})
+                      .filter(([, val]) => Number(val) !== 0)
+                      .map(([key, val]) => (
+                        <span key={`${s.id}_${key}`} className="badge badge-accent">
+                          {effectLabelMap[key] || key} {Number(val) > 0 ? '+' : ''}{Number(val)}%
+                        </span>
+                      ))}
+                  </div>
                 </div>
               ))}
             </div>
