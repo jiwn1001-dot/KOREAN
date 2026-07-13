@@ -650,11 +650,29 @@ export default function CountryPage() {
       consumerGoodsProdPct: '소비재 생산',
       heavyCoinProdPct: '중공업코인 생산'
     };
+    const effectKeys = Object.keys(effectLabelMap);
+    const totalEffects = effectKeys.reduce((acc, key) => {
+      acc[key] = (nationalSpirits || [])
+        .filter(s => s.enabled !== false)
+        .reduce((sum, s) => sum + Number(s?.effects?.[key] || 0), 0);
+      return acc;
+    }, {});
 
     return (
       <div className="slide-up">
         <div className="content-section">
           <h3 className="content-section-title">🪖 국민정신</h3>
+          <div className="card" style={{ padding: '12px', marginBottom: '12px' }}>
+            <div style={{ fontWeight: 700, marginBottom: '8px' }}>현재 활성 국민정신 합산 효과</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px 12px' }}>
+              {effectKeys.map((key) => (
+                <div key={`total_${key}`} style={{ fontSize: '0.9rem' }}>
+                  {effectLabelMap[key]}: <strong>{Number(totalEffects[key]) > 0 ? '+' : ''}{Number(totalEffects[key])}%</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {(nationalSpirits || []).length === 0 ? (
             <p style={{ color: 'var(--text-muted)' }}>등록된 국민정신이 없습니다. 관리자에서 저장 후 새로고침해보세요.</p>
           ) : (
@@ -670,14 +688,18 @@ export default function CountryPage() {
                   </div>
                   <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>{s.description || '설명 없음'}</p>
 
-                  <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {Object.entries(s.effects || {})
-                      .filter(([, val]) => Number(val) !== 0)
-                      .map(([key, val]) => (
-                        <span key={`${s.id}_${key}`} className="badge badge-accent">
-                          {effectLabelMap[key] || key} {Number(val) > 0 ? '+' : ''}{Number(val)}%
-                        </span>
-                      ))}
+                  <div style={{ marginTop: '10px', borderTop: '1px solid var(--border-default)', paddingTop: '10px' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>효과 상세</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(160px, 1fr))', gap: '4px 10px' }}>
+                      {effectKeys.map((key) => {
+                        const val = Number(s?.effects?.[key] || 0);
+                        return (
+                          <div key={`${s.id}_${key}`} style={{ fontSize: '0.85rem', color: val === 0 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                            {effectLabelMap[key]}: {val > 0 ? '+' : ''}{val}%
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               ))}
