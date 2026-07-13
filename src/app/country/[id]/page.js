@@ -59,10 +59,11 @@ export default function CountryPage() {
     setAdmin(isAdminOrSub());
     resolveAccess();
     loadCountry();
+    loadPublicEventChannel();
   }, [countryId]);
 
   const getEspionageAllowedTabs = (level) => {
-    const allowed = [];
+    const allowed = ['events'];
     if (level >= 10) allowed.push('politics', 'national_spirit');
     if (level >= 20) allowed.push('economy');
     if (level >= 30) allowed.push('social');
@@ -73,6 +74,16 @@ export default function CountryPage() {
     if (level >= 80) allowed.push('formation', 'fleet', 'air_wing');
     if (level >= 90) allowed.push('corps');
     return [...new Set(allowed)];
+  };
+
+  const loadPublicEventChannel = async () => {
+    try {
+      const eventEntry = await getDataEntry('event_channel');
+      setEventChannelData(eventEntry?.data || { events: [] });
+    } catch (err) {
+      console.error('Failed to load event channel:', err);
+      setEventChannelData({ events: [] });
+    }
   };
 
   const resolveAccess = async () => {
@@ -201,8 +212,6 @@ export default function CountryPage() {
       const airWingsEntry = await getDataEntry('air_wings', countryId);
       if (airWingsEntry && airWingsEntry.data) setAirWings(airWingsEntry.data.wings || []);
 
-      const eventEntry = await getDataEntry('event_channel');
-      setEventChannelData(eventEntry?.data || { events: [] });
     } catch(err) {
       console.error('Failed to load military units/corps', err);
     }
@@ -254,13 +263,18 @@ export default function CountryPage() {
 
   const espionageMode = !!espionageSourceCountryId && !canAccessCountry(countryId);
   const espionageAllowedTabs = espionageMode ? getEspionageAllowedTabs(espionageLevel) : tabs.map(t => t.id);
+  const publicViewMode = !hasAccess;
 
   useEffect(() => {
+    if (publicViewMode) {
+      if (activeTab !== 'events') setActiveTab('events');
+      return;
+    }
     if (!espionageMode) return;
     if (!espionageAllowedTabs.includes(activeTab)) {
       setActiveTab(espionageAllowedTabs[0] || 'politics');
     }
-  }, [espionageMode, espionageLevel, activeTab, espionageAllowedTabs]);
+  }, [publicViewMode, espionageMode, espionageLevel, activeTab, espionageAllowedTabs]);
 
   if (loading) {
     return (
@@ -278,40 +292,6 @@ export default function CountryPage() {
           <div className="empty-state-icon">❌</div>
           <div className="empty-state-text">국가를 찾을 수 없습니다</div>
         </div>
-      </div>
-    );
-  }
-
-  if (!hasAccess) {
-    return (
-      <div className="page-content fade-in">
-        <div className="password-gate">
-          <div className="card card-glass password-gate-card" style={{ padding: '48px 32px' }}>
-            <div className="password-gate-icon">🔒</div>
-            <h2 className="password-gate-title">{country.name}</h2>
-            <p className="password-gate-desc">
-              이 국가의 정보를 열람하려면 배정된 계정으로 로그인해야 합니다.
-            </p>
-            <button
-              className="btn btn-primary btn-lg"
-              onClick={() => setShowLogin(true)}
-              style={{ width: '100%' }}
-            >
-              🔑 로그인
-            </button>
-          </div>
-        </div>
-
-        {showLogin && (
-          <LoginModal
-            onClose={() => setShowLogin(false)}
-            onSuccess={() => {
-              setShowLogin(false);
-              setHasAccess(canAccessCountry(countryId));
-              setAdmin(isAdminOrSub());
-            }}
-          />
-        )}
       </div>
     );
   }
@@ -1846,6 +1826,13 @@ export default function CountryPage() {
         )}
       </div>
 
+      {publicViewMode && (
+        <div className="card" style={{ padding: '12px', marginBottom: '12px', border: '1px solid var(--accent)' }}>
+          이벤트 채널은 누구나 열람할 수 있습니다. 국가 상세 정보 열람은 로그인 후 가능합니다.
+          <button className="btn btn-sm btn-primary" style={{ marginLeft: '10px' }} onClick={() => setShowLogin(true)}>로그인</button>
+        </div>
+      )}
+
       {espionageMode && (
         <div className="card" style={{ padding: '12px', marginBottom: '12px', border: '1px solid var(--warning)' }}>
           첩보 열람 모드: 내 국가({espionageSourceCountryId})의 첩보력 배수 {espionageLevel}x 기준으로 허용된 탭만 열람 가능합니다.
@@ -1853,7 +1840,10 @@ export default function CountryPage() {
       )}
 
       <div className="tabs" style={{ flexWrap: 'wrap' }}>
-        {tabs.filter(tab => !espionageMode || espionageAllowedTabs.includes(tab.id)).map((tab) => (
+        {tabs
+          .filter(tab => !publicViewMode || tab.id === 'events')
+          .filter(tab => !espionageMode || espionageAllowedTabs.includes(tab.id))
+          .map((tab) => (
           <button
             key={tab.id}
             className={`tab ${activeTab === tab.id ? 'active' : ''}`}
@@ -1874,9 +1864,20 @@ export default function CountryPage() {
         ))}
       </div>
 
-      <div style={espionageMode ? { pointerEvents: 'none', userSelect: 'text' } : undefined}>
+      <div style={espionageMode && activeTab !== 'events' ? { pointerEvents: 'none', userSelect: 'text' } : undefined}>
         {renderTab()}
       </div>
+
+      {showLogin && (
+        <LoginModal
+          onClose={() => setShowLogin(false)}
+          onSuccess={() => {
+            setShowLogin(false);
+            setHasAccess(canAccessCountry(countryId));
+            setAdmin(isAdminOrSub());
+          }}
+        />
+      )}
     </div>
   );
 }
