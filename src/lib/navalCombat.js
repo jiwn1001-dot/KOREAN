@@ -416,15 +416,71 @@ export function resolveNavalTurn(session) {
   for (const ship of fieldShips) {
     const order = orderMap.get(ship.id);
     if (!order || !order.move) continue;
+    if (ship.status !== 'field') continue;
 
     const target = chebyshevStep(ship.x, ship.y, order.move.x, order.move.y, ship.speed || 1);
     const candidate = { ...ship, x: target.x, y: target.y };
+    const candidateTiles = getOccupiedTiles(candidate);
 
     const others = units.filter(u => u.id !== ship.id && u.status === 'field' && u.majorCategory === '해군');
     const collisionWithUnits = !canPlaceNavalUnit(others, candidate, board.length || 20);
     const collisionWithReserved = movedReservations.some(t => getOccupiedTiles(candidate).some(c => c.x === t.x && c.y === t.y));
 
     if (!collisionWithUnits && !collisionWithReserved) {
+      ship.x = target.x;
+      ship.y = target.y;
+      movedReservations.push(...getOccupiedTiles(ship));
+      continue;
+    }
+
+    // 충각 판정: 같은 타일 점유 충돌 시 체력 높은 유닛이 생존
+    const collidedUnits = others.filter(u => {
+      const ot = getOccupiedTiles(u);
+      return ot.some(t => candidateTiles.some(c => c.x === t.x && c.y === t.y));
+    });
+
+    if (!collidedUnits.length) continue;
+
+    // 다중 충돌 시 현재 위치 기준으로 가까운 대상부터 처리
+    collidedUnits.sort((a, b) => {
+      const da = Math.max(Math.abs(a.x - target.x), Math.abs(a.y - target.y));
+      const db = Math.max(Math.abs(b.x - target.x), Math.abs(b.y - target.y));
+      return da - db;
+    });
+
+    let movingShipAlive = ship.status === 'field';
+    for (const defender of collidedUnits) {
+      if (!movingShipAlive || defender.status !== 'field') continue;
+
+      const attackerHp = Math.max(0, Number(ship.hp || ship.maxHp || 0));
+      const defenderHp = Math.max(0, Number(defender.hp || defender.maxHp || 0));
+
+      if (attackerHp === defenderHp) {
+        // 동체력은 우위가 없으므로 기존처럼 이동 실패 처리
+        movingShipAlive = false;
+        break;
+      }
+
+      if (attackerHp > defenderHp) {
+        defender.hp = 0;
+        defender.status = 'destroyed';
+        ship.hp = Math.max(0, attackerHp - defenderHp);
+        if (ship.hp <= 0) {
+          ship.status = 'destroyed';
+          movingShipAlive = false;
+          break;
+        }
+      } else {
+        ship.hp = 0;
+        ship.status = 'destroyed';
+        defender.hp = Math.max(0, defenderHp - attackerHp);
+        if (defender.hp <= 0) defender.status = 'destroyed';
+        movingShipAlive = false;
+        break;
+      }
+    }
+
+    if (movingShipAlive && ship.status === 'field') {
       ship.x = target.x;
       ship.y = target.y;
       movedReservations.push(...getOccupiedTiles(ship));
