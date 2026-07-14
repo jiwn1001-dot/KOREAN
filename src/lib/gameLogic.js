@@ -240,9 +240,10 @@ export async function processTurnEnd(newTurn) {
         if (res.production_per_turn > 0) {
           let amountToAdd = Number(res.production_per_turn);
           if (res.resource_type !== 'food' && res.resource_type !== 'consumer_goods') {
+            const techMults = countryTechMultipliers[res.country_id] || { agri: 1, heavy: 1, light: 1, mining: 1, rocket: 0 };
             const spirit = countrySpiritEffects[res.country_id] || {};
             const resourceMult = 1 + (Number(spirit.resourceProdPct || 0) / 100);
-            amountToAdd = Math.floor(amountToAdd * resourceMult);
+            amountToAdd = Math.floor(amountToAdd * techMults.mining * resourceMult);
           }
 
           await supabase
