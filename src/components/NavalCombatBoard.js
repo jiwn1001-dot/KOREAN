@@ -223,6 +223,10 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
         const current = prev[selectedUnit.id] || { unitId: selectedUnit.id };
         const next = { ...current };
         if (orderMode === 'move') {
+          if (next.rotateOrientation) {
+            alert('회전을 예약한 턴에는 이동할 수 없습니다.');
+            return prev;
+          }
           next.move = { x, y };
         } else {
           const baseAction = {
@@ -347,6 +351,27 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
     });
   };
 
+  const queueRotateForSelected = () => {
+    if (phase !== 'combat') return;
+    if (!selectedUnit || selectedUnit.owner !== countryId) {
+      alert('회전할 아군 함선을 먼저 선택하세요.');
+      return;
+    }
+
+    const nextOrientation = selectedUnit.orientation === 'vertical' ? 'horizontal' : 'vertical';
+    setOrdersByUnit(prev => {
+      const current = prev[selectedUnit.id] || { unitId: selectedUnit.id };
+      const next = {
+        ...current,
+        rotateOrientation: nextOrientation,
+        move: null
+      };
+      return { ...prev, [selectedUnit.id]: next };
+    });
+
+    alert(`회전 예약: ${selectedUnit.name || selectedUnit.id} -> ${nextOrientation === 'horizontal' ? '가로' : '세로'} (이번 턴 이동 불가)`);
+  };
+
   return (
     <div className="card" style={{ padding: '20px' }}>
       <h2 style={{ marginTop: 0 }}>해전 지휘소 | Turn {turn}</h2>
@@ -355,6 +380,9 @@ export default function NavalCombatBoard({ countryId, initialSession, onSaveSess
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <button className="btn btn-primary" onClick={() => setOrderMode('move')}>이동 지정</button>
         <button className="btn btn-warning" onClick={() => setOrderMode('attack')}>공격 지정</button>
+        {phase === 'combat' && (
+          <button className="btn" onClick={queueRotateForSelected}>선택 함선 회전 예약</button>
+        )}
         <button className="btn" onClick={() => setOrientation(o => (o === 'horizontal' ? 'vertical' : 'horizontal'))}>
           배치 방향: {orientation === 'horizontal' ? '가로' : '세로'}
         </button>

@@ -413,12 +413,34 @@ export function resolveNavalTurn(session) {
     .filter(u => u.status === 'field' && u.majorCategory === '해군')
     .sort((a, b) => (b.speed || 1) - (a.speed || 1));
 
+  // Rotate phase: turning hull orientation consumes movement for the turn.
+  const rotatedThisTurn = new Set();
+  for (const ship of fieldShips) {
+    const order = orderMap.get(ship.id);
+    const requestedOrientation = order?.rotateOrientation;
+    if (!requestedOrientation) continue;
+    if (requestedOrientation !== 'horizontal' && requestedOrientation !== 'vertical') continue;
+    if (requestedOrientation === ship.orientation) {
+      rotatedThisTurn.add(ship.id);
+      continue;
+    }
+
+    const candidate = { ...ship, orientation: requestedOrientation };
+    const others = units.filter(u => u.id !== ship.id && u.status === 'field' && u.majorCategory === '해군');
+    const canRotate = canPlaceNavalUnit(others, candidate, board.length || 20);
+    if (!canRotate) continue;
+
+    ship.orientation = requestedOrientation;
+    rotatedThisTurn.add(ship.id);
+  }
+
   const movedReservations = [];
 
   for (const ship of fieldShips) {
     const order = orderMap.get(ship.id);
     if (!order || !order.move) continue;
     if (ship.status !== 'field') continue;
+    if (rotatedThisTurn.has(ship.id)) continue;
 
     const target = chebyshevStep(ship.x, ship.y, order.move.x, order.move.y, ship.speed || 1);
     const candidate = { ...ship, x: target.x, y: target.y };
