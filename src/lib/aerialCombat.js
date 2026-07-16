@@ -208,6 +208,9 @@ export function createAerialBattle(battleId, type, attackerId, defenderId, attac
     round: 1,
     status: 'active', // 'active', 'finished'
     winner: null,
+    strategicActions: [],
+    attackerUnits: attackerUnits || [],
+    defenderUnits: defenderUnits || [],
     
     // 공격측 상태
     attackerState: {
@@ -535,12 +538,14 @@ export function initializeAirspaceField() {
  * @param {number} damage - 피해량 (원자폭탄 공격력)
  */
 export function tacticalNuclearStrike(targetCountry, damage) {
+  const dmg = Math.max(1, parseInt(damage || 1, 10));
   return {
-    type: 'nuclear_strike',
+    type: 'nuke_missile_like_strike',
     target: targetCountry,
-    damage,
-    status: 'pending',
-    description: `${damage}의 피해로 핵 투발을 수행합니다.`
+    damage: dmg,
+    radius: 2,
+    status: 'ready',
+    description: `핵미사일과 유사한 효과로 반경 타격을 수행합니다. (기본 반경 2, 위력 ${dmg})`
   };
 }
 
@@ -550,12 +555,13 @@ export function tacticalNuclearStrike(targetCountry, damage) {
  * @param {number} supplyReduction - 보급 한계 감소량
  */
 export function tacticalSupplyRaid(targetCountry, supplyReduction) {
+  const reduction = Math.max(1, parseInt(supplyReduction || 1, 10));
   return {
     type: 'supply_raid',
     target: targetCountry,
-    supplyReduction,
-    status: 'pending',
-    description: `보급 체계를 ${supplyReduction}만큼 폭격하여 상대의 보급 한계를 줄입니다.`
+    supplyReduction: reduction,
+    status: 'ready',
+    description: `투입한 폭격기 공격력(${reduction})만큼 상대 보급 한계를 감소시킵니다.`
   };
 }
 
@@ -675,7 +681,7 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
   const result = resolveAerialRound(atkCard, defCard);
 
   // 결과에 따라 카드 소모 또는 재배치
-  const applyLoss = (sess, choice, lost) => {
+  const applyLoss = (sess, choice, lost, isAttacker) => {
     if (choice.type === 'pass') return;
     
     if (choice.type === 'aa') {
@@ -690,14 +696,23 @@ export function processBattleRound(battleSession, attackerUnits = [], defenderUn
       const card = sess.hand.splice(idx, 1)[0];
       if (lost) {
         sess.lost.push(card);
+        // 실제 비행기 유닛도 파괴 처리
+        const unitsArray = isAttacker ? battleSession.attackerUnits : battleSession.defenderUnits;
+        if (unitsArray) {
+          const unit = unitsArray.find(u => u.id === card.unitId);
+          if (unit) {
+            unit.hp = 0;
+            unit.status = 'destroyed';
+          }
+        }
       } else {
         sess.hand.push(card); // 이겼거나 비겨서 살아남으면 다시 패로 돌아감
       }
     }
   };
 
-  applyLoss(atkSess, atkChoice, result.attackerLost);
-  applyLoss(defSess, defChoice, result.defenderLost);
+  applyLoss(atkSess, atkChoice, result.attackerLost, true);
+  applyLoss(defSess, defChoice, result.defenderLost, false);
 
   // 히스토리 기록
   battleSession.history.push({

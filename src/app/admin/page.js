@@ -2598,7 +2598,17 @@ export default function AdminPage() {
                 return allUnits.map(u => {
                   const tmpl = unitTemplates.find(t => t.id === u.templateId);
                   if (tmpl && tmpl.majorCategory === '공군') {
-                    return { id: u.id, name: tmpl.name, speed: tmpl.speed || 1, quantity: u.operational || u.count, supplyConsumption: tmpl.supplyConsumption || 0 };
+                    return {
+                      id: u.id,
+                      name: tmpl.name,
+                      speed: tmpl.speed || 1,
+                      attack: tmpl.attack || 1,
+                      quantity: u.operational || u.count,
+                      supplyConsumption: tmpl.supplyConsumption || 0,
+                      majorCategory: tmpl.majorCategory,
+                      minorCategory: tmpl.minorCategory,
+                      subCategory: tmpl.subCategory
+                    };
                   }
                   return null;
                 }).filter(Boolean);

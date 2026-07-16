@@ -458,7 +458,9 @@ export function resolveNavalTurn(session) {
     }
 
     // 충각 판정: 같은 타일 점유 충돌 시 체력 높은 유닛이 생존
-    const collidedUnits = others.filter(u => {
+    // 잠수함은 충각 대상에서 제외 (이동 함선이 잠수함이거나 상대가 잠수함이면 충각 불가)
+    const collidedUnits = isSubmarine(ship) ? [] : others.filter(u => {
+      if (isSubmarine(u)) return false;
       const ot = getOccupiedTiles(u);
       return ot.some(t => candidateTiles.some(c => c.x === t.x && c.y === t.y));
     });
@@ -582,6 +584,15 @@ export function resolveNavalTurn(session) {
     }
   });
 
+  // 이번 턴에 공격 행동을 한 잠수함 ID 수집 (발사 소음으로 위치 노출)
+  const attackingSubIds = new Set();
+  for (const ship of fieldShips) {
+    const order = orderMap.get(ship.id);
+    if (order?.action && isSubmarine(ship)) {
+      attackingSubIds.add(ship.id);
+    }
+  }
+
   // Attack phase: hit only if target tile is occupied at attack resolution time.
   for (const ship of fieldShips) {
     const order = orderMap.get(ship.id);
@@ -648,7 +659,9 @@ export function resolveNavalTurn(session) {
         if (!candidate) continue;
         if (action.type === 'depth_charge' && !isSubmarine(candidate.unit)) continue;
         if (action.type === 'torpedo' && action.onlySubmarineTargets && !isSubmarine(candidate.unit)) continue;
-        if (isSubmarine(candidate.unit) && !isSubDetectedByOwner(candidate.unit, ship.owner, units) && action.type !== 'depth_charge') continue;
+        // 잠수함은 탐지돼야 어뢰 타격 가능. 단, 그 턴에 공격 행동을 했다면 소음 노출로 탐지 없이도 피격 가능
+        const subFiredThisTurn = attackingSubIds.has(candidate.unit.id);
+        if (isSubmarine(candidate.unit) && !isSubDetectedByOwner(candidate.unit, ship.owner, units) && action.type !== 'depth_charge' && !subFiredThisTurn) continue;
         hit = candidate.unit;
         break;
       }
